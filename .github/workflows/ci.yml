@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: format · lint · types · security gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: devpass
+          POSTGRES_DB: wafa
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wafa"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+
+    env:
+      # على الـCI بنستخدم postgres لتشغيل الـmigrations، وبعدين
+      # البوابة الأمنية بتعمل SET ROLE wafa_dashboard لتختبر العزل فعليا.
+      MIGRATION_DATABASE_URL: postgres://postgres:devpass@localhost:5432/wafa
+      DATABASE_URL: postgres://postgres:devpass@localhost:5432/wafa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: تنصيب psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: تنسيق
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: فحص الأنواع
+        run: pnpm typecheck
+
+      - name: Migrations على قاعدة نظيفة
+        run: pnpm db:migrate
+
+      - name: بيانات الاختبار
+        run: pnpm db:seed
+
+      # 🔴 هذا هو الشرط. أي فيتشر فوق الـGuard ممنوع يُدمج قبل ما يخضرّ.
+      # بلوبرينت §5.5 — اختبار عزل السلاسل إلزامي، مش موصى فيه.
+      - name: 🔴 البوابة الأمنية — عزل السلاسل
+        run: pnpm test:security
+
+      - name: فحوصات قاعدة البيانات (العمليات الحرجة + انحراف الـschema)
+        run: pnpm test:db
+
+      - name: اختبارات الوحدة
+        run: pnpm -r --if-present test
+
+  # حاجز منفصل عشان يبين بوضوح بواجهة الـPR إذا الأمان هو السبب.
+  secrets-scan:
+    name: فحص الأسرار المسرّبة
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: رفض أي .env مرفوع
+        run: |
+          if git ls-files | grep -E '^\.env$|^\.env\.(local|production|staging)$'; then
+            echo "::error::ملف .env مرفوع على الريبو. شيله من الـgit history فورا وغيّر كل المفاتيح."
+            exit 1
+          fi
+          echo "✓ لا يوجد .env مرفوع"

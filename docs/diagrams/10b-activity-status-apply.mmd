@@ -1,0 +1,18 @@
+flowchart TB
+    classDef start fill:#0E7C7B,stroke:#0A5F5E,color:#FFFFFF
+    classDef act fill:#FFFFFF,stroke:#8A8A85,color:#161615
+    classDef dec fill:#FBEAB0,stroke:#7A5C06,color:#161615
+    classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
+    classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
+
+    S(("from part a — transition allowed")):::start --> A6["BEGIN TRANSACTION"]:::act
+    A6 --> A7["UPDATE orders SET status, notified=false"]:::act
+    A7 --> D4{"which new status?"}:::dec
+    D4 -- ready --> B1["SET ready_at = now()<br/><i>this column drives the 24h expiry job</i>"]:::act --> A8
+    D4 -- "cancelled AND paid" --> B2["Request refund · payment_status=refunded<br/><i>refund invariant</i>"]:::crit --> A8
+    D4 -- completed --> B3["cash: payment_status → collected<br/>update customer statistics · recompute is_vip"]:::act --> A8
+    D4 -- "accepted / preparing" --> A8["INSERT order_status_history<br/>actor=staff · actor_staff_id"]:::act
+    A8 --> A9["COMMIT"]:::act
+    A9 --> A10["Notification poller picks up notified=false<br/>and sends the approved template"]:::act
+    A10 --> A11["outbound_msg_count incremented"]:::act
+    A11 --> F2(("end")):::fin

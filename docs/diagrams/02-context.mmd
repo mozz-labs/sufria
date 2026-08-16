@@ -1,0 +1,25 @@
+flowchart TB
+    classDef ext fill:#E1EAEE,stroke:#35555F,stroke-width:1px,color:#161615
+    classDef sys fill:#0E7C7B,stroke:#0A5F5E,stroke-width:2px,color:#FFFFFF
+    classDef store fill:#EDE6F7,stroke:#5B3A99,color:#161615
+
+    CUST(["Customer<br/><i>orders via WhatsApp</i>"]):::ext
+    STAFF(["Restaurant Staff / Owner<br/><i>operates the dashboard</i>"]):::ext
+    META(["Meta — WhatsApp Cloud API<br/><i>message delivery</i>"]):::ext
+    PAY(["Payment Provider<br/><i>collection and refund</i>"]):::ext
+    MON(["Sentry / Uptime Monitor<br/><i>error and availability alerts</i>"]):::ext
+
+    WAFA["<b>WAFA PLATFORM</b><br/>conversational ordering,<br/>order management,<br/>ownership analytics"]:::sys
+
+    CUST -- "order messages, button and list selections" --> META
+    META -- "inbound webhook (signed)" --> WAFA
+    WAFA -- "menu, cart, confirmation, status notifications" --> META
+    META -- "message delivery" --> CUST
+
+    STAFF -- "credentials, status transitions, menu edits" --> WAFA
+    WAFA -- "live orders, customer records, analytics" --> STAFF
+
+    WAFA -- "payment request, refund request" --> PAY
+    PAY -- "payment confirmation (signed webhook)" --> WAFA
+
+    WAFA -- "unhandled errors, health signal" --> MON

@@ -1,0 +1,35 @@
+classDiagram
+    direction TB
+    note for RestaurantContextGuard "The ordering below IS the security property.\nStep 3 before step 2 would let the caller\nnominate their own tenant."
+
+    class AuthController {
+        +login(dto) TokenPair
+        +refresh(dto) AccessToken
+        +logout() void
+    }
+    class AuthService {
+        +validate(identifier, password) StaffAccount
+        +issueTokens(staffId) TokenPair
+        -verifyPassword(hash, plain) boolean
+    }
+    class AuthGuard {
+        +canActivate(ctx) boolean
+    }
+    class RestaurantContextGuard {
+        -TenantDbService tenantDb
+        +canActivate(ctx) boolean
+    }
+    class TenantDbService {
+        -Pool pool
+        -NodePgDatabase db
+        -assertNotSuperuser() void
+        +runInTenant(restaurantId, work) T
+        +runUnscoped(work) T
+    }
+
+    AuthController --> AuthService
+    AuthService --> TenantDbService
+    AuthGuard --> AuthController : "1 · who is calling"
+    AuthGuard --> RestaurantContextGuard : "2 · may they act here"
+    RestaurantContextGuard --> TenantDbService : "app.verify_membership()"
+    RestaurantContextGuard --> TenantDbService : "3 · what they can see"

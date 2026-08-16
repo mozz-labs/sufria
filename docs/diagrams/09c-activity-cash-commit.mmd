@@ -1,0 +1,18 @@
+flowchart TB
+    classDef start fill:#0E7C7B,stroke:#0A5F5E,color:#FFFFFF
+    classDef act fill:#FFFFFF,stroke:#8A8A85,color:#161615
+    classDef dec fill:#FBEAB0,stroke:#7A5C06,color:#161615
+    classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
+    classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
+
+    S(("from part b — cart validated")):::start --> A10["BEGIN TRANSACTION"]:::act
+    A10 --> A11["UPDATE conversation_sessions<br/>SET state='order_placed'<br/>WHERE state='fulfillment_choice'"]:::crit
+    A11 --> D5{"rowcount = 1?"}:::dec
+    D5 -- "no — duplicate confirm tap" --> E5["ROLLBACK · no second order"]:::crit --> F1(("end")):::fin
+    D5 -- yes --> A12["INSERT orders<br/>payment_method=cash · payment_status=pending_cash"]:::act
+    A12 --> A13["INSERT order_items<br/><i>name and unit price snapshotted</i>"]:::act
+    A13 --> A14["INSERT order_status_history<br/>NULL to pending_acceptance · actor=customer"]:::act
+    A14 --> A15["COMMIT"]:::act
+    A15 --> A16["Send confirmation · increment outbound_msg_count"]:::act
+    A16 --> A17["Order appears on the live board within 5 s"]:::act
+    A17 --> F2(("end")):::fin

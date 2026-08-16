@@ -1,0 +1,40 @@
+# ==============================================================================
+# نهايات الأسطر — ملف إلزامي، مش تحسين
+#
+# ليش موجود: `pnpm test:security` بيشغّل `bash tests/security/negative-controls.sh`
+# (شوف scripts/test-security.mjs السطر ١٦). لو حدا حفظ هالملف من محرر ويندوز
+# بنهايات CRLF ورفعه، بيصير عند الكل — وبالـCI كمان:
+#
+#     /usr/bin/env: 'bash\r': No such file or directory
+#
+# رسالة ما إلها علاقة بالسبب، وبتوكل نص يوم. هذا الملف بيمنعها من الأساس.
+# ==============================================================================
+
+# الافتراضي: جيت بيقرر النص تلقائيا، وبيخزّنه ويطلّعه بـLF دايما
+* text=auto eol=lf
+
+# 🔴 هدول بينكسروا فعليا مع CRLF — تثبيت صريح
+*.sh    text eol=lf
+*.sql   text eol=lf
+*.mjs   text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Dockerfile      text eol=lf
+.env.example    text eol=lf
+
+# ثنائية — جيت ما يلمسها ولا يحاول يعمل diff
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.xlsx  binary
+*.pptx  binary
+*.woff  binary
+*.woff2 binary

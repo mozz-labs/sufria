@@ -1,0 +1,15 @@
+flowchart TB
+    classDef start fill:#0E7C7B,stroke:#0A5F5E,color:#FFFFFF
+    classDef act fill:#FFFFFF,stroke:#8A8A85,color:#161615
+    classDef dec fill:#FBEAB0,stroke:#7A5C06,color:#161615
+    classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
+    classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
+
+    S(("from part a")):::start --> A5["app.resolve_restaurant_by_phone_id()<br/>then set_config(app.current_restaurant_id, ..., true)"]:::crit
+    A5 --> A6["Upsert customer · resolve or create session"]:::act
+    A6 --> A7["Route to the handler for the current state<br/>browse · cart · reorder · fulfilment"]:::act
+    A7 --> A8["Customer selects cash on delivery"]:::act
+    A8 --> A9["Re-validate price and availability<br/>of every cart item against menu_items"]:::act
+    A9 --> D4{"Anything changed since<br/>it was added to the cart?"}:::dec
+    D4 -- yes --> E4["Show the change · request re-confirmation"]:::act --> A7
+    D4 -- no --> F2(("continue in part c")):::fin

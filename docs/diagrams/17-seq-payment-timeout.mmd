@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant WA as Meta Cloud API
+    participant CE as Conversation Engine
+    participant DB as PostgreSQL
+    participant SCH as Scheduler
+    Note over C,SCH: Starting point: an order exists with payment_status='pending_online'.<br/>Two independent outcomes, and they can race.
+    rect rgba(220,238,220,0.35)
+        Note over C,DB: Path A — customer switches to cash (one-directional, same order row)
+        C->>WA: "pay cash instead"
+        WA->>CE: webhook
+        CE->>DB: SELECT order WHERE session_id=? FOR UPDATE
+        CE->>DB: UPDATE orders SET payment_method='cash',<br/>payment_status='pending_cash'<br/>WHERE payment_status='pending_online'
+        CE->>DB: INSERT order_status_history<br/>(actor='customer', reason='payment_method_switched_to_cash')
+        CE->>DB: CAS session to 'order_placed'
+        CE->>WA: switch confirmed
+        Note over CE,DB: Defensive: if a late confirmation arrives for the OLD link,<br/>payment_status is recorded as 'paid' and a flag is raised on the<br/>dashboard so cash is not collected twice.
+    end
+    rect rgba(245,222,221,0.35)
+        Note over SCH,DB: Path B — nobody pays, nobody switches
+        SCH->>DB: SELECT orders WHERE payment_status='pending_online'<br/>AND created_at < now() - 2h FOR UPDATE SKIP LOCKED
+        DB-->>SCH: eligible orders
+        SCH->>DB: UPDATE orders SET status='cancelled', cancelled_by='system',<br/>cancellation_reason='payment_timeout_2h'<br/>WHERE payment_status='pending_online'
+        DB-->>SCH: rowcount
+        alt rowcount = 0
+            Note over SCH: Payment landed in the same instant. Leave it alone.
+        else rowcount = 1
+            SCH->>DB: INSERT order_status_history (actor='system')
+            Note over SCH,DB: No refund — payment_status was never 'paid'.
+            SCH->>CE: notified=false picked up by the poller
+            CE->>WA: "payment was not completed within the time limit"
+            Note over CE,WA: The wording describes payment, not the customer.<br/>The system only knows payment never confirmed.
+        end
+    end

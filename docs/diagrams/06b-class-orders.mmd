@@ -1,0 +1,34 @@
+classDiagram
+    direction TB
+    note for SharedDomain "Imported by BOTH the API and the web app,\nso the button the staff sees and the rule\nthe server enforces are the same line."
+
+    class OrdersController {
+        +listActive(restaurantId) OrderSummary[]
+        +getOne(restaurantId, orderId) OrderDetail
+        +updateStatus(restaurantId, orderId, dto) void
+    }
+    class OrdersService {
+        -TenantDbService db
+        +transition(orderId, next, actor) void
+        -assertAcceptanceGate(order) void
+        -applyCompletionEffects(order) void
+    }
+    class SharedDomain {
+        <<package @wafa/shared>>
+        +ALLOWED_TRANSITIONS
+        +canTransition(from, to) boolean
+        +canAcceptOrder(order) boolean
+        +ORDER_STATUS_LABEL_AR
+    }
+    class TenantDbService {
+        +runInTenant(restaurantId, work) T
+    }
+    class OtherControllers {
+        <<menu · customers · analytics>>
+        +list(restaurantId) T
+    }
+
+    OrdersController --> OrdersService
+    OrdersService ..> SharedDomain : "canTransition / canAcceptOrder"
+    OrdersService --> TenantDbService
+    OtherControllers --> TenantDbService : "same single data path"

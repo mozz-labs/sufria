@@ -1,0 +1,61 @@
+flowchart TB
+    classDef ext fill:#E1EAEE,stroke:#35555F,color:#161615
+    classDef proc fill:#FFFFFF,stroke:#0E7C7B,stroke-width:2px,color:#161615
+    classDef store fill:#EDE6F7,stroke:#5B3A99,color:#161615
+
+    CUST(["Customer"]):::ext
+    STAFF(["Restaurant Staff"]):::ext
+    META(["Meta Cloud API"]):::ext
+    PAY(["Payment Provider"]):::ext
+
+    P1["1.0<br/>Receive and<br/>authenticate<br/>webhook"]:::proc
+    P2["2.0<br/>Manage<br/>conversation<br/>state"]:::proc
+    P3["3.0<br/>Create and<br/>price order"]:::proc
+    P4["4.0<br/>Manage order<br/>lifecycle"]:::proc
+    P5["5.0<br/>Notify<br/>customer"]:::proc
+    P6["6.0<br/>Aggregate<br/>analytics"]:::proc
+    P7["7.0<br/>Authenticate and<br/>authorise staff"]:::proc
+
+    D1[("D1 processed_webhook_events")]:::store
+    D2[("D2 conversation_sessions")]:::store
+    D3[("D3 menu_categories / menu_items")]:::store
+    D4[("D4 orders / order_items")]:::store
+    D5[("D5 order_status_history")]:::store
+    D6[("D6 customers")]:::store
+    D7[("D7 staff_accounts / restaurant_staff")]:::store
+
+    CUST --> META --> P1
+    PAY -->|"payment confirmation"| P1
+    P1 -->|"event id"| D1
+    D1 -->|"already processed?"| P1
+    P1 -->|"new event"| P2
+
+    P2 <-->|"state, cart context"| D2
+    P2 -->|"menu request"| D3
+    D3 -->|"categories, items, prices"| P2
+    P2 -->|"confirmed cart"| P3
+
+    P3 -->|"re-validate prices"| D3
+    P3 -->|"order + items"| D4
+    P3 -->|"creation entry"| D5
+    P3 -->|"payment request"| PAY
+
+    STAFF -->|"credentials"| P7
+    P7 <-->|"membership check"| D7
+    P7 -->|"verified restaurant context"| P4
+
+    P4 <-->|"locked order row"| D4
+    P4 -->|"transition entry"| D5
+    P4 -->|"statistics on completion"| D6
+    P4 -->|"refund request"| PAY
+    D4 -->|"live orders"| STAFF
+
+    P4 -->|"notified=false"| P5
+    D4 --> P5
+    P5 -->|"approved template"| META --> CUST
+    P5 -->|"outbound_msg_count"| D4
+
+    D4 --> P6
+    D6 --> P6
+    D2 -->|"furthest state per session"| P6
+    P6 -->|"orders, revenue, ownership score,<br/>funnel, at-risk customers"| STAFF

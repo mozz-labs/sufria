@@ -1,0 +1,42 @@
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant WA as Meta Cloud API
+    participant CE as Conversation Engine
+    participant DB as PostgreSQL
+    participant PG as Payment Provider
+    Note over C,PG: Customer selected online payment while in fulfillment_choice
+    CE->>DB: BEGIN, then CAS to state='awaiting_payment'
+    CE->>DB: INSERT orders (payment_method='online', payment_status='pending_online')
+    CE->>DB: COMMIT
+    Note over CE,DB: The order row exists BEFORE payment. Confirmation only updates it.
+    CE->>PG: request payment instrument (amount, reference=order.id)
+    PG-->>CE: hosted instrument + gateway_ref
+    CE->>WA: send payment instrument
+    WA->>C: delivered
+    par session timeout path (never touches the order row)
+        CE->>DB: (job) state='abandoned' WHERE state='awaiting_payment'<br/>AND last_message_at < now() - 45 min
+    and payment confirmation path
+        PG->>CE: payment webhook (gateway_ref, amount, success)
+        CE->>DB: INSERT processed_webhook_events ON CONFLICT DO NOTHING RETURNING id
+        DB-->>CE: rowcount
+        alt rowcount = 0 (provider redelivery)
+            CE->>PG: 200 OK only
+        else rowcount = 1
+            CE->>DB: SELECT order WHERE payment_gateway_ref=? FOR UPDATE
+            DB-->>CE: locked order row
+            CE->>CE: assert amount == order.total
+            alt order already cancelled or expired
+                CE->>DB: UPDATE payment_status='paid'
+                CE->>PG: refund immediately (invariant fires inside THIS handler)
+                PG-->>CE: refund confirmed
+                CE->>DB: UPDATE payment_status='refunded'
+                CE->>WA: explain and confirm the refund
+            else pending_acceptance (normal path)
+                CE->>DB: UPDATE payment_status='paid'<br/>WHERE payment_status='pending_online'
+                CE->>DB: CAS session to 'order_placed'
+                CE->>WA: payment received, order confirmed
+            end
+            CE->>PG: 200 OK
+        end
+    end

@@ -1,0 +1,38 @@
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant WA as Meta Cloud API
+    participant CE as Conversation Engine
+    participant DB as PostgreSQL
+    C->>WA: sends a message (text, button reply, or list selection)
+    WA->>CE: POST webhook (message_id, from, restaurant phone id, payload)
+    CE->>CE: verify X-Hub-Signature-256 against the RAW body
+    CE->>CE: validate payload shape (Zod)
+    CE->>DB: INSERT processed_webhook_events (event_id=message_id, source='whatsapp')<br/>ON CONFLICT (event_id, source) DO NOTHING RETURNING id
+    DB-->>CE: rowcount
+    alt rowcount = 0 (already processed)
+        CE->>WA: 200 OK, discard
+        Note over CE: Covers even the first message of a brand-new conversation,<br/>where no session exists yet to hold a reference.
+    else rowcount = 1 (genuinely new)
+        CE->>DB: app.resolve_restaurant_by_phone_id(phone_id)
+        DB-->>CE: restaurant_id
+        CE->>DB: set_config('app.current_restaurant_id', restaurant_id, true)
+        Note over CE,DB: Every query from here on is under row-level security.
+        CE->>DB: upsert customer on (restaurant_id, phone_number)
+        CE->>DB: SELECT active session (state NOT IN order_placed, abandoned)
+        DB-->>CE: session or none
+        alt no active session
+            CE->>DB: INSERT conversation_sessions (state='new')
+            CE->>DB: SELECT most recent completed order for this customer
+            alt prior completed order exists
+                CE->>WA: welcome + "reorder your usual?" + browse option
+            else new customer
+                CE->>DB: SELECT active categories and items
+                CE->>WA: welcome + full menu
+            end
+            CE->>DB: UPDATE session SET state='browsing'
+        else active session
+            CE->>DB: UPDATE session SET last_message_at=now()
+            Note over CE: Route to the handler for the current state.
+        end
+    end

@@ -1,0 +1,42 @@
+flowchart TB
+    classDef node fill:#E1EAEE,stroke:#35555F,stroke-width:2px,color:#161615
+    classDef proc fill:#FFFFFF,stroke:#0E7C7B,color:#161615
+    classDef ext fill:#F5DEDD,stroke:#8A332F,color:#161615
+    classDef future fill:#FBEAB0,stroke:#7A5C06,stroke-dasharray:4 3,color:#161615
+
+    subgraph PILOT["PILOT TOPOLOGY — October 2026"]
+        direction TB
+        subgraph N1["Always-on container (Koyeb free tier / Railway Hobby)"]
+            P1["Node.js 24 — single process<br/><b>ConversationEngineModule</b> + <b>DashboardApiModule</b><br/><i>NFR-07: separate modules, one deployment</i>"]:::proc
+        end
+        subgraph N2["Vercel (Hobby)"]
+            P2["Next.js 16 — dashboard-web<br/><i>static + client-side rendering</i>"]:::proc
+        end
+        subgraph N3["Managed PostgreSQL (Supabase / Neon)"]
+            P3[("PostgreSQL 16<br/>roles: wafa_dashboard · wafa_engine<br/><i>neither is superuser</i>")]:::proc
+        end
+    end
+
+    BROWSER(["Restaurant staff browser"]):::ext
+    PHONE(["Customer phone — WhatsApp"]):::ext
+    META["Meta WhatsApp Cloud API"]:::ext
+    PAYG["Payment provider"]:::ext
+    R2["Cloudflare R2"]:::ext
+    SENTRY["Sentry + uptime monitor"]:::ext
+
+    BROWSER -->|"HTTPS"| P2
+    P2 -->|"HTTPS / REST"| P1
+    PHONE --> META
+    META -->|"HTTPS webhook"| P1
+    P1 -->|"HTTPS"| META
+    P1 <-->|"HTTPS"| PAYG
+    P1 -->|"TLS 5432"| P3
+    P2 --> R2
+    P1 --> SENTRY
+
+    subgraph LATER["FUTURE SPLIT — triggered by webhook load, not by date"]
+        direction LR
+        F1["conversation-engine<br/><i>scales on webhook volume</i>"]:::future
+        F2["dashboard-api<br/><i>scales on staff sessions</i>"]:::future
+    end
+    P1 -.->|"add a second main.ts;<br/>configuration change, not a rewrite"| LATER

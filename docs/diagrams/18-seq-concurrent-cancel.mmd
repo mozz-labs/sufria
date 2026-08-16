@@ -1,0 +1,36 @@
+sequenceDiagram
+    autonumber
+    participant TRIG as Cancellation trigger<br/>(staff · 24h expiry · 2h timeout)
+    participant API as Dashboard API / Scheduler
+    participant DB as PostgreSQL
+    participant CE as Conversation Engine
+    participant PG as Payment Provider
+    Note over TRIG,PG: The refund invariant: any order entering cancelled or expired<br/>while payment_status='paid' is refunded EXACTLY ONCE,<br/>no matter which event arrives first or how far apart.
+    par cancellation side
+        TRIG->>API: cancel / expire this order
+        API->>DB: SELECT order WHERE id=? FOR UPDATE
+    and payment side
+        PG->>CE: payment confirmation webhook
+        CE->>DB: INSERT processed_webhook_events ON CONFLICT DO NOTHING
+        CE->>DB: SELECT order WHERE payment_gateway_ref=? FOR UPDATE
+    end
+    Note over DB: The row lock admits exactly one of the two first.<br/>The second blocks, then re-reads committed state.
+    alt cancellation committed first
+        API->>DB: status='cancelled'
+        API->>DB: COMMIT (releases the lock)
+        CE->>DB: (lock acquired) re-read: status is already 'cancelled'
+        CE->>DB: UPDATE payment_status='paid'
+        CE->>PG: refund — fires inside THIS handler
+        PG-->>CE: refund confirmed
+        CE->>DB: UPDATE payment_status='refunded'
+        CE->>CE: notify the customer
+    else payment committed first
+        CE->>DB: payment_status='paid'
+        CE->>DB: COMMIT (releases the lock)
+        API->>DB: (lock acquired) re-read: payment_status is already 'paid'
+        API->>DB: status='cancelled'
+        API->>PG: refund — fires in the cancellation path
+        PG-->>API: refund confirmed
+        API->>DB: UPDATE payment_status='refunded'
+    end
+    Note over TRIG,PG: Exactly one refund in both orderings. The invariant is a property<br/>of the state, not of which code path noticed it.

@@ -1,0 +1,28 @@
+# never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+node_modules/
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# النسخة الملغاة من تصميم النظام — للأرشيف عند الفاوندر، ما بتنرفع.
+# السبب مش الحجم (٤.٢ ميغا) — إنه حدا بالفريق بيفتحها ويشتغل على تصميم ملغي.
+docs/*ARCHIVED*

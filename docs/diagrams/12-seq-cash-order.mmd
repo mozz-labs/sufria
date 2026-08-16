@@ -1,0 +1,32 @@
+sequenceDiagram
+    autonumber
+    actor C as Customer
+    participant WA as Meta Cloud API
+    participant CE as Conversation Engine
+    participant DB as PostgreSQL
+    Note over C,DB: Entry via the unified webhook gate (see the webhook gate sequence). session.state = fulfillment_choice
+    C->>WA: selects "cash on delivery"
+    WA->>CE: webhook (interactive reply)
+    CE->>DB: SELECT price, is_available FROM menu_items WHERE id IN (cart)
+    DB-->>CE: current prices and availability
+    alt price or availability changed
+        CE->>WA: report the change, request re-confirmation
+        WA->>C: show affected items
+    else unchanged
+        CE->>DB: BEGIN
+        CE->>DB: UPDATE conversation_sessions SET state='order_placed'<br/>WHERE id=? AND state='fulfillment_choice'
+        DB-->>CE: rowcount
+        alt rowcount = 0 (duplicate confirm tap)
+            CE->>DB: ROLLBACK
+            Note over CE,DB: No second order. This is the compare-and-swap layer.
+        else rowcount = 1
+            CE->>DB: INSERT orders (payment_method='cash',<br/>status='pending_acceptance', payment_status='pending_cash')
+            DB-->>CE: order.id
+            CE->>DB: INSERT order_items (name and unit price snapshotted)
+            CE->>DB: INSERT order_status_history (NULL to pending_acceptance, actor='customer')
+            CE->>DB: COMMIT
+            CE->>WA: order confirmation
+            WA->>C: delivered
+            CE->>DB: UPDATE orders SET outbound_msg_count = outbound_msg_count + 1
+        end
+    end

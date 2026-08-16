@@ -1,0 +1,30 @@
+stateDiagram-v2
+    direction TB
+    [*] --> new : first inbound message<br/>(after dedup gate)
+
+    new --> browsing : welcome + menu sent
+    new --> cart_review : returning customer accepts<br/>the proactive reorder (FR-08)
+
+    browsing --> cart_review : customer done selecting
+    cart_review --> browsing : customer adds more items
+    cart_review --> fulfillment_choice : cart confirmed<br/>prices and availability re-validated
+
+    fulfillment_choice --> order_placed : cash selected<br/>(CAS on state)
+    fulfillment_choice --> awaiting_payment : online selected<br/>(CAS on state)
+    awaiting_payment --> order_placed : payment confirmed
+
+    new --> abandoned : idle 45 min
+    browsing --> abandoned : idle 45 min
+    cart_review --> abandoned : idle 45 min
+    fulfillment_choice --> abandoned : idle 45 min
+    awaiting_payment --> abandoned : idle 45 min
+
+    order_placed --> [*]
+    abandoned --> [*]
+
+    note right of abandoned
+        The session dies; the ORDER row
+        does not. A payment webhook still
+        updates the order regardless of
+        session state.
+    end note

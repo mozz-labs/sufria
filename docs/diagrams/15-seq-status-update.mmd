@@ -1,0 +1,40 @@
+sequenceDiagram
+    autonumber
+    actor S as Restaurant Staff
+    participant API as Dashboard API
+    participant DB as PostgreSQL
+    participant PG as Payment Provider
+    participant SCH as Scheduler
+    S->>API: PATCH /restaurants/{rid}/orders/{id}/status
+    API->>DB: app.verify_membership(staff_id, restaurant_id)
+    DB-->>API: active membership?
+    alt no membership
+        API-->>S: 403 (identical to "no such restaurant")
+    else membership confirmed
+        API->>DB: set_config('app.current_restaurant_id', rid, true)
+        API->>DB: SELECT order WHERE id=? FOR UPDATE
+        alt accepted requested AND online AND not paid
+            API-->>S: 400 acceptance gate
+        else transition allowed by canTransition()
+            API->>DB: BEGIN
+            API->>DB: UPDATE orders SET status, notified=false
+            API->>DB: INSERT order_status_history (actor='staff', actor_staff_id)
+            opt new status = ready
+                API->>DB: SET ready_at = now()
+            end
+            opt cancelled AND payment_status = paid
+                API->>PG: refund
+                PG-->>API: confirmed
+                API->>DB: UPDATE payment_status='refunded'
+            end
+            opt new status = completed
+                API->>DB: cash: payment_status pending_cash to collected
+                API->>DB: UPDATE customers total_orders, total_spend, last_order_at, is_vip
+            end
+            API->>DB: COMMIT
+            API-->>S: 200 OK
+        end
+    end
+    Note over SCH,DB: Independent scheduled paths
+    SCH->>DB: expire pickups: status='ready' AND ready_at < now()-24h<br/>FOR UPDATE SKIP LOCKED
+    SCH->>DB: cancel stuck online: payment_status='pending_online'<br/>AND created_at < now()-2h FOR UPDATE SKIP LOCKED

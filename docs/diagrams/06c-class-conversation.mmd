@@ -1,0 +1,39 @@
+classDiagram
+    direction TB
+    note for WebhookController "No authenticated user exists here.\nThe restaurant is resolved from the phone id,\nthen the same RLS context applies."
+
+    class WebhookController {
+        +verify(query) string
+        +receive(rawBody, signature) void
+        -verifySignature(rawBody, signature) boolean
+    }
+    class ConversationService {
+        -TenantDbService db
+        +handle(message) void
+        -resolveRestaurant(phoneId) string
+        -resolveSession(customerId) Session
+        -route(session, message) void
+    }
+    class MenuBrowsingService {
+        +sendCategories(session) void
+        +sendItems(session, categoryId) void
+        +addToCart(session, itemId, qty) void
+    }
+    class CartService {
+        +review(session) CartSummary
+        +revalidate(session) CartCheck
+    }
+    class ReorderService {
+        +suggestUsual(customerId) Cart
+        +prefill(session, cart) void
+    }
+    class CriticalPrimitives {
+        <<module>>
+        +claimWebhookEvent(tx, eventId, source) boolean
+    }
+
+    WebhookController --> CriticalPrimitives : "dedup gate first"
+    WebhookController --> ConversationService
+    ConversationService --> MenuBrowsingService
+    ConversationService --> CartService
+    ConversationService --> ReorderService

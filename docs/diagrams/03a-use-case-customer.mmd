@@ -1,0 +1,24 @@
+flowchart TB
+    classDef actor fill:#FCE8D6,stroke:#8A4A0A,stroke-width:1px,color:#161615
+    classDef uc fill:#FFFFFF,stroke:#0E7C7B,stroke-width:1px,color:#161615
+
+    C(["Customer"]):::actor
+
+    subgraph ORDERING["Conversational Ordering — the customer's whole surface"]
+        direction LR
+        U5["Start session and<br/>receive menu<br/><b>FR-05</b>"]:::uc
+        U6["Browse menu<br/>and build cart<br/><b>FR-06</b>"]:::uc
+        U7["Review and<br/>confirm cart<br/><b>FR-07</b>"]:::uc
+        U8["Reorder usual order<br/>in one tap<br/><b>FR-08</b>"]:::uc
+        U9["Choose pickup<br/>or delivery<br/><b>FR-09</b>"]:::uc
+        U10["Choose payment<br/>method<br/><b>FR-10</b>"]:::uc
+    end
+
+    C --> U5
+    C --> U6
+    C --> U7
+    C --> U8
+    C --> U9
+    C --> U10
+    U8 -. "extends — skips browsing entirely" .-> U7
+    U10 -. "includes" .-> U15["Process payment<br/><b>FR-15</b>"]:::uc

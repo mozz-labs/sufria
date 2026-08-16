@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./apps/conversation-engine" },
+    { "path": "./apps/dashboard-api" }
+  ]
+}

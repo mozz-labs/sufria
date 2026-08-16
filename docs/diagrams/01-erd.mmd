@@ -1,0 +1,171 @@
+erDiagram
+  conversation_sessions {
+    uuid id PK
+    uuid restaurant_id FK
+    uuid customer_id FK
+    conversation_state state
+    jsonb context
+    timestamptz last_message_at
+    timestamptz created_at
+  }
+  customers {
+    uuid id PK
+    uuid restaurant_id FK,UK
+    text phone_number UK
+    text name "nullable"
+    customer_channel channel
+    integer total_orders
+    numeric total_spend
+    timestamptz last_order_at "nullable"
+    boolean is_vip
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  menu_categories {
+    uuid id PK
+    uuid restaurant_id FK,UK
+    text name
+    integer display_order
+    boolean is_active
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  menu_items {
+    uuid id PK
+    uuid restaurant_id FK
+    uuid category_id FK
+    text name
+    text description "nullable"
+    numeric price
+    text image_url "nullable"
+    boolean is_available
+    integer display_order
+    jsonb tags
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  message_templates {
+    uuid id PK
+    uuid restaurant_id FK,UK "nullable"
+    text template_type UK
+    text whatsapp_template_name
+    text language_code
+    text body "nullable"
+    text approval_status
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  order_items {
+    uuid id PK
+    uuid order_id FK
+    uuid restaurant_id FK
+    uuid menu_item_id FK "nullable"
+    text item_name_snapshot
+    numeric unit_price_snapshot
+    integer quantity
+    text notes "nullable"
+  }
+  order_status_history {
+    bigint id PK
+    uuid order_id FK
+    uuid restaurant_id FK
+    order_status from_status "nullable"
+    order_status to_status
+    actor_kind actor
+    uuid actor_staff_id FK "nullable"
+    text reason "nullable"
+    timestamptz changed_at
+  }
+  orders {
+    uuid id PK
+    uuid restaurant_id FK,UK
+    uuid customer_id FK
+    uuid session_id FK "nullable"
+    fulfillment_type fulfillment_type
+    payment_method payment_method
+    order_status status
+    payment_status payment_status
+    cancelled_by cancelled_by "nullable"
+    text cancellation_reason "nullable"
+    boolean notified
+    numeric subtotal
+    numeric total
+    text payment_link_url "nullable"
+    text payment_gateway_ref UK "nullable"
+    timestamptz ready_at "nullable"
+    integer outbound_msg_count
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  processed_webhook_events {
+    bigint id PK
+    text event_id UK
+    webhook_source source UK
+    timestamptz processed_at
+  }
+  restaurant_staff {
+    uuid id PK
+    uuid staff_account_id FK,UK
+    uuid restaurant_id FK,UK
+    staff_role role
+    jsonb permissions
+    boolean is_active
+    timestamptz created_at
+  }
+  restaurants {
+    uuid id PK
+    uuid chain_id "nullable"
+    text name
+    text logo_url "nullable"
+    text location "nullable"
+    jsonb business_hours
+    text whatsapp_number "nullable"
+    text whatsapp_phone_id UK "nullable"
+    wa_verification_status whatsapp_verification_status
+    boolean accepts_online_payment
+    boolean accepts_cash_on_delivery
+    boolean offers_delivery
+    numeric assumed_commission_rate
+    restaurant_status status
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  staff_accounts {
+    uuid id PK
+    citext phone_or_email UK
+    text password_hash
+    text name
+    boolean is_active
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  subscriptions {
+    uuid id PK
+    uuid restaurant_id FK
+    text plan_name
+    numeric monthly_price
+    char currency
+    subscription_status status
+    timestamptz current_period_start
+    timestamptz current_period_end "nullable"
+    text payment_method_ref "nullable"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+  customers ||--o{ conversation_sessions : "customer_id"
+  restaurants ||--o{ conversation_sessions : "restaurant_id"
+  restaurants ||--o{ customers : "restaurant_id"
+  restaurants ||--o{ menu_categories : "restaurant_id"
+  menu_categories ||--o{ menu_items : "category_id,restaurant_id · tenant-safe"
+  restaurants ||--o{ menu_items : "restaurant_id"
+  restaurants ||--o{ message_templates : "restaurant_id"
+  menu_items ||--o{ order_items : "menu_item_id"
+  orders ||--o{ order_items : "order_id,restaurant_id · tenant-safe"
+  staff_accounts ||--o{ order_status_history : "actor_staff_id"
+  orders ||--o{ order_status_history : "order_id,restaurant_id · tenant-safe"
+  customers ||--o{ orders : "customer_id"
+  restaurants ||--o{ orders : "restaurant_id"
+  conversation_sessions ||--o{ orders : "session_id"
+  restaurants ||--o{ restaurant_staff : "restaurant_id"
+  staff_accounts ||--o{ restaurant_staff : "staff_account_id"
+  restaurants ||--o{ subscriptions : "restaurant_id"

@@ -1,0 +1,35 @@
+stateDiagram-v2
+    direction LR
+    [*] --> pending_acceptance : customer selects payment method<br/>(order row created immediately)
+
+    pending_acceptance --> accepted : staff accepts<br/><b>blocked while online payment unconfirmed</b>
+    pending_acceptance --> cancelled : staff or customer cancels
+    pending_acceptance --> cancelled : system — payment_timeout_2h
+
+    accepted --> preparing : staff
+    accepted --> cancelled : staff
+
+    preparing --> ready : staff (optional step)<br/>sets ready_at
+    preparing --> completed : staff
+    preparing --> cancelled : staff
+
+    ready --> completed : staff — order handed over
+    ready --> cancelled : staff
+    ready --> expired : system — 24h from ready_at<br/>(pickup only)
+
+    completed --> [*]
+    cancelled --> [*]
+    expired --> [*]
+
+    note right of completed
+        cash -> payment_status becomes collected
+        customer statistics updated (FR-14)
+        CHECK: payment_status must be
+        paid or collected
+    end note
+
+    note right of expired
+        never updates customer statistics
+        any paid amount is refunded
+        distinct from cancelled by design
+    end note

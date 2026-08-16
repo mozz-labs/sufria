@@ -1,0 +1,27 @@
+flowchart TB
+    classDef actor fill:#FCE8D6,stroke:#8A4A0A,stroke-width:1px,color:#161615
+    classDef sysuc fill:#E7E5E0,stroke:#6B6963,stroke-width:1px,color:#161615
+    classDef uc fill:#FFFFFF,stroke:#0E7C7B,color:#161615
+
+    SYS(["System / Scheduler<br/><i>no human actor</i>"]):::actor
+    STAFF(["Restaurant Staff"]):::actor
+
+    U13["Accept, progress or<br/>cancel order<br/><b>FR-13</b>"]:::uc
+    U11["Notify customer of<br/>status change<br/><b>FR-11</b>"]:::sysuc
+    U14["Update customer<br/>statistics<br/><b>FR-14</b>"]:::sysuc
+    UT1["Expire unclaimed pickup<br/>24h after entering ready"]:::sysuc
+    UT2["Cancel unpaid online<br/>order after 2h"]:::sysuc
+    UT3["Abandon idle session<br/>after 45 min"]:::sysuc
+    U15["Trigger refund on a paid<br/>cancelled or expired order<br/><b>FR-15</b>"]:::sysuc
+
+    STAFF --> U13
+    SYS --> UT1
+    SYS --> UT2
+    SYS --> UT3
+    U13 -. "triggers" .-> U11
+    U13 -. "on completed" .-> U14
+    UT1 -. "triggers" .-> U11
+    UT2 -. "triggers" .-> U11
+    UT1 -. "if paid" .-> U15
+    U13 -. "if cancelled and paid" .-> U15
+    UT3 -. "never touches the order row" .-> UT3

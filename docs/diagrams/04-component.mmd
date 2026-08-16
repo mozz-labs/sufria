@@ -1,0 +1,68 @@
+flowchart TB
+    classDef svc fill:#E1EAEE,stroke:#35555F,stroke-width:2px,color:#161615
+    classDef mod fill:#FFFFFF,stroke:#8A8A85,color:#161615
+    classDef shared fill:#EDE6F7,stroke:#5B3A99,color:#161615
+    classDef db fill:#DCEEDC,stroke:#24632F,stroke-width:2px,color:#161615
+    classDef ext fill:#F5DEDD,stroke:#8A332F,color:#161615
+
+    subgraph REPO["wafa — single repository (pnpm workspaces)"]
+        direction TB
+
+        subgraph WEB["apps/dashboard-web — Next.js 16"]
+            W1["Live orders board"]:::mod
+            W2["Order detail drawer"]:::mod
+            W3["Menu / customers / analytics"]:::mod
+            W4["API client + polling"]:::mod
+        end
+
+        subgraph SHARED["packages/shared — @wafa/shared"]
+            SH1["Drizzle schema mirror"]:::shared
+            SH2["Domain types, status labels,<br/>allowed transitions,<br/>acceptance gate"]:::shared
+        end
+
+        subgraph ENGINE["apps/conversation-engine"]
+            E1["Webhook controller<br/><i>signature + Zod</i>"]:::mod
+            E2["Dedup gate<br/><i>processed_webhook_events</i>"]:::mod
+            E3["Session state machine"]:::mod
+            E4["Menu / cart handler"]:::mod
+            E5["Order creation<br/><i>CAS + transaction</i>"]:::mod
+            E6["Outbound sender<br/><i>+ msg counter</i>"]:::mod
+            E7["Schedulers<br/><i>2h and 24h jobs</i>"]:::mod
+            E8["Notification poller"]:::mod
+        end
+
+        subgraph API["apps/dashboard-api"]
+            A1["Auth — JWT + refresh"]:::mod
+            A2["RestaurantContextGuard"]:::mod
+            A3["TenantDbService<br/><i>sole data path</i>"]:::mod
+            A4["Orders controller"]:::mod
+            A5["Menu / customers controllers"]:::mod
+            A6["Analytics controller"]:::mod
+        end
+    end
+
+    DB[("PostgreSQL 16<br/>13 tables · RLS on 11<br/>app.verify_membership()<br/>app.resolve_restaurant_by_phone_id()")]:::db
+    META["Meta WhatsApp Cloud API"]:::ext
+    PAY["Payment Provider"]:::ext
+    R2["Cloudflare R2<br/><i>menu images</i>"]:::ext
+
+    W4 -->|"REST + JWT + X-Restaurant-Id"| A1
+    A1 --> A2 --> A3
+    A4 & A5 & A6 --> A3
+    A3 -->|"set_config(...,true) then query"| DB
+
+    META -->|"inbound webhook"| E1
+    E1 --> E2 --> E3
+    E3 --> E4 --> E5
+    E5 --> E6 -->|"outbound message"| META
+    E7 --> DB
+    E8 --> DB
+    E3 --> DB
+    E5 --> DB
+    PAY -->|"payment webhook"| E1
+    E5 -->|"payment request / refund"| PAY
+    W3 --> R2
+
+    SHARED -.->|"imported by"| ENGINE
+    SHARED -.->|"imported by"| API
+    SHARED -.->|"imported by"| WEB

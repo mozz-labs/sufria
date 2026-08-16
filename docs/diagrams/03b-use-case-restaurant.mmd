@@ -1,0 +1,36 @@
+flowchart TB
+    classDef actor fill:#FCE8D6,stroke:#8A4A0A,stroke-width:1px,color:#161615
+    classDef uc fill:#FFFFFF,stroke:#0E7C7B,stroke-width:1px,color:#161615
+
+    S(["Restaurant Staff"]):::actor
+    O(["Restaurant Owner"]):::actor
+
+    subgraph OPS["Daily operations"]
+        U12["View live orders<br/><b>FR-12</b>"]:::uc
+        U13["Accept, progress<br/>or cancel order<br/><b>FR-13</b>"]:::uc
+        U2["Manage menu<br/><b>FR-02</b>"]:::uc
+    end
+
+    subgraph SETUP["Setup and administration — owner only"]
+        U1["Register and configure<br/>restaurant<br/><b>FR-01</b>"]:::uc
+        U3["Provision WhatsApp<br/>number<br/><b>FR-03</b>"]:::uc
+        U4["Customise message<br/>templates<br/><b>FR-04</b>"]:::uc
+        U16["Manage subscription<br/><b>FR-16</b>"]:::uc
+    end
+
+    subgraph ANALYTICS["Analytics and ownership — owner only"]
+        U17["Basic analytics<br/><b>FR-17</b>"]:::uc
+        U18["Ownership /<br/>Health Score<br/><b>FR-18</b>"]:::uc
+        U19["Conversion funnel<br/><b>FR-19</b>"]:::uc
+        U20["Customer timeline<br/><b>FR-20</b>"]:::uc
+        U21["At-risk customers<br/><b>FR-21</b>"]:::uc
+    end
+
+    S --> U12
+    S --> U13
+    S --> U2
+    O --> U12
+    O --> U2
+    O --> U1
+    OPS ~~~ SETUP
+    SETUP ~~~ ANALYTICS
