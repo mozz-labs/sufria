@@ -5,5 +5,5 @@
  * imported from the backend's type definitions". بريبوهات منفصلة هاد بيتطلب
  * نشر حزمة npm أو git submodule. بـpnpm workspace بيصير import عادي.
  */
-export * from './schema.js';
-export * from './domain.js';
+export * from "./schema.js";
+export * from "./domain.js";

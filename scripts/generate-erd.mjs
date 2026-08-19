@@ -6,10 +6,13 @@
  *
  *   node scripts/generate-erd.mjs > docs/diagrams/erd.mmd
  */
-import { Client } from 'pg';
+import { Client } from "pg";
 
 const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
-if (!url) { console.error('لا يوجد DATABASE_URL'); process.exit(1); }
+if (!url) {
+  console.error("لا يوجد DATABASE_URL");
+  process.exit(1);
+}
 
 const db = new Client({ connectionString: url });
 await db.connect();
@@ -64,9 +67,9 @@ const { rows: fks } = await db.query(`
 const { rows: rls } = await db.query(`
   SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname = 'public'`);
 
-const pk = new Set(pks.map(r => `${r.table_name}.${r.column_name}`));
-const uq = new Set(uqs.map(r => `${r.table_name}.${r.column_name}`));
-const rlsOn = new Map(rls.map(r => [r.tablename, r.rowsecurity]));
+const pk = new Set(pks.map((r) => `${r.table_name}.${r.column_name}`));
+const uq = new Set(uqs.map((r) => `${r.table_name}.${r.column_name}`));
+const rlsOn = new Map(rls.map((r) => [r.tablename, r.rowsecurity]));
 
 const byTable = new Map();
 for (const c of cols) {
@@ -74,18 +77,27 @@ for (const c of cols) {
   byTable.get(c.table_name).push(c);
 }
 
-const out = ['erDiagram'];
+const out = ["erDiagram"];
 for (const [t, list] of [...byTable].sort()) {
   out.push(`  ${t} {`);
   for (const c of list) {
     const keys = [];
-    if (pk.has(`${t}.${c.column_name}`)) keys.push('PK');
-    if (fks.some(f => f.src_table === t && f.src_cols.split(',').includes(c.column_name))) keys.push('FK');
-    if (uq.has(`${t}.${c.column_name}`) && !keys.includes('PK')) keys.push('UK');
-    const note = c.is_nullable === 'YES' ? '"nullable"' : '';
-    out.push(`    ${c.type} ${c.column_name}${keys.length ? ' ' + keys.join(',') : ''}${note ? ' ' + note : ''}`);
+    if (pk.has(`${t}.${c.column_name}`)) keys.push("PK");
+    if (
+      fks.some(
+        (f) =>
+          f.src_table === t && f.src_cols.split(",").includes(c.column_name),
+      )
+    )
+      keys.push("FK");
+    if (uq.has(`${t}.${c.column_name}`) && !keys.includes("PK"))
+      keys.push("UK");
+    const note = c.is_nullable === "YES" ? '"nullable"' : "";
+    out.push(
+      `    ${c.type} ${c.column_name}${keys.length ? " " + keys.join(",") : ""}${note ? " " + note : ""}`,
+    );
   }
-  out.push('  }');
+  out.push("  }");
 }
 
 // لما يكون في FK بسيط و FK مركّب بين نفس الجدولين، نعرض المركّب:
@@ -94,15 +106,25 @@ const best = new Map();
 for (const f of fks) {
   const key = `${f.src_table}->${f.tgt_table}`;
   const prev = best.get(key);
-  if (!prev || (f.src_cols.includes(',') && !prev.src_cols.includes(','))) best.set(key, f);
+  if (!prev || (f.src_cols.includes(",") && !prev.src_cols.includes(",")))
+    best.set(key, f);
 }
 for (const f of best.values()) {
-  const label = f.src_cols.includes(',') ? `${f.src_cols} · tenant-safe` : f.src_cols;
+  const label = f.src_cols.includes(",")
+    ? `${f.src_cols} · tenant-safe`
+    : f.src_cols;
   out.push(`  ${f.tgt_table} ||--o{ ${f.src_table} : "${label}"`);
 }
 
-console.log(out.join('\n'));
-console.error(`\n// ${byTable.size} جدول · ${fks.length} علاقة · RLS على ${[...rlsOn.values()].filter(Boolean).length}`);
-console.error(`// بلا RLS بقرار موثّق: ${[...rlsOn].filter(([, v]) => !v).map(([k]) => k).join(', ')}`);
+console.log(out.join("\n"));
+console.error(
+  `\n// ${byTable.size} جدول · ${fks.length} علاقة · RLS على ${[...rlsOn.values()].filter(Boolean).length}`,
+);
+console.error(
+  `// بلا RLS بقرار موثّق: ${[...rlsOn]
+    .filter(([, v]) => !v)
+    .map(([k]) => k)
+    .join(", ")}`,
+);
 
 await db.end();

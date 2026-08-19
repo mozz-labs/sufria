@@ -4,9 +4,9 @@ import {
   ForbiddenException,
   Injectable,
   BadRequestException,
-} from '@nestjs/common';
-import { sql } from 'drizzle-orm';
-import { TenantDbService } from '../db/tenant-db.service.js';
+} from "@nestjs/common";
+import { sql } from "drizzle-orm";
+import { TenantDbService } from "../db/tenant-db.service.js";
 
 /**
  * NFR-02 / Blueprint §5.5:
@@ -40,9 +40,10 @@ export class RestaurantContextGuard implements CanActivate {
       throw new ForbiddenException();
     }
 
-    const restaurantId = req.params?.restaurantId ?? req.headers['x-restaurant-id'];
-    if (typeof restaurantId !== 'string' || !UUID_RE.test(restaurantId)) {
-      throw new BadRequestException('missing or malformed restaurant context');
+    const restaurantId =
+      req.params?.restaurantId ?? req.headers["x-restaurant-id"];
+    if (typeof restaurantId !== "string" || !UUID_RE.test(restaurantId)) {
+      throw new BadRequestException("missing or malformed restaurant context");
     }
 
     // The single privileged call in the whole service. SECURITY DEFINER, returns
@@ -66,4 +67,5 @@ export class RestaurantContextGuard implements CanActivate {
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

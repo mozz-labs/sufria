@@ -10,9 +10,13 @@
  *
  * Do not reimplement these inline elsewhere. Import them.
  */
-import { sql, and, eq, inArray, lt, isNotNull } from 'drizzle-orm';
-import type { TenantTx } from './types.js';
-import { orders, conversationSessions, processedWebhookEvents } from '@wafa/shared';
+import { sql, and, eq, inArray, lt, isNotNull } from "drizzle-orm";
+import type { TenantTx } from "./types.js";
+import {
+  orders,
+  conversationSessions,
+  processedWebhookEvents,
+} from "@wafa/shared";
 
 // ---------------------------------------------------------------------------
 // 1. EVENT-LEVEL IDEMPOTENCY — the unified dedup gate
@@ -33,12 +37,14 @@ import { orders, conversationSessions, processedWebhookEvents } from '@wafa/shar
 export async function claimWebhookEvent(
   tx: TenantTx,
   eventId: string,
-  source: 'whatsapp' | 'payment_gateway',
+  source: "whatsapp" | "payment_gateway",
 ): Promise<boolean> {
   const claimed = await tx
     .insert(processedWebhookEvents)
     .values({ eventId, source })
-    .onConflictDoNothing({ target: [processedWebhookEvents.eventId, processedWebhookEvents.source] })
+    .onConflictDoNothing({
+      target: [processedWebhookEvents.eventId, processedWebhookEvents.source],
+    })
     .returning({ id: processedWebhookEvents.id });
 
   return claimed.length === 1;
@@ -66,7 +72,12 @@ export async function advanceSessionState(
   const updated = await tx
     .update(conversationSessions)
     .set({ state: next as never, lastMessageAt: new Date() })
-    .where(and(eq(conversationSessions.id, sessionId), eq(conversationSessions.state, expected as never)))
+    .where(
+      and(
+        eq(conversationSessions.id, sessionId),
+        eq(conversationSessions.state, expected as never),
+      ),
+    )
     .returning({ id: conversationSessions.id });
 
   return updated.length === 1;
@@ -87,7 +98,11 @@ export async function advanceSessionState(
 //    (github.com/prisma/prisma/issues/8580). $queryRaw only.
 // ---------------------------------------------------------------------------
 export async function lockOrderForUpdate(tx: TenantTx, orderId: string) {
-  const [order] = await tx.select().from(orders).where(eq(orders.id, orderId)).for('update');
+  const [order] = await tx
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .for("update");
   return order ?? null;
 }
 
@@ -96,7 +111,7 @@ export async function lockOrderByGatewayRef(tx: TenantTx, gatewayRef: string) {
     .select()
     .from(orders)
     .where(eq(orders.paymentGatewayRef, gatewayRef))
-    .for('update');
+    .for("update");
   return order ?? null;
 }
 
@@ -124,15 +139,15 @@ export async function claimExpiredPickups(tx: TenantTx, limit = 100) {
     .from(orders)
     .where(
       and(
-        eq(orders.fulfillmentType, 'pickup'),
-        eq(orders.status, 'ready'),
+        eq(orders.fulfillmentType, "pickup"),
+        eq(orders.status, "ready"),
         isNotNull(orders.readyAt),
         // orders.ready_at, not order_status_history — see ADR-002.
         lt(orders.readyAt, sql`now() - interval '24 hours'`),
       ),
     )
     .limit(limit)
-    .for('update', { skipLocked: true });
+    .for("update", { skipLocked: true });
 }
 
 /** Online orders stuck unpaid for more than 2h. Cancelled, never refunded — no money arrived. */
@@ -142,13 +157,18 @@ export async function claimStuckOnlinePayments(tx: TenantTx, limit = 100) {
     .from(orders)
     .where(
       and(
-        eq(orders.paymentStatus, 'pending_online'),
-        inArray(orders.status, ['pending_acceptance', 'accepted', 'preparing', 'ready']),
+        eq(orders.paymentStatus, "pending_online"),
+        inArray(orders.status, [
+          "pending_acceptance",
+          "accepted",
+          "preparing",
+          "ready",
+        ]),
         lt(orders.createdAt, sql`now() - interval '2 hours'`),
       ),
     )
     .limit(limit)
-    .for('update', { skipLocked: true });
+    .for("update", { skipLocked: true });
 }
 
 // ---------------------------------------------------------------------------
