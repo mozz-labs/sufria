@@ -23,7 +23,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: devpass
           POSTGRES_DB: wafa
-        ports: ['5432:5432']
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres -d wafa"
           --health-interval 3s --health-timeout 3s --health-retries 20
@@ -32,7 +32,9 @@ jobs:
       # على الـCI بنستخدم postgres لتشغيل الـmigrations، وبعدين
       # البوابة الأمنية بتعمل SET ROLE wafa_dashboard لتختبر العزل فعليا.
       MIGRATION_DATABASE_URL: postgres://postgres:devpass@localhost:5432/wafa
-      DATABASE_URL: postgres://postgres:devpass@localhost:5432/wafa
+      # 🔴 لازم دور غير superuser. دور postgres بيتخطى RLS بصمت، فبتخضرّ
+      # فحوصات العزل وهي ما بتفحص إشي. نفس القاعدة مكتوبة بـ.env.example.
+      DATABASE_URL: postgres://wafa_dashboard:devpass@localhost:5432/wafa
 
     steps:
       - uses: actions/checkout@v4
