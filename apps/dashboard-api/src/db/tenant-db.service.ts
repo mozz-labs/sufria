@@ -1,8 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { sql } from 'drizzle-orm';
-import { Pool } from 'pg';
-import * as schema from '@wafa/shared';
+import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
+import { Pool } from "pg";
+import * as schema from "@wafa/shared";
 
 export type TenantTx = NodePgDatabase<typeof schema>;
 
@@ -55,15 +55,18 @@ export class TenantDbService {
     // ملاحظة: execute() تبع node-postgres بترجّع QueryResult مش مصفوفة.
     // الصفوف بـ.rows — الخلط بينهم بيعطي undefined بصمت، يعني الفحص
     // بيمر دايما وهو فعليا ما بيفحص إشي.
-    const res = await this.db.execute<{ rolsuper: boolean; rolbypassrls: boolean }>(
+    const res = await this.db.execute<{
+      rolsuper: boolean;
+      rolbypassrls: boolean;
+    }>(
       sql`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`,
     );
     const row = res.rows[0];
     if (row?.rolsuper || row?.rolbypassrls) {
       throw new Error(
-        'DATABASE_URL connects as a superuser or BYPASSRLS role. ' +
-          'Row-Level Security is bypassed and tenant isolation is OFF. ' +
-          'Use the wafa_dashboard role.',
+        "DATABASE_URL connects as a superuser or BYPASSRLS role. " +
+          "Row-Level Security is bypassed and tenant isolation is OFF. " +
+          "Use the wafa_dashboard role.",
       );
     }
   }
@@ -72,13 +75,18 @@ export class TenantDbService {
    * @param restaurantId MUST already have been verified by RestaurantContextGuard.
    *                     This method enforces isolation; it does not decide access.
    */
-  async runInTenant<T>(restaurantId: string, work: (tx: TenantTx) => Promise<T>): Promise<T> {
+  async runInTenant<T>(
+    restaurantId: string,
+    work: (tx: TenantTx) => Promise<T>,
+  ): Promise<T> {
     if (!UUID_RE.test(restaurantId)) {
       // Defence in depth. The guard should have rejected this long before here.
-      throw new InternalServerErrorException('invalid tenant context');
+      throw new InternalServerErrorException("invalid tenant context");
     }
     return this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT set_config('app.current_restaurant_id', ${restaurantId}, true)`);
+      await tx.execute(
+        sql`SELECT set_config('app.current_restaurant_id', ${restaurantId}, true)`,
+      );
       return work(tx as TenantTx);
     });
   }
@@ -93,4 +101,5 @@ export class TenantDbService {
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

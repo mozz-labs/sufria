@@ -20,15 +20,15 @@ services:
       POSTGRES_PASSWORD: devpass
       POSTGRES_DB: wafa
       # ترتيب فرز يتعامل مع العربي صح
-      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=ar-JO --encoding=UTF8'
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=ar-JO --encoding=UTF8"
     ports:
       # 5432 عالجهاز -> 5432 جوا الكونتينر
-      - '5432:5432'
+      - "5432:5432"
     volumes:
       - wafa-pgdata:/var/lib/postgresql/data
     healthcheck:
       # pnpm db:migrate بينتظر لهون قبل ما يشتغل
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d wafa']
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wafa"]
       interval: 3s
       timeout: 3s
       retries: 20
