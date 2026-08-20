@@ -29,18 +29,20 @@ jobs:
           --health-interval 3s --health-timeout 3s --health-retries 20
 
     env:
-      # على الـCI بنستخدم postgres لتشغيل الـmigrations، وبعدين
-      # البوابة الأمنية بتعمل SET ROLE wafa_dashboard لتختبر العزل فعليا.
+      # Migrations run as postgres; the security gate then does
+      # SET ROLE wafa_dashboard so isolation is exercised for real.
       MIGRATION_DATABASE_URL: postgres://postgres:devpass@localhost:5432/wafa
-      # 🔴 لازم دور غير superuser. دور postgres بيتخطى RLS بصمت، فبتخضرّ
-      # فحوصات العزل وهي ما بتفحص إشي. نفس القاعدة مكتوبة بـ.env.example.
+      # 🔴 Must be a non-superuser role. `postgres` bypasses RLS silently,
+      # so isolation checks go green without checking anything. Same rule
+      # is documented in .env.example.
       DATABASE_URL: postgres://wafa_dashboard:devpass@localhost:5432/wafa
 
     steps:
       - uses: actions/checkout@v4
 
-      # نسخة pnpm بتنقرأ من "packageManager" بـpackage.json — مصدر واحد.
-      # تحديدها هون كمان بيرمي ERR_PNPM_BAD_PM_VERSION ويوقف الـCI فورا.
+      # pnpm version comes from "packageManager" in package.json — one
+      # source of truth. Declaring it here too throws
+      # ERR_PNPM_BAD_PM_VERSION and kills the run before any check runs.
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
@@ -48,48 +50,49 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      - name: تنصيب psql
+      - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
       - run: pnpm install --frozen-lockfile
 
-      - name: تنسيق
+      - name: Format
         run: pnpm format:check
 
       - name: Lint
         run: pnpm lint
 
-      - name: فحص الأنواع
+      - name: Typecheck
         run: pnpm typecheck
 
-      - name: Migrations على قاعدة نظيفة
+      - name: Migrations on a clean database
         run: pnpm db:migrate
 
-      - name: بيانات الاختبار
+      - name: Seed fixtures
         run: pnpm db:seed
 
-      # 🔴 هذا هو الشرط. أي فيتشر فوق الـGuard ممنوع يُدمج قبل ما يخضرّ.
-      # بلوبرينت §5.5 — اختبار عزل السلاسل إلزامي، مش موصى فيه.
-      - name: 🔴 البوابة الأمنية — عزل السلاسل
+      # 🔴 This is THE condition. Nothing built on top of the Guard may
+      # be merged until this is green. Blueprint §5.5 — chain-isolation
+      # testing is mandatory, not advisory.
+      - name: 🔴 Security gate — chain isolation
         run: pnpm test:security
 
-      - name: فحوصات قاعدة البيانات (العمليات الحرجة + انحراف الـschema)
+      - name: Database checks (critical primitives + schema drift)
         run: pnpm test:db
 
-      - name: اختبارات الوحدة
+      - name: Unit tests
         run: pnpm -r --if-present test
 
-  # حاجز منفصل عشان يبين بوضوح بواجهة الـPR إذا الأمان هو السبب.
+  # Separate job so the PR UI shows plainly when security is the blocker.
   secrets-scan:
-    name: فحص الأسرار المسرّبة
+    name: Leaked secrets scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: رفض أي .env مرفوع
+      - name: Reject any committed .env
         run: |
           if git ls-files | grep -E '^\.env$|^\.env\.(local|production|staging)$'; then
-            echo "::error::ملف .env مرفوع على الريبو. شيله من الـgit history فورا وغيّر كل المفاتيح."
+            echo "::error::A .env file is committed. Purge it from git history now and rotate every key."
             exit 1
           fi
-          echo "✓ لا يوجد .env مرفوع"
+          echo "✓ no .env committed"

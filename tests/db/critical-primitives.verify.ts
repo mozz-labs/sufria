@@ -75,10 +75,11 @@ const conversationSessions = pgTable("conversation_sessions", {
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const db = drizzle(pool);
 
-// كل جملة على جدول مربوط بمطعم لازم تحمل سياق المطعم — بالضبط زي
-// TenantDbService بالإنتاج: set_config(..., true) محدود بالـtransaction.
-// بدون هذا الاختبار بينجح فقط لو الدور بيتخطى RLS (superuser)، وهذا
-// بالضبط ما كان يخفي العطل: الـCI كان يشغّل بدور postgres.
+// Every statement against a restaurant-scoped table must carry tenant
+// context — exactly as TenantDbService does in production:
+// set_config(..., true) is transaction-local. Without it this test only
+// passes when the connecting role bypasses RLS (a superuser), which is
+// precisely what hid the defect: CI ran as postgres.
 const RID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const withTenant = (tx: { execute: (q: unknown) => Promise<unknown> }) =>
   tx.execute(sql`SELECT set_config('app.current_restaurant_id', ${RID}, true)`);
@@ -237,8 +238,9 @@ async function main() {
   );
 
   // Two concurrent workers must claim disjoint sets, not block each other.
-  // بيانات الاختبار فيها طلب واحد لكل مطعم، وهذا الفحص محتاج صفّين ظاهرين
-  // داخل نفس حدود المستأجر — فبنضيف طلب مؤقت لنفس المطعم وبنشيله بعدين.
+  // The fixture holds one order per restaurant, and this check needs two
+  // rows visible inside the same tenant boundary — so add a temporary
+  // order for the same restaurant and remove it afterwards.
   const TMP = "f0000000-0000-4000-8000-0000000000aa";
   await db.transaction(async (tx) => {
     await withTenant(tx);
@@ -279,8 +281,8 @@ async function main() {
   );
   await poolB.end();
 
-  // تنظيف: نرجّع البيانات لحالتها عشان الاختبار يضل قابل لإعادة التشغيل،
-  // ولأن الفحص ٥ بيتوقع طلب واحد بالضبط ظاهر لهذا المطعم.
+  // Restore: keeps the test re-runnable, and section 5 expects exactly one
+  // order visible for this restaurant.
   await db.transaction(async (tx) => {
     await withTenant(tx);
     await tx.execute(sql`DELETE FROM orders WHERE id = ${TMP}`);
