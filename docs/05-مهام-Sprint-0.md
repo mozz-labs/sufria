@@ -320,6 +320,33 @@ pnpm test:db       # بيقارن TypeScript مقابل SQL عمود بعمود
 
 ## الثلاثاء ١٨ أغسطس — Auth
 
+### S0-06ب — إقلاع تطبيق NestJS
+**BE1 · ٣ ساعات · بيعتمد على S0-03 و S0-06**
+
+> **ليش هالمهمة موجودة:** `apps/dashboard-api/src/` فيه ملفين بس — `tenant-db.service.ts` و `restaurant-context.guard.ts`. **ما في `main.ts` ولا `app.module.ts`** — يعني ما في تطبيق يشتغل أصلا، و`package.json` بيقول `dev: tsx watch src/main.ts` لملف غير موجود. S0-08 و S0-09 الاتنين بيفترضوا تطبيق شغّال، وما كان في ولا مهمة بتبنيه. انكشفت ١٨ أغسطس ٢٠٢٦.
+
+المطلوب هيكل التطبيق **فاضي وشغّال**. ولا نقطة نهاية أعمال — هدول S0-08 وبعدها.
+
+1. `src/main.ts` — `reflect-metadata` **أول سطر**، بعدها `NestFactory.create(AppModule)`، والمنفذ من `process.env.DASHBOARD_API_PORT` (مش رقم مكتوب بالكود)
+2. `src/app.module.ts` — بيسجّل `TenantDbService` كـprovider وبيصدّره
+3. `GET /health` — بيرجّع `{ ok: true }` **بلا ما يلمس القاعدة**. لازم يشتغل حتى لو القاعدة واقعة، عشان تقدر تفرّق بين "التطبيق مات" و"القاعدة ماتت"
+
+**🔴 ثلاث مصايد بهالمهمة تحديدا:**
+
+**١. فحص الإقلاع حاليا ما بيوقف الإقلاع.** بالـconstructor مكتوب `void this.assertNotSuperuser()` — الوعد **مش منتظَر**. يعني لو `DATABASE_URL` كان دور superuser، السيرفر بيفتح المنفذ وبيبلّش يستقبل طلبات، والانفجار بيجي بعدين كـunhandled rejection بدل ما يمنع الإقلاع. **الإصلاح:** خلّي `TenantDbService implements OnModuleInit`، وانقل الفحص لـ`await this.assertNotSuperuser()` جوّا `onModuleInit()`. Nest بينتظر هالدالة، فالرمية بتوقف الإقلاع **قبل** ما يفتح المنفذ.
+
+**٢. المشروع ESM.** `package.json` فيه `"type": "module"` و tsconfig على `NodeNext`. يعني كل استيراد نسبي لازم ينتهي بـ`.js` بالكود المصدري: `from './app.module.js'` مش `'./app.module'`. الغلط هون بينهار **وقت التشغيل** مش وقت البناء، فما بتكشفه `pnpm typecheck`.
+
+**٣. ما تلمس `TenantDbService`** غير المصيدة ١. الحقل `db` خاص عمدا، و`runInTenant()` هو المسار الوحيد للبيانات. اقرأ التعليق الطويل بأول الملف قبل ما تكتب سطر.
+
+**القبول:**
+- `pnpm --filter @wafa/dashboard-api dev` بتشتغل وبتضل شغّالة
+- `curl localhost:3002/health` بيرجّع `{"ok":true}`
+- `pnpm typecheck` خضرا
+- 🔴 حطّ `DATABASE_URL` تبع دور `postgres` بالـ`.env` وشغّل — **التطبيق لازم يرفض يقلع**، ورسالة الخطأ تظهر، **والمنفذ ما بينفتح**. جرّبها فعليا ورجّع الملف بعدها
+
+---
+
 ### S0-08 — تسجيل دخول الموظف (JWT + Refresh)
 **BE1 · ٦ ساعات · بيعتمد على S0-05**
 
