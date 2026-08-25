@@ -16,6 +16,14 @@ if (
 }
 
 const r = psql({ file: "db/seed/chain-isolation-fixture.sql", quiet: true });
+
+// كلمات سر الموظفين للتطوير — لازمة لـ/auth/login (S0-08).
+if (
+  psql({ file: "db/seed/dev-staff-passwords.sql", quiet: true }).status !== 0
+) {
+  console.error("✗ فشل زرع كلمات سر الموظفين");
+  process.exit(1);
+}
 process.exit(
   r.status === 0
     ? (console.log("✓ بيانات الاختبار + كلمات سر الأدوار انزرعت"), 0)

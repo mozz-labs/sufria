@@ -91,6 +91,11 @@ export const staffAccounts = pgTable("staff_accounts", {
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // 0004 — one active session per account. NULL = signed out.
+  refreshTokenHash: text("refresh_token_hash"),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+    withTimezone: true,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

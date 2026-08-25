@@ -1,4 +1,9 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import {
+  Injectable,
+  InternalServerErrorException,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from "@nestjs/common";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import { Pool } from "pg";
@@ -31,7 +36,7 @@ export type TenantTx = NodePgDatabase<typeof schema>;
  *     id into SQL would put an injection point in the tenant boundary itself.
  */
 @Injectable()
-export class TenantDbService {
+export class TenantDbService implements OnModuleInit, OnModuleDestroy {
   private readonly pool: Pool;
   private readonly db: NodePgDatabase<typeof schema>;
 
@@ -41,7 +46,17 @@ export class TenantDbService {
       max: Number(process.env.PG_POOL_MAX ?? 10),
     });
     this.db = drizzle(this.pool, { schema });
-    void this.assertNotSuperuser();
+  }
+
+  /**
+   * 🔴 كان `void this.assertNotSuperuser()` بالـconstructor — يعني الوعد
+   * مش منتظَر: السيرفر بيفتح المنفذ وبيستقبل طلبات، والانفجار بيجي بعدين
+   * كـunhandled rejection. الفحص اللي وظيفته يمنع الإقلاع ما كان يمنع إشي.
+   *
+   * Nest بينتظر onModuleInit، فالرمية هون بتوقف الإقلاع قبل فتح المنفذ.
+   */
+  async onModuleInit(): Promise<void> {
+    await this.assertNotSuperuser();
   }
 
   /**

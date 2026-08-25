@@ -17,8 +17,8 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "لوحة تحكم وفا",
-  description: "لوحة تحكم استقبال الطلبات",
+  title: "لوحة تحكم المطعم",
+  description: "استقبال وإدارة طلبات واتساب",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -26,6 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="ar"
       dir="rtl"
+      data-theme="light"
       className={`${almarai.variable} ${plexArabic.variable}`}
     >
       <body>{children}</body>

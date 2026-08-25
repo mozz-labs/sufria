@@ -1,0 +1,63 @@
+/* الحالة الفارغة: جملة عربية قصيرة + الإجراء الأساسي.
+   أبدا مساحة بيضا، وأبدا شكل رسالة خطأ. (S0-13) */
+.wrap {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  min-height: 58vh;
+  padding: var(--s6);
+}
+
+.inner {
+  max-width: 30rem;
+  animation: fade 0.45s ease both;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--s5);
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink-3);
+  font-size: 1.5rem;
+  box-shadow: var(--shadow-1);
+}
+
+.title {
+  font-size: 1.25rem;
+  margin-bottom: var(--s2);
+}
+
+.body {
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  margin-bottom: var(--s5);
+}
+
+.action {
+  min-height: var(--tap);
+  padding: 0 var(--s5);
+  border-radius: var(--r-md);
+  border: 0;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-family: var(--font-heading), sans-serif;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--brand-hover);
+}
