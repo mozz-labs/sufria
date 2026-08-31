@@ -15,7 +15,7 @@ while (Date.now() < DEADLINE) {
       "-U",
       "postgres",
       "-d",
-      "wafa",
+      "sufria",
     ],
     { stdio: "ignore" },
   );

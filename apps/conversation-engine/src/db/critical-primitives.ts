@@ -1,5 +1,5 @@
 /**
- * The four database primitives the correctness of Wafa rests on.
+ * The four database primitives the correctness of Sufria rests on.
  *
  * Every one of them appears in a sequence diagram (Blueprint §6) and in an NFR.
  * They are collected in one file because they are also the entire technical
@@ -16,7 +16,7 @@ import {
   orders,
   conversationSessions,
   processedWebhookEvents,
-} from "@wafa/shared";
+} from "@sufria/shared";
 
 // ---------------------------------------------------------------------------
 // 1. EVENT-LEVEL IDEMPOTENCY — the unified dedup gate

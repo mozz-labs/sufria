@@ -1,5 +1,5 @@
 {
-  "name": "@wafa/conversation-engine",
+  "name": "@sufria/conversation-engine",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "test": "echo \"(اختبارات conversation-engine — Sprint 1)\" && exit 0"
   },
   "dependencies": {
-    "@wafa/shared": "workspace:*",
+    "@sufria/shared": "workspace:*",
     "drizzle-orm": "~0.45.2",
     "pg": "^8.23.0",
     "pino": "^10.3.1",

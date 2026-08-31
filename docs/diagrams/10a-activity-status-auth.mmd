@@ -16,6 +16,6 @@ flowchart TB
     A4 --> A5["SELECT order FOR UPDATE — row lock"]:::crit
     A5 --> D2{"accepted requested AND online<br/>AND payment_status != paid?"}:::dec
     D2 -- yes --> E2["400 · acceptance gate<br/>'لا يمكن قبول الطلب قبل تأكيد الدفع'<br/><i>only cancel remains available</i>"]:::crit --> F
-    D2 -- no --> D3{"canTransition(from, to)?<br/><i>from @wafa/shared</i>"}:::dec
+    D2 -- no --> D3{"canTransition(from, to)?<br/><i>from @sufria/shared</i>"}:::dec
     D3 -- no --> E3["400 · invalid transition"]:::act --> F
     D3 -- yes --> F3(("continue in part b")):::fin

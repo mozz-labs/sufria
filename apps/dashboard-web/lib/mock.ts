@@ -5,7 +5,7 @@
 
 export const DEMO_CREDENTIALS = {
   user: "manager@shawarma.jo",
-  pass: "wafa1234",
+  pass: "sufria1234",
 } as const;
 
 export const STAFF = { name: "أحمد درويش", role: "مدير الفرع" } as const;

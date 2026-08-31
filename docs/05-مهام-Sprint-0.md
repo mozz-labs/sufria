@@ -340,7 +340,7 @@ pnpm test:db       # بيقارن TypeScript مقابل SQL عمود بعمود
 **٣. ما تلمس `TenantDbService`** غير المصيدة ١. الحقل `db` خاص عمدا، و`runInTenant()` هو المسار الوحيد للبيانات. اقرأ التعليق الطويل بأول الملف قبل ما تكتب سطر.
 
 **القبول:**
-- `pnpm --filter @wafa/dashboard-api dev` بتشتغل وبتضل شغّالة
+- `pnpm --filter @sufria/dashboard-api dev` بتشتغل وبتضل شغّالة
 - `curl localhost:3002/health` بيرجّع `{"ok":true}`
 - `pnpm typecheck` خضرا
 - 🔴 حطّ `DATABASE_URL` تبع دور `postgres` بالـ`.env` وشغّل — **التطبيق لازم يرفض يقلع**، ورسالة الخطأ تظهر، **والمنفذ ما بينفتح**. جرّبها فعليا ورجّع الملف بعدها

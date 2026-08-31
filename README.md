@@ -71,7 +71,7 @@ NOTICE:  ALL 12 ASSERTIONS PASSED — chain isolation gate is green
 ## البنية
 
 ```
-wafa/
+sufria/
 ├── db/migrations/          🔴 SQL خام. المصدر الوحيد للـschema
 ├── db/seed/                بيانات اختبار (dev فقط)
 ├── tests/security/         🔴 بوابة Sprint 0 الإلزامية
@@ -136,13 +136,13 @@ superuser بيتجاوز كل RLS **بلا رسالة خطأ**. `TenantDbService
 
 | الوثيقة | شو فيها |
 |---|---|
-| `docs/Wafa_SRS_Chapters_1_2_v1.2.docx` **v1.2** | المرجع الرسمي: FR-01→21، NFR-01→12 |
-| `docs/wafa-project-blueprint-v2.md` **v2.0** | القرارات التقنية + ٤ مخططات تسلسل + خطة الـSprints + سجل مخاطر |
+| `docs/Sufria_SRS_Chapters_1_2_v1.2.docx` **v1.2** | المرجع الرسمي: FR-01→21، NFR-01→12 |
+| `docs/sufria-project-blueprint-v2.md` **v2.0** | القرارات التقنية + ٤ مخططات تسلسل + خطة الـSprints + سجل مخاطر |
 | `DESIGN.md` | نظام التصميم — التوكنز، الخطوط، ألوان الحالات السبعة |
 | `docs/ADR-001-orm.md` | ليش Drizzle مش Prisma، مع إثبات تشغيلي |
 | `docs/ADR-002-schema-deltas.md` | ٤ فروقات مقصودة عن بلوبرينت §5.7 |
 | `docs/ADR-003-مراجعة-الستاك.md` | مراجعة الستاك: قراران يتغيّروا، اثنان يُقفلوا، ٤ فجوات |
-| `docs/Wafa_Chapter3_System_Design_v1.1.docx` | **الفصل ٣ — تصميم النظام**، ٣٦ صفحة، ٢٦ شكل، ٢٣ قصة مستخدم |
+| `docs/Sufria_Chapter3_System_Design_v1.1.docx` | **الفصل ٣ — تصميم النظام**، ٣٦ صفحة، ٢٦ شكل، ٢٣ قصة مستخدم |
 | `docs/diagrams/` | مصادر المخططات · الـERD مولّد من القاعدة |
 | `docs/stitch-prompts.md` | برومبتات التصميم — 🧊 **مجمّدة** لحد ما يخلص الاسم والشعار |
 

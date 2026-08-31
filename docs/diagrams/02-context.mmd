@@ -9,17 +9,17 @@ flowchart TB
     PAY(["Payment Provider<br/><i>collection and refund</i>"]):::ext
     MON(["Sentry / Uptime Monitor<br/><i>error and availability alerts</i>"]):::ext
 
-    WAFA["<b>WAFA PLATFORM</b><br/>conversational ordering,<br/>order management,<br/>ownership analytics"]:::sys
+    SUFRIA["<b>SUFRIA PLATFORM</b><br/>conversational ordering,<br/>order management,<br/>ownership analytics"]:::sys
 
     CUST -- "order messages, button and list selections" --> META
-    META -- "inbound webhook (signed)" --> WAFA
-    WAFA -- "menu, cart, confirmation, status notifications" --> META
+    META -- "inbound webhook (signed)" --> SUFRIA
+    SUFRIA -- "menu, cart, confirmation, status notifications" --> META
     META -- "message delivery" --> CUST
 
-    STAFF -- "credentials, status transitions, menu edits" --> WAFA
-    WAFA -- "live orders, customer records, analytics" --> STAFF
+    STAFF -- "credentials, status transitions, menu edits" --> SUFRIA
+    SUFRIA -- "live orders, customer records, analytics" --> STAFF
 
-    WAFA -- "payment request, refund request" --> PAY
-    PAY -- "payment confirmation (signed webhook)" --> WAFA
+    SUFRIA -- "payment request, refund request" --> PAY
+    PAY -- "payment confirmation (signed webhook)" --> SUFRIA
 
-    WAFA -- "unhandled errors, health signal" --> MON
+    SUFRIA -- "unhandled errors, health signal" --> MON

@@ -7,7 +7,7 @@ import {
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
 import { Pool } from "pg";
-import * as schema from "@wafa/shared";
+import * as schema from "@sufria/shared";
 
 export type TenantTx = NodePgDatabase<typeof schema>;
 
@@ -81,7 +81,7 @@ export class TenantDbService implements OnModuleInit, OnModuleDestroy {
       throw new Error(
         "DATABASE_URL connects as a superuser or BYPASSRLS role. " +
           "Row-Level Security is bypassed and tenant isolation is OFF. " +
-          "Use the wafa_dashboard role.",
+          "Use the sufria_dashboard role.",
       );
     }
   }

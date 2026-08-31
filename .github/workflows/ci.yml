@@ -22,20 +22,20 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: devpass
-          POSTGRES_DB: wafa
+          POSTGRES_DB: sufria
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres -d wafa"
+          --health-cmd "pg_isready -U postgres -d sufria"
           --health-interval 3s --health-timeout 3s --health-retries 20
 
     env:
       # Migrations run as postgres; the security gate then does
-      # SET ROLE wafa_dashboard so isolation is exercised for real.
-      MIGRATION_DATABASE_URL: postgres://postgres:devpass@localhost:5432/wafa
+      # SET ROLE sufria_dashboard so isolation is exercised for real.
+      MIGRATION_DATABASE_URL: postgres://postgres:devpass@localhost:5432/sufria
       # 🔴 Must be a non-superuser role. `postgres` bypasses RLS silently,
       # so isolation checks go green without checking anything. Same rule
       # is documented in .env.example.
-      DATABASE_URL: postgres://wafa_dashboard:devpass@localhost:5432/wafa
+      DATABASE_URL: postgres://sufria_dashboard:devpass@localhost:5432/sufria
 
     steps:
       - uses: actions/checkout@v4

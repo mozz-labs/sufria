@@ -1,5 +1,5 @@
 {
-  "name": "@wafa/dashboard-api",
+  "name": "@sufria/dashboard-api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@wafa/shared": "workspace:*",
+    "@sufria/shared": "workspace:*",
     "drizzle-orm": "~0.45.2",
     "pg": "^8.23.0",
     "pino": "^10.3.1",

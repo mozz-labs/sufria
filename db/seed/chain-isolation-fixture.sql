@@ -18,9 +18,9 @@ INSERT INTO restaurants (id, chain_id, name, whatsapp_phone_id, status) VALUES
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', NULL,                                   'مطعم غير مرتبط',                'PHONE_Z', 'active');
 
 INSERT INTO staff_accounts (id, phone_or_email, password_hash, name) VALUES
-  ('50000000-0000-4000-8000-000000000001', 'both@wafa.test',  'x', 'موظف بفرعين'),
-  ('50000000-0000-4000-8000-000000000002', 'onlya@wafa.test', 'x', 'موظف فرع أ فقط'),
-  ('50000000-0000-4000-8000-000000000003', 'onlyz@wafa.test', 'x', 'موظف مطعم غير مرتبط');
+  ('50000000-0000-4000-8000-000000000001', 'both@sufria.test',  'x', 'موظف بفرعين'),
+  ('50000000-0000-4000-8000-000000000002', 'onlya@sufria.test', 'x', 'موظف فرع أ فقط'),
+  ('50000000-0000-4000-8000-000000000003', 'onlyz@sufria.test', 'x', 'موظف مطعم غير مرتبط');
 
 INSERT INTO restaurant_staff (staff_account_id, restaurant_id, role, is_active) VALUES
   ('50000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'manager', true),

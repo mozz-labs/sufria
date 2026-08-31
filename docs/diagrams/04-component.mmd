@@ -5,7 +5,7 @@ flowchart TB
     classDef db fill:#DCEEDC,stroke:#24632F,stroke-width:2px,color:#161615
     classDef ext fill:#F5DEDD,stroke:#8A332F,color:#161615
 
-    subgraph REPO["wafa — single repository (pnpm workspaces)"]
+    subgraph REPO["sufria — single repository (pnpm workspaces)"]
         direction TB
 
         subgraph WEB["apps/dashboard-web — Next.js 16"]
@@ -15,7 +15,7 @@ flowchart TB
             W4["API client + polling"]:::mod
         end
 
-        subgraph SHARED["packages/shared — @wafa/shared"]
+        subgraph SHARED["packages/shared — @sufria/shared"]
             SH1["Drizzle schema mirror"]:::shared
             SH2["Domain types, status labels,<br/>allowed transitions,<br/>acceptance gate"]:::shared
         end

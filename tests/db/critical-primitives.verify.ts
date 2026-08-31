@@ -292,7 +292,7 @@ async function main() {
   });
 
   // --- 5. RLS context through drizzle transaction --------------------------
-  await db.execute(sql`SET ROLE wafa_dashboard`);
+  await db.execute(sql`SET ROLE sufria_dashboard`);
   const rid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const scoped = await db.transaction(async (tx) => {
     await tx.execute(

@@ -48,9 +48,9 @@ psql -q "$DB" -c "ALTER TABLE orders ENABLE ROW LEVEL SECURITY;" >/dev/null
 #    stops working: a DATABASE_URL that points at the admin user because that is
 #    what the hosting provider handed out.
 # ---------------------------------------------------------------------------
-psql -q "$DB" -c "ALTER ROLE wafa_dashboard SUPERUSER;" >/dev/null
+psql -q "$DB" -c "ALTER ROLE sufria_dashboard SUPERUSER;" >/dev/null
 expect_gate_to_fail "app role granted SUPERUSER"
-psql -q "$DB" -c "ALTER ROLE wafa_dashboard NOSUPERUSER;" >/dev/null
+psql -q "$DB" -c "ALTER ROLE sufria_dashboard NOSUPERUSER;" >/dev/null
 
 # ---------------------------------------------------------------------------
 # 3. Session-scoped tenant context instead of transaction-scoped.
@@ -59,12 +59,12 @@ psql -q "$DB" -c "ALTER ROLE wafa_dashboard NOSUPERUSER;" >/dev/null
 # ---------------------------------------------------------------------------
 leak=$(psql -q -t -A "$DB" <<'SQL'
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   SELECT set_config('app.current_restaurant_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', false);
   RESET ROLE;
 COMMIT;
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   SELECT count(*) FROM orders;
   RESET ROLE;
 ROLLBACK;

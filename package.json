@@ -1,5 +1,5 @@
 {
-  "name": "wafa",
+  "name": "sufria",
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "engines": {
@@ -15,8 +15,8 @@
     "test:security": "node --env-file-if-exists=.env scripts/test-security.mjs",
     "test:db": "tsx --env-file-if-exists=.env tests/db/critical-primitives.verify.ts && tsx --env-file-if-exists=.env tests/db/schema-drift.verify.ts",
     "test": "pnpm test:security && pnpm test:db && pnpm -r test",
-    "typecheck": "tsc -b --pretty && pnpm --filter @wafa/dashboard-web typecheck",
-    "lint": "eslint . --max-warnings 0 && pnpm --filter @wafa/dashboard-web lint",
+    "typecheck": "tsc -b --pretty && pnpm --filter @sufria/dashboard-web typecheck",
+    "lint": "eslint . --max-warnings 0 && pnpm --filter @sufria/dashboard-web lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev": "pnpm -r --parallel dev",

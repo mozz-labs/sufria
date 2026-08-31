@@ -19,7 +19,7 @@ DO $$ BEGIN RAISE NOTICE 'running chain-isolation security gate...'; END $$;
 -- A1. No tenant context => zero rows. The system fails CLOSED.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $$
   DECLARE n int;
   BEGIN
@@ -43,7 +43,7 @@ ROLLBACK;
 --     A forgotten one does not. RLS makes forgetting impossible.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true); END $ctx$;
   DO $$
   DECLARE n int; leaked text;
@@ -71,7 +71,7 @@ ROLLBACK;
 -- A3. Same connection, context switched to B => sees exactly B, never A.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', true); END $ctx$;
   DO $$
   DECLARE n int;
@@ -94,13 +94,13 @@ ROLLBACK;
 --     thing that catches it.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true); END $ctx$;
   RESET ROLE;
 COMMIT;
 
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $$
   DECLARE n int;
   BEGIN
@@ -116,7 +116,7 @@ ROLLBACK;
 -- A5. WITH CHECK — cannot write a row into another tenant.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true); END $ctx$;
   DO $$
   BEGIN
@@ -135,7 +135,7 @@ ROLLBACK;
 -- A6. Cannot MOVE an owned row to another tenant via UPDATE.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true); END $ctx$;
   DO $$
   BEGIN
@@ -155,7 +155,7 @@ ROLLBACK;
 -- A7. Cannot DELETE another tenant's rows (silently affects 0 rows, not theirs).
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true); END $ctx$;
   DO $$
   DECLARE n int;
@@ -173,7 +173,7 @@ ROLLBACK;
 --     (ADR-002). This asserts the denormalisation did not open a hole.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true); END $ctx$;
   DO $$
   DECLARE n int;
@@ -196,7 +196,7 @@ ROLLBACK;
 --     second half: an unknown id is not a wildcard.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', '99999999-9999-4999-8999-999999999999', true); END $ctx$;
   DO $$
   DECLARE n int;
@@ -213,7 +213,7 @@ ROLLBACK;
 --      to ''. NULLIF in app.current_restaurant() turns it into NULL -> no rows.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $ctx$ BEGIN PERFORM set_config('app.current_restaurant_id', '', true); END $ctx$;
   DO $$
   DECLARE n int;
@@ -230,7 +230,7 @@ ROLLBACK;
 --      false for an inactive membership.
 -- =============================================================================
 BEGIN;
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $$
   BEGIN
     IF NOT app.verify_membership('50000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') THEN
@@ -258,7 +258,7 @@ BEGIN;
   UPDATE restaurant_staff SET is_active = false
    WHERE staff_account_id = '50000000-0000-4000-8000-000000000001'
      AND restaurant_id    = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-  SET ROLE wafa_dashboard;
+  SET ROLE sufria_dashboard;
   DO $$
   BEGIN
     IF app.verify_membership('50000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb') THEN
