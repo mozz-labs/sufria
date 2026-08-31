@@ -10,7 +10,7 @@
 > 5. ✅ **§5.5 و §5.7 حُدِّثا بما نُفِّذ فعليا** — Drizzle مقفول، monorepo، أربعة فروقات schema، إصدارات محقَّقة
 > 6. ✅ **§11 جديد** — سجل مخاطر مرتّب
 >
-> **المرجع الرسمي للمتطلبات: `Wafa_SRS` نسخة 1.2.** هذا الملف قرارات تقنية + مخططات + خطة تنفيذ.
+> **المرجع الرسمي للمتطلبات: `Sufria_SRS` نسخة 1.2.** هذا الملف قرارات تقنية + مخططات + خطة تنفيذ.
 
 ---
 
@@ -91,7 +91,7 @@ Nexara **ليست خطرا وجوديا**: منتجها منصة عريضة (POS
 
 ## 3. المتطلبات
 
-المرجع الكامل: **`Wafa_SRS` v1.2** (FR-01→21، NFR-01→12).
+المرجع الكامل: **`Sufria_SRS` v1.2** (FR-01→21، NFR-01→12).
 
 **تصحيحات v1.1 (مطبَّقة):** FR-10 (توقيت إنشاء الطلب) · FR-11 (نطاق الإشعار) · FR-13 (بوابة القبول، المهلتان، `collected`) · NFR-09.
 
@@ -200,7 +200,7 @@ db/migrations/0001_enums_and_tables.sql:294
 
 كل webhook وارد يمر أولا ببوابة dedup موحّدة (`processed_webhook_events`) قبل أي منطق جلسة أو طلب (§5.6، مخطط 6.3).
 
-**🆕 قرار v2 — مستودع واحد (monorepo):** الخطة السابقة كانت 3 ريبوهات. **بعد التنفيذ الفعلي تبيّن أنه خطأ:** مشاركة الأنواع بين الخدمتين والفرونت اند تتطلب نشر حزمة npm أو submodules. بـpnpm workspaces تصبح `import { canAcceptOrder } from '@wafa/shared'`. الخدمتان مستقلتان **بالنشر**، مشتركتان **بالمستودع**.
+**🆕 قرار v2 — مستودع واحد (monorepo):** الخطة السابقة كانت 3 ريبوهات. **بعد التنفيذ الفعلي تبيّن أنه خطأ:** مشاركة الأنواع بين الخدمتين والفرونت اند تتطلب نشر حزمة npm أو submodules. بـpnpm workspaces تصبح `import { canAcceptOrder } from '@sufria/shared'`. الخدمتان مستقلتان **بالنشر**، مشتركتان **بالمستودع**.
 
 ### 5.3 قناة واتساب: Meta Cloud API مباشرة (بدون BSP)
 
@@ -569,7 +569,7 @@ sequenceDiagram
         alt new_status='accepted' AND payment_method='online' AND payment_status != 'paid'
             DashAPI-->>Staff: 400 — لا يمكن قبول الطلب قبل تأكيد الدفع
         else انتقال آخر
-            DashAPI->>DashAPI: canTransition(from, to) من @wafa/shared
+            DashAPI->>DashAPI: canTransition(from, to) من @sufria/shared
 
             alt غير مسموح
                 DashAPI-->>Staff: 400 انتقال غير صالح

@@ -295,13 +295,13 @@ PATCH /restaurants/:restaurantId/orders/:orderId/status
 2. SET LOCAL app.current_restaurant_id
 3. SELECT ... FOR UPDATE                    ← قفل الصف
 4. 🔴 بوابة القبول: أونلاين + مش مدفوع     → 400 "لا يمكن قبول الطلب قبل تأكيد الدفع"
-5. canTransition(from, to) من @wafa/shared  → 400
+5. canTransition(from, to) من @sufria/shared  → 400
 6. BEGIN → UPDATE + INSERT history → COMMIT
 ```
 
 🔴 **الخطوة ٤ بتنكتب من هلق حتى لو الدفع الإلكتروني مش مبني.** أسهل بكتير من إضافتها بـSprint 2 على كود شغّال، وأسلم — نسيانها بيخلي المطعم يحضّر طلب ما انحسبت فلوسه.
 
-🔴 **الخطوة ٥ بتستورد من `@wafa/shared`، ما بتتكرر هون.** نفس السطر اللي الواجهة بتعطّل فيه الأزرار.
+🔴 **الخطوة ٥ بتستورد من `@sufria/shared`، ما بتتكرر هون.** نفس السطر اللي الواجهة بتعطّل فيه الأزرار.
 
 ⚠️ `completed` بتنقل `payment_status` من `pending_cash` لـ`collected` **بنفس الـtransaction** (NFR-09). القيد `orders_completed_payment_settled` بالقاعدة بيرفض غير هيك — **لو نسيتها، الـINSERT بيفشل وبتعرف فورا.**
 
@@ -316,7 +316,7 @@ PATCH /restaurants/:restaurantId/orders/:orderId/status
 
 🔴 **بوابة القبول بالواجهة:**
 ```tsx
-const enabled = canAcceptOrder(order);   // من @wafa/shared — نفس دالة الباك اند
+const enabled = canAcceptOrder(order);   // من @sufria/shared — نفس دالة الباك اند
 ```
 لما تكون معطّلة: **دايما تحتها سطر شرح** — `لا يمكن قبول الطلب قبل تأكيد الدفع`.
 

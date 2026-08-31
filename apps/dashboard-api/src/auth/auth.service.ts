@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import * as argon2 from "argon2";
 import { eq, sql } from "drizzle-orm";
-import { staffAccounts } from "@wafa/shared";
+import { staffAccounts } from "@sufria/shared";
 import { TenantDbService } from "../db/tenant-db.service.js";
 import { env, ttlSeconds } from "../config/env.js";
 import type {

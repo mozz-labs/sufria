@@ -1,5 +1,5 @@
 -- =============================================================================
--- Wafa — Migration 0001: Extensions, Enums, Tables
+-- Sufria — Migration 0001: Extensions, Enums, Tables
 -- Sprint 0. Source of truth: Blueprint §5.7 + SRS v1.1 (FR-01..FR-21, NFR-01..12)
 --
 -- IMPORTANT: raw SQL, not ORM-generated. RLS policies, FORCE ROW LEVEL SECURITY,

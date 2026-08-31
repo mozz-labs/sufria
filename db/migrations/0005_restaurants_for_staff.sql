@@ -44,6 +44,6 @@ CREATE OR REPLACE FUNCTION app.restaurants_for_staff(p_staff_account_id uuid)
   $$;
 
 REVOKE ALL ON FUNCTION app.restaurants_for_staff(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.restaurants_for_staff(uuid) TO wafa_dashboard;
+GRANT EXECUTE ON FUNCTION app.restaurants_for_staff(uuid) TO sufria_dashboard;
 
 COMMIT;

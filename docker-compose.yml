@@ -13,25 +13,25 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: wafa-postgres
+    container_name: sufria-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: devpass
-      POSTGRES_DB: wafa
+      POSTGRES_DB: sufria
       # ترتيب فرز يتعامل مع العربي صح
       POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=ar-JO --encoding=UTF8"
     ports:
       # 5432 عالجهاز -> 5432 جوا الكونتينر
       - "5432:5432"
     volumes:
-      - wafa-pgdata:/var/lib/postgresql/data
+      - sufria-pgdata:/var/lib/postgresql/data
     healthcheck:
       # pnpm db:migrate بينتظر لهون قبل ما يشتغل
-      test: ["CMD-SHELL", "pg_isready -U postgres -d wafa"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sufria"]
       interval: 3s
       timeout: 3s
       retries: 20
 
 volumes:
-  wafa-pgdata:
+  sufria-pgdata:

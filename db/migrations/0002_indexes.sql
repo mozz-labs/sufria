@@ -1,5 +1,5 @@
 -- =============================================================================
--- Wafa — Migration 0002: Indexes
+-- Sufria — Migration 0002: Indexes
 --
 -- Every index here backs a query that appears literally in a sequence diagram
 -- (Blueprint §6) or an NFR target. Nothing speculative.

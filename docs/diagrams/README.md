@@ -1,7 +1,7 @@
 # مخططات تصميم النظام — الفصل ٣
 
 **٢٦ مخطط.** المصادر `.mmd` هي المرجع؛ الـ`.png` مولّدة منها، والوثيقة الرسمية
-`docs/Wafa_Chapter3_System_Design_v1.0.docx` مبنية من الـ`.png`.
+`docs/Sufria_Chapter3_System_Design_v1.0.docx` مبنية من الـ`.png`.
 
 GitHub بيعرض Mermaid تلقائيا، فكل مخطط تحت بينعرض مباشرة بالمتصفح.
 
@@ -73,20 +73,20 @@ flowchart TB
     PAY(["Payment Provider<br/><i>collection and refund</i>"]):::ext
     MON(["Sentry / Uptime Monitor<br/><i>error and availability alerts</i>"]):::ext
 
-    WAFA["<b>WAFA PLATFORM</b><br/>conversational ordering,<br/>order management,<br/>ownership analytics"]:::sys
+    SUFRIA["<b>SUFRIA PLATFORM</b><br/>conversational ordering,<br/>order management,<br/>ownership analytics"]:::sys
 
     CUST -- "order messages, button and list selections" --> META
-    META -- "inbound webhook (signed)" --> WAFA
-    WAFA -- "menu, cart, confirmation, status notifications" --> META
+    META -- "inbound webhook (signed)" --> SUFRIA
+    SUFRIA -- "menu, cart, confirmation, status notifications" --> META
     META -- "message delivery" --> CUST
 
-    STAFF -- "credentials, status transitions, menu edits" --> WAFA
-    WAFA -- "live orders, customer records, analytics" --> STAFF
+    STAFF -- "credentials, status transitions, menu edits" --> SUFRIA
+    SUFRIA -- "live orders, customer records, analytics" --> STAFF
 
-    WAFA -- "payment request, refund request" --> PAY
-    PAY -- "payment confirmation (signed webhook)" --> WAFA
+    SUFRIA -- "payment request, refund request" --> PAY
+    PAY -- "payment confirmation (signed webhook)" --> SUFRIA
 
-    WAFA -- "unhandled errors, health signal" --> MON
+    SUFRIA -- "unhandled errors, health signal" --> MON
 ```
 
 ## الشكل 3.2 — `03a-use-case-customer`
@@ -201,7 +201,7 @@ flowchart TB
     classDef db fill:#DCEEDC,stroke:#24632F,stroke-width:2px,color:#161615
     classDef ext fill:#F5DEDD,stroke:#8A332F,color:#161615
 
-    subgraph REPO["wafa — single repository (pnpm workspaces)"]
+    subgraph REPO["sufria — single repository (pnpm workspaces)"]
         direction TB
 
         subgraph WEB["apps/dashboard-web — Next.js 16"]
@@ -211,7 +211,7 @@ flowchart TB
             W4["API client + polling"]:::mod
         end
 
-        subgraph SHARED["packages/shared — @wafa/shared"]
+        subgraph SHARED["packages/shared — @sufria/shared"]
             SH1["Drizzle schema mirror"]:::shared
             SH2["Domain types, status labels,<br/>allowed transitions,<br/>acceptance gate"]:::shared
         end
@@ -282,7 +282,7 @@ flowchart TB
             P2["Next.js 16 — dashboard-web<br/><i>static + client-side rendering</i>"]:::proc
         end
         subgraph N3["Managed PostgreSQL (Supabase / Neon)"]
-            P3[("PostgreSQL 16<br/>roles: wafa_dashboard · wafa_engine<br/><i>neither is superuser</i>")]:::proc
+            P3[("PostgreSQL 16<br/>roles: sufria_dashboard · sufria_engine<br/><i>neither is superuser</i>")]:::proc
         end
     end
 
@@ -546,7 +546,7 @@ classDiagram
         -applyCompletionEffects(order) void
     }
     class SharedDomain {
-        <<package @wafa/shared>>
+        <<package @sufria/shared>>
         +ALLOWED_TRANSITIONS
         +canTransition(from, to) boolean
         +canAcceptOrder(order) boolean
@@ -813,7 +813,7 @@ flowchart TB
     A4 --> A5["SELECT order FOR UPDATE — row lock"]:::crit
     A5 --> D2{"accepted requested AND online<br/>AND payment_status != paid?"}:::dec
     D2 -- yes --> E2["400 · acceptance gate<br/>'لا يمكن قبول الطلب قبل تأكيد الدفع'<br/><i>only cancel remains available</i>"]:::crit --> F
-    D2 -- no --> D3{"canTransition(from, to)?<br/><i>from @wafa/shared</i>"}:::dec
+    D2 -- no --> D3{"canTransition(from, to)?<br/><i>from @sufria/shared</i>"}:::dec
     D3 -- no --> E3["400 · invalid transition"]:::act --> F
     D3 -- yes --> F3(("continue in part b")):::fin
 ```

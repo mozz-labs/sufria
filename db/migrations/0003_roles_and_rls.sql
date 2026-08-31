@@ -1,5 +1,5 @@
 -- =============================================================================
--- Wafa — Migration 0003: Database roles, tenant context, Row-Level Security
+-- Sufria — Migration 0003: Database roles, tenant context, Row-Level Security
 --
 -- This is the file that implements NFR-02. Read it before changing anything in it.
 --
@@ -31,21 +31,21 @@ BEGIN;
 -- -----------------------------------------------------------------------------
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wafa_dashboard') THEN
-    CREATE ROLE wafa_dashboard LOGIN;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sufria_dashboard') THEN
+    CREATE ROLE sufria_dashboard LOGIN;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wafa_engine') THEN
-    CREATE ROLE wafa_engine LOGIN;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sufria_engine') THEN
+    CREATE ROLE sufria_engine LOGIN;
   END IF;
 END $$;
 
-GRANT USAGE ON SCHEMA public TO wafa_dashboard, wafa_engine;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO wafa_dashboard, wafa_engine;
-GRANT USAGE, SELECT                  ON ALL SEQUENCES IN SCHEMA public TO wafa_dashboard, wafa_engine;
+GRANT USAGE ON SCHEMA public TO sufria_dashboard, sufria_engine;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO sufria_dashboard, sufria_engine;
+GRANT USAGE, SELECT                  ON ALL SEQUENCES IN SCHEMA public TO sufria_dashboard, sufria_engine;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO wafa_dashboard, wafa_engine;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO sufria_dashboard, sufria_engine;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT USAGE, SELECT                  ON SEQUENCES TO wafa_dashboard, wafa_engine;
+  GRANT USAGE, SELECT                  ON SEQUENCES TO sufria_dashboard, sufria_engine;
 
 -- Neither app role may create tables, and neither is BYPASSRLS.
 -- The two legitimate bypasses are narrow SECURITY DEFINER functions, below.
@@ -54,7 +54,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- Tenant context
 -- -----------------------------------------------------------------------------
 CREATE SCHEMA IF NOT EXISTS app;
-GRANT USAGE ON SCHEMA app TO wafa_dashboard, wafa_engine;
+GRANT USAGE ON SCHEMA app TO sufria_dashboard, sufria_engine;
 
 -- Returns NULL when no context is set. Every policy compares against this, so
 -- "no context" evaluates to NULL, which is not TRUE, which filters every row.
@@ -65,7 +65,7 @@ CREATE OR REPLACE FUNCTION app.current_restaurant() RETURNS uuid
   LANGUAGE sql STABLE
   AS $$ SELECT NULLIF(current_setting('app.current_restaurant_id', true), '')::uuid $$;
 
-GRANT EXECUTE ON FUNCTION app.current_restaurant() TO wafa_dashboard, wafa_engine;
+GRANT EXECUTE ON FUNCTION app.current_restaurant() TO sufria_dashboard, sufria_engine;
 
 -- -----------------------------------------------------------------------------
 -- Bypass #1 — the authorization Guard.
@@ -96,7 +96,7 @@ CREATE OR REPLACE FUNCTION app.verify_membership(p_staff_account_id uuid, p_rest
   $$;
 
 REVOKE ALL ON FUNCTION app.verify_membership(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.verify_membership(uuid, uuid) TO wafa_dashboard;
+GRANT EXECUTE ON FUNCTION app.verify_membership(uuid, uuid) TO sufria_dashboard;
 
 -- -----------------------------------------------------------------------------
 -- Bypass #2 — inbound WhatsApp webhook routing.
@@ -118,7 +118,7 @@ CREATE OR REPLACE FUNCTION app.resolve_restaurant_by_phone_id(p_phone_id text)
   $$;
 
 REVOKE ALL ON FUNCTION app.resolve_restaurant_by_phone_id(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.resolve_restaurant_by_phone_id(text) TO wafa_engine;
+GRANT EXECUTE ON FUNCTION app.resolve_restaurant_by_phone_id(text) TO sufria_engine;
 
 -- -----------------------------------------------------------------------------
 -- RLS policies

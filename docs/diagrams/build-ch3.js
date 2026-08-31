@@ -6,7 +6,7 @@ const {
 } = require('docx');
 
 const STORIES = JSON.parse(fs.readFileSync(__dirname + '/stories.json', 'utf8'));
-const DIA = '/home/claude/wafa/docs/diagrams';
+const DIA = '/home/claude/sufria/docs/diagrams';
 const ACCENT = '1F4E5F';
 const GREY = 'F2F2F0';
 const HL = 'DCEEDC';
@@ -87,12 +87,12 @@ add(
   new Paragraph({ spacing: { before: 1900, after: 200 }, alignment: AlignmentType.CENTER,
     children: [new TextRun({ text: 'SOFTWARE REQUIREMENTS SPECIFICATION', bold: true, size: 32, color: ACCENT, font: 'Calibri' })] }),
   new Paragraph({ spacing: { after: 140 }, alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text: 'Wafa — WhatsApp Direct Ordering Platform for Restaurants', bold: true, size: 26, font: 'Calibri' })] }),
+    children: [new TextRun({ text: 'Sufria — WhatsApp Direct Ordering Platform for Restaurants', bold: true, size: 26, font: 'Calibri' })] }),
   new Paragraph({ spacing: { after: 700 }, alignment: AlignmentType.CENTER,
     children: [new TextRun({ text: 'CHAPTER 3 — SYSTEM DESIGN', bold: true, size: 40, color: ACCENT, font: 'Calibri' })] }),
 );
 add(tbl(['Field', 'Value'], [
-  ['Project Name', 'Wafa (WhatsApp Direct Ordering Platform for Restaurants)'],
+  ['Project Name', 'Sufria (WhatsApp Direct Ordering Platform for Restaurants)'],
   ['Prepared By', 'Mohammed Walid Ziada'],
   ['Supervisor', 'Eng. Hamza Abu Jarad'],
   ['Organization / Program', 'Taqat Program'],
@@ -125,9 +125,9 @@ add(P('The chapter is organised so that each section answers one question:'));
 
 // ============================== 3.2 ==========================================
 add(H('3.2 System Context', HeadingLevel.HEADING_1));
-add(P('The Wafa platform sits between two human audiences that never meet inside it — the customer, who only ever sees WhatsApp, and the restaurant staff, who only ever see a browser dashboard — and three external services it depends on but does not control.'));
+add(P('The Sufria platform sits between two human audiences that never meet inside it — the customer, who only ever sees WhatsApp, and the restaurant staff, who only ever see a browser dashboard — and three external services it depends on but does not control.'));
 add(figure('02-context', 'System context diagram (Level-0 data flow)'));
-add(P('Three properties of this boundary shape the rest of the design. First, the customer never touches Wafa directly: every inbound and outbound message passes through Meta, which means message delivery is observable but not guaranteed by us, and is the subject of NFR-05. Second, the payment provider both receives requests and sends unsolicited confirmations, so it is an inbound webhook source with the same duplicate-delivery and signature-verification requirements as WhatsApp. Third, from 1 October 2026 every outbound message across the Meta boundary is billable, which is why the design records a per-order message counter (Section 3.5.3) rather than treating message volume as an operational detail.'));
+add(P('Three properties of this boundary shape the rest of the design. First, the customer never touches Sufria directly: every inbound and outbound message passes through Meta, which means message delivery is observable but not guaranteed by us, and is the subject of NFR-05. Second, the payment provider both receives requests and sends unsolicited confirmations, so it is an inbound webhook source with the same duplicate-delivery and signature-verification requirements as WhatsApp. Third, from 1 October 2026 every outbound message across the Meta boundary is billable, which is why the design records a per-order message counter (Section 3.5.3) rather than treating message volume as an operational detail.'));
 
 // ============================== 3.3 ==========================================
 add(new Paragraph({ children: [new PageBreak()] }));
@@ -398,13 +398,13 @@ add(new Paragraph({ spacing: { before: 400 }, alignment: AlignmentType.CENTER,
 // =============================================================================
 const doc = new Document({
   creator: 'Mohammed Walid Ziada',
-  title: 'Wafa — Chapter 3: System Design',
+  title: 'Sufria — Chapter 3: System Design',
   numbering: { config: [{ reference: 'b', levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT,
     style: { paragraph: { indent: { left: convertInchesToTwip(0.3), hanging: convertInchesToTwip(0.18) } } } }] }] },
   styles: { default: { document: { run: { font: 'Calibri', size: 21 } } } },
   sections: [{ properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1100, bottom: 1100, left: 1100, right: 1100 } } }, children: c }],
 });
 Packer.toBuffer(doc).then(b => {
-  fs.writeFileSync(__dirname + '/Wafa_Chapter3_System_Design_v1.1.docx', b);
+  fs.writeFileSync(__dirname + '/Sufria_Chapter3_System_Design_v1.1.docx', b);
   console.log('written:', (b.length / 1024 / 1024).toFixed(1) + ' MB ·', figNo, 'figures');
 });
