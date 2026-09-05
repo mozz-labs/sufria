@@ -1,0 +1,44 @@
+{
+  // The tsconfig ts-jest compiles with. Kept separate from tsconfig.json because
+  // the build is a composite ESM project and Jest needs neither of those.
+  //
+  // 🔴 experimentalDecorators + emitDecoratorMetadata are restated here on
+  // purpose rather than left to inherit. They are the whole reason ADR-004
+  // exists: without design:paramtypes, Nest's constructor injection resolves to
+  // undefined at runtime — and a compile with the flags off still typechecks
+  // clean, so nothing else in the pipeline would catch it. If someone ever
+  // changes tsconfig.base.json, this file keeps the tests honest.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    // ts-jest runs the suite as CommonJS. The app itself ships ESM; nothing in
+    // src uses import.meta or top-level await, so the two are interchangeable
+    // here, and CJS avoids Jest's --experimental-vm-modules loader.
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+
+    // Not a build: no project references, no emit, no declarations.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+
+    "rootDir": "../..",
+    "types": ["jest", "node"],
+
+    // Resolve the workspace package to its source rather than to packages/shared/dist,
+    // which only exists after a build. Tests then need no build step, and they
+    // typecheck against the same source pnpm typecheck does. jest.config.json
+    // carries the matching runtime mapping.
+    "paths": {
+      "@sufria/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "../../packages/shared/src/**/*.ts"
+  ]
+}

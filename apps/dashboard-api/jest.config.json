@@ -1,0 +1,15 @@
+{
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testMatch": ["<rootDir>/test/**/*.test.ts"],
+  "moduleFileExtensions": ["ts", "js", "json"],
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", { "tsconfig": "<rootDir>/tsconfig.spec.json" }]
+  },
+  "moduleNameMapper": {
+    "^@sufria/shared$": "<rootDir>/../../packages/shared/src/index.ts",
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  },
+  "setupFiles": ["<rootDir>/test/setup-env.ts"],
+  "testTimeout": 30000
+}

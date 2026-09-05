@@ -81,15 +81,41 @@ existing one fails loudly at `0001` by design. The upgrade path is always
 6. **`.env` never reaches git.** If it does, rotate every key — deleting the file
    does not remove it from history.
 
+## Tests
+
+`@sufria/dashboard-api` runs a real Jest suite. The other two apps do not yet.
+
+| Package | `test` script | Real? |
+|---|---|---|
+| `@sufria/dashboard-api` | `jest --config jest.config.json --runInBand` | yes |
+| `@sufria/conversation-engine` | `echo … && exit 0` | no — placeholder |
+| `@sufria/dashboard-web` | `echo no-tests-yet && exit 0` | no — placeholder |
+
+**Jest, not Vitest, and never `tsx` — see `docs/ADR-004`.** Anything that boots
+Nest DI must be compiled by a toolchain that emits `design:paramtypes`. esbuild
+(so: `tsx`, and Vitest's default transform) drops it, and constructor injection
+then resolves to `undefined` at runtime while `typecheck` and `lint` stay green.
+ts-jest compiles with `tsc` itself, so the metadata survives.
+`apps/dashboard-api/tsconfig.spec.json` restates `experimentalDecorators` and
+`emitDecoratorMetadata` explicitly rather than inheriting them, and one test
+asserts that injection actually resolved.
+
+The suite needs a live, seeded database (`pnpm db:migrate && pnpm db:seed`) — it
+drives real HTTP requests through the real guards and reads the tenant context
+back out of Postgres. It runs `--runInBand` with `PG_POOL_MAX=1` so the
+connection-leak assertion is deterministic. Fixture ids come from
+`db/seed/chain-isolation-fixture.sql`.
+
+`test/tenant-context.test.ts` covers the half `tests/security/` cannot: that the
+**application** sets `app.current_restaurant_id`, per request, only after
+`RestaurantContextGuard` verified membership, and never leaves it on the pooled
+connection. The SQL gate sets that context by hand, so all twelve of its
+assertions would still pass with the guard deleted.
+
 ## Known gaps
 
-- **The apps' `test` scripts are fake.** `@sufria/dashboard-api`,
-  `@sufria/conversation-engine`, and `@sufria/dashboard-web` each define `test` as
-  an `echo` followed by `exit 0`. `pnpm -r test` — and therefore `pnpm verify` and
-  the CI "Unit tests" step — reports a false success: **zero unit tests run.** The
-  only checks with real coverage today are `test:security` and `test:db`. Treat a
-  green `pnpm verify` as "the security gate and DB checks passed", never as "the
-  test suite passed". Replace these placeholders with real Vitest suites before
-  relying on them (`vitest` is already a root devDependency).
+- **Two apps' `test` scripts are still fake** (table above) — `pnpm -r test` gives
+  them a free pass. A green `pnpm verify` means the security gate, the DB checks,
+  and `dashboard-api`'s suite passed; it says nothing about the other two.
 - `@sufria/conversation-engine` has no `src/main.ts` yet, so its `dev` and `start`
-  scripts do not run. Only `src/db/*` exists.
+  scripts do not run. Only `src/db/*` exists, and nothing imports it.
