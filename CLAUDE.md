@@ -83,12 +83,12 @@ existing one fails loudly at `0001` by design. The upgrade path is always
 
 ## Tests
 
-`@sufria/dashboard-api` runs a real Jest suite. The other two apps do not yet.
+Both backend apps run real Jest suites. `dashboard-web` does not yet.
 
 | Package | `test` script | Real? |
 |---|---|---|
 | `@sufria/dashboard-api` | `jest --config jest.config.json --runInBand` | yes |
-| `@sufria/conversation-engine` | `echo … && exit 0` | no — placeholder |
+| `@sufria/conversation-engine` | `jest --config jest.config.json --runInBand` | yes |
 | `@sufria/dashboard-web` | `echo no-tests-yet && exit 0` | no — placeholder |
 
 **Jest, not Vitest, and never `tsx` — see `docs/ADR-004`.** Anything that boots
@@ -100,22 +100,35 @@ ts-jest compiles with `tsc` itself, so the metadata survives.
 `emitDecoratorMetadata` explicitly rather than inheriting them, and one test
 asserts that injection actually resolved.
 
-The suite needs a live, seeded database (`pnpm db:migrate && pnpm db:seed`) — it
-drives real HTTP requests through the real guards and reads the tenant context
-back out of Postgres. It runs `--runInBand` with `PG_POOL_MAX=1` so the
+Both suites need a live, seeded database (`pnpm db:migrate && pnpm db:seed`) —
+they drive real HTTP requests through the real code and read the tenant context
+back out of Postgres. Both run `--runInBand` with `PG_POOL_MAX=1` so the
 connection-leak assertion is deterministic. Fixture ids come from
 `db/seed/chain-isolation-fixture.sql`.
 
-`test/tenant-context.test.ts` covers the half `tests/security/` cannot: that the
-**application** sets `app.current_restaurant_id`, per request, only after
-`RestaurantContextGuard` verified membership, and never leaves it on the pooled
-connection. The SQL gate sets that context by hand, so all twelve of its
-assertions would still pass with the guard deleted.
+`dashboard-api/test/tenant-context.test.ts` covers the half `tests/security/`
+cannot: that the **application** sets `app.current_restaurant_id`, per request,
+only after `RestaurantContextGuard` verified membership, and never leaves it on
+the pooled connection. The SQL gate sets that context by hand, so all twelve of
+its assertions would still pass with the guard deleted.
+
+`conversation-engine/test/webhook.test.ts` does the same for the inbound webhook,
+which has no guard and no logged-in staff: the tenant comes from a
+`phone_number_id`, so the test asserts the message lands under that restaurant
+and nowhere else. It needs `ENGINE_DATABASE_URL` (role `sufria_engine`) and uses
+`MIGRATION_DATABASE_URL` as a read-only audit connection — the only way to ask
+"was a row written to some *other* tenant?", which cannot be asked from inside
+RLS.
 
 ## Known gaps
 
-- **Two apps' `test` scripts are still fake** (table above) — `pnpm -r test` gives
-  them a free pass. A green `pnpm verify` means the security gate, the DB checks,
-  and `dashboard-api`'s suite passed; it says nothing about the other two.
-- `@sufria/conversation-engine` has no `src/main.ts` yet, so its `dev` and `start`
-  scripts do not run. Only `src/db/*` exists, and nothing imports it.
+- **`dashboard-web`'s `test` script is still fake** (table above) — `pnpm -r test`
+  gives it a free pass. A green `pnpm verify` says nothing about the front end.
+- **`pnpm test:db` only detects drift for tables mirrored in `packages/shared`.**
+  It iterates the TS schema, so a SQL table with no mirror there is invisible to
+  it — `inbound_messages` is mirrored in
+  `apps/conversation-engine/src/db/schema.ts` instead and is therefore unchecked.
+  Move it to `packages/shared` the moment a second package reads it.
+- `@sufria/conversation-engine` handles inbound WhatsApp webhooks only. There is
+  no order state machine, no outbound sending, and no customer/session
+  resolution yet — a message is deduped, routed to a restaurant, and stored.

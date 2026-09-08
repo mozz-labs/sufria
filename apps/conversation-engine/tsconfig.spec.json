@@ -1,0 +1,36 @@
+{
+  // الإعداد اللي ts-jest بيترجم فيه. منفصل عن tsconfig.json لأن البناء مشروع
+  // ESM مركّب (composite)، وJest ما بيحتاج ولا وحدة منهم.
+  //
+  // محرّك المحادثة ما فيه ديكوريتورات (ADR-004)، فما في هون تكرار
+  // emitDecoratorMetadata زي tsconfig.spec.json تبع dashboard-api. لو انضاف
+  // أول ديكوريتور لهالحزمة، هالملف لازم يعيد التصريح فيهم زي أخوه بالضبط.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // ts-jest بيشغّل السويت كـCommonJS. التطبيق نفسه بيطلع ESM؛ ولا ملف
+    // بـsrc بيستعمل import.meta ولا top-level await، فالاتنين متكافئين هون،
+    // وCJS بيوفّر علينا محمّل --experimental-vm-modules.
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+
+    // مش بناء: بلا مراجع مشاريع، بلا إخراج، بلا تعريفات.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+
+    "rootDir": "../..",
+    "types": ["jest", "node"],
+
+    // حلّ حزمة الـworkspace لمصدرها مش لـpackages/shared/dist اللي ما بيوجد
+    // إلا بعد بناء. jest.config.json فيه نفس الربط وقت التشغيل.
+    "paths": {
+      "@sufria/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "../../packages/shared/src/**/*.ts"
+  ]
+}
