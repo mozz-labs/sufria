@@ -1,0 +1,130 @@
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { sql } from "drizzle-orm";
+import { Pool } from "pg";
+import * as schema from "@sufria/shared";
+import { env } from "../config/env.js";
+import type { TenantTx } from "./types.js";
+
+/**
+ * الطريقة الوحيدة اللي محرّك المحادثة بيلمس فيها القاعدة.
+ *
+ * الفرق عن TenantDbService بالداشبورد مقصود ومحصور بإشي واحد: الداشبورد بيعرف
+ * المطعم قبل ما يفتح المعاملة (الحارس تحقق من العضوية)، فبيقدر يضبط السياق
+ * وينساه. المحرّك ما بيعرف — بيبلش من phone_number_id وما عنده موظف مسجّل دخول.
+ * يعني المعاملة لازم تبلّش بلا سياق (بوابة منع التكرار)، وتكتسب السياق بنصّها.
+ *
+ * ولهيك setTenantContext مكشوفة كخطوة صريحة مش مخفية جوّا runInTenant: الترتيب
+ * هون جزء من الصحّة، مش تفصيل تنفيذ.
+ *
+ * الخصائص الثلاث اللي هذا الصنف موجود عشانها هي نفسها بالضبط:
+ *   1. الضبط والاستعلام بنفس المعاملة — نفس الاتصال، ما بينفصلوا على عضوين
+ *      مختلفين من المخزن.
+ *   2. is_local = true — السياق بيموت مع المعاملة. SET عادي بيضل على الاتصال
+ *      المجمّع وبيرثه الطلب اللي بعده.
+ *   3. المعرّف bind parameter — لأن `SET LOCAL x = '<id>'` ما بتقبل واحد،
+ *      ودمج النص بالـSQL بيحط ثغرة حقن جوّا حدود المستأجر نفسها.
+ */
+export class TenantDb {
+  private readonly pool: Pool;
+  private readonly db: NodePgDatabase<typeof schema>;
+
+  constructor() {
+    this.pool = new Pool({
+      connectionString: env().ENGINE_DATABASE_URL,
+      max: env().PG_POOL_MAX,
+    });
+    this.db = drizzle(this.pool, { schema });
+  }
+
+  /**
+   * بيرفض الإقلاع لو ENGINE_DATABASE_URL بيوصل كـsuperuser أو دور BYPASSRLS.
+   *
+   * مزوّدو Postgres المُدارة بيعطوك رابط admin افتراضيا، ولصقه بالمتغيّر
+   * بيعطّل كل سياسات 0003 بلا ولا رسالة خطأ. الانفجار هون قبل ما ينفتح المنفذ.
+   */
+  async start(): Promise<void> {
+    // execute() بترجّع QueryResult مش مصفوفة — الصفوف بـ.rows.
+    const res = await this.db.execute<{
+      rolsuper: boolean;
+      rolbypassrls: boolean;
+    }>(
+      sql`SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`,
+    );
+    const row = res.rows[0];
+    if (row?.rolsuper || row?.rolbypassrls) {
+      throw new Error(
+        "ENGINE_DATABASE_URL يتصل كـsuperuser أو دور BYPASSRLS. " +
+          "سياسات RLS متجاوَزة وعزل المستأجرين مطفي. استعمل دور sufria_engine.",
+      );
+    }
+  }
+
+  async stop(): Promise<void> {
+    await this.pool.end();
+  }
+
+  /**
+   * معاملة بلا سياق مستأجر.
+   *
+   * الاستعمال المشروع الوحيد: الخطوات اللي بتسبق معرفة المطعم — بوابة منع
+   * التكرار (processed_webhook_events بلا RLS بالتصميم) وحلّ phone_number_id.
+   * أي قراءة أو كتابة لجدول مربوط بمطعم بترجع صفر صفوف هون، وهاد المطلوب.
+   */
+  async runUnscoped<T>(work: (tx: TenantTx) => Promise<T>): Promise<T> {
+    return this.db.transaction(async (tx) => work(tx as TenantTx));
+  }
+
+  /** معاملة سياقها مضبوط من أول سطر. للقراءات اللي بتعرف مطعمها مسبقا. */
+  async runInTenant<T>(
+    restaurantId: string,
+    work: (tx: TenantTx) => Promise<T>,
+  ): Promise<T> {
+    return this.runUnscoped(async (tx) => {
+      await setTenantContext(tx, restaurantId);
+      return work(tx);
+    });
+  }
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * بيضبط app.current_restaurant_id لباقي المعاملة الحالية.
+ *
+ * المعرّف بينفحص شكله هون كمان رغم إنه جاي من القاعدة نفسها
+ * (resolve_restaurant_by_phone_id بترجّع uuid). الفحص مش عن عدم الثقة بالقاعدة
+ * — هو عن إن هالدالة عامة، وأول مستدعي بيمرّرلها نص من حمولة webhook بيلاقي
+ * الرفض هون بدل ما يلاقيه بسياسة RLS بعد أسبوعين.
+ */
+export async function setTenantContext(
+  tx: TenantTx,
+  restaurantId: string,
+): Promise<void> {
+  if (!UUID_RE.test(restaurantId)) {
+    throw new Error(`سياق مستأجر غير صالح: ${restaurantId}`);
+  }
+  await tx.execute(
+    sql`SELECT set_config('app.current_restaurant_id', ${restaurantId}, true)`,
+  );
+}
+
+/**
+ * phone_number_id -> restaurant_id عبر التجاوز الوحيد المسموح للمحرّك.
+ *
+ * app.resolve_restaurant_by_phone_id دالة SECURITY DEFINER معرّفة بـ0003
+ * وممنوحة لـsufria_engine وحده. هي البديل عن إعطاء المحرّك BYPASSRLS: بتجاوب
+ * على سؤال واحد وبترجّع عمود واحد، وكل شي بعدها بيمشي تحت RLS عادي.
+ *
+ * بترجّع null لرقم مش معروف ولمطعم موقوف — والاتنين مش استثناء. رقم مش معروف
+ * بيجي من webhook مضبوط عالتطبيق الغلط، والرمي بيخلّي ميتا تعيد الإرسال للأبد.
+ */
+export async function resolveRestaurantByPhoneId(
+  tx: TenantTx,
+  phoneNumberId: string,
+): Promise<string | null> {
+  const res = await tx.execute<{ restaurant_id: string | null }>(
+    sql`SELECT app.resolve_restaurant_by_phone_id(${phoneNumberId}) AS restaurant_id`,
+  );
+  return res.rows[0]?.restaurant_id ?? null;
+}

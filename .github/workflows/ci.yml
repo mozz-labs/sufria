@@ -36,6 +36,11 @@ jobs:
       # so isolation checks go green without checking anything. Same rule
       # is documented in .env.example.
       DATABASE_URL: postgres://sufria_dashboard:devpass@localhost:5432/sufria
+      # The Conversation Engine connects as its own role. Its webhook suite
+      # asserts that an inbound message lands under one restaurant's RLS
+      # context and nowhere else, which only means anything if the connection
+      # is actually subject to RLS — hence sufria_engine, not postgres.
+      ENGINE_DATABASE_URL: postgres://sufria_engine:devpass@localhost:5432/sufria
 
     steps:
       - uses: actions/checkout@v4

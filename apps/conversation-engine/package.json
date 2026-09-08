@@ -7,7 +7,8 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "build": "tsc -b",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
-    "test": "echo \"(اختبارات conversation-engine — Sprint 1)\" && exit 0"
+    "test": "jest --config jest.config.json --runInBand",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@sufria/shared": "workspace:*",
@@ -17,7 +18,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@jest/globals": "^30.5.1",
+    "@types/jest": "^30.0.0",
     "@types/pg": "^8.21.0",
+    "jest": "^30.5.1",
+    "ts-jest": "^29.4.12",
     "tsx": "^4.23.12",
     "typescript": "~5.9.3"
   }

@@ -1,0 +1,50 @@
+/**
+ * بيشتغل قبل إطار الاختبار، عشان أي ملف بيستورده الاختبار يلاقي process.env
+ * معبّاة أصلا.
+ *
+ * config/env.ts بتقرأ process.env مرة وحدة وبتخزّنها، وبترمي لو ناقص إشي.
+ * لو المتغيّرات ما انحطّت قبل أول import، السويت بتفشل عند الاستيراد برسالة
+ * "إعدادات البيئة غير صالحة" بدل ما تفشل بمكان بيقول لك إشي.
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// البيئة الحقيقية بتفوز. الـCI بيصدّر الروابط مباشرة وما عنده ملف .env.
+function loadDotEnv(path: string): void {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return;
+  }
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+loadDotEnv(resolve(__dirname, "../../../.env"));
+
+process.env["NODE_ENV"] = "test";
+// السجلات بتغرق مخرجات Jest بلا فايدة. الاختبارات بتفحص القاعدة والردود،
+// مش سطور الـlog.
+process.env["LOG_LEVEL"] ??= "silent";
+
+/**
+ * أسرار خاصة بالتشغيل. عمرها عمر عملية الاختبار، وبتتحقق بنفس العملية.
+ * ولا وحدة منهم مسار إنتاج: NODE_ENV = "test" فوق، وأي نشر حقيقي بيقرأ
+ * القيم من بيئته هو، واللي بتسبق هالسطور.
+ */
+process.env["WHATSAPP_APP_SECRET"] ??=
+  "test-only-app-secret-not-used-elsewhere";
+process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] ??= "test-only-verify-token";
+
+// 🔴 اتصال واحد، عشان "هل تسرّب السياق على الاتصال المجمّع؟" يصير سؤال حاسم.
+// بمخزن أكبر، الاستعلام اللي بعده ممكن يقع على عضو تاني، واختبار التسريب
+// بيمر بلا ما يثبت إشي.
+process.env["PG_POOL_MAX"] = "1";
