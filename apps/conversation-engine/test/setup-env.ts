@@ -31,18 +31,33 @@ function loadDotEnv(path: string): void {
 loadDotEnv(resolve(__dirname, "../../../.env"));
 
 process.env["NODE_ENV"] = "test";
-// السجلات بتغرق مخرجات Jest بلا فايدة. الاختبارات بتفحص القاعدة والردود،
-// مش سطور الـlog.
-process.env["LOG_LEVEL"] ??= "silent";
+
+/**
+ * 🔴 فاضي = غايب، مش قيمة.
+ *
+ * `??=` بتفرّق بينهم، والفرق هون غلط: .env.example بيجي بـ
+ * `WHATSAPP_APP_SECRET=` بلا قيمة، فأول واحد بينسخه بياخد نص فاضي مش
+ * undefined — و`??=` بتحترمه، وZod بترفضه بـmin(1)، والسويت بتفشل عند
+ * الاستيراد على جهاز نظيف تماما بينما بتمر على أجهزة اللي عبّوا الملف.
+ */
+function fallback(key: string, value: string): void {
+  if (!process.env[key]) process.env[key] = value;
+}
+
+/**
+ * السجلات بتغرق مخرجات Jest بلا فايدة — الاختبارات بتفحص القاعدة والردود،
+ * مش سطور الـlog. وLOG_LEVEL جاي من .env بقيمة الإنتاج/التطوير (debug عادة)،
+ * فما بينفع يحكم ضجيج السويت. للتشخيص: TEST_LOG_LEVEL=debug pnpm test.
+ */
+process.env["LOG_LEVEL"] = process.env["TEST_LOG_LEVEL"] || "silent";
 
 /**
  * أسرار خاصة بالتشغيل. عمرها عمر عملية الاختبار، وبتتحقق بنفس العملية.
  * ولا وحدة منهم مسار إنتاج: NODE_ENV = "test" فوق، وأي نشر حقيقي بيقرأ
  * القيم من بيئته هو، واللي بتسبق هالسطور.
  */
-process.env["WHATSAPP_APP_SECRET"] ??=
-  "test-only-app-secret-not-used-elsewhere";
-process.env["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] ??= "test-only-verify-token";
+fallback("WHATSAPP_APP_SECRET", "test-only-app-secret-not-used-elsewhere");
+fallback("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "test-only-verify-token");
 
 // 🔴 اتصال واحد، عشان "هل تسرّب السياق على الاتصال المجمّع؟" يصير سؤال حاسم.
 // بمخزن أكبر، الاستعلام اللي بعده ممكن يقع على عضو تاني، واختبار التسريب
