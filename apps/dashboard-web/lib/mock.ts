@@ -3,6 +3,8 @@
  * ولا سطر من هون بيوصل الإنتاج.
  */
 
+import type { OrderStatus } from "@sufria/shared";
+
 export const DEMO_CREDENTIALS = {
   user: "manager@shawarma.jo",
   pass: "sufria1234",
@@ -13,16 +15,6 @@ export const RESTAURANT = {
   name: "شاورما الأصيل",
   branch: "فرع الشميساني",
 } as const;
-
-export type OrderStatus =
-  "pending_acceptance" | "preparing" | "ready" | "expired";
-
-export const STATUS_LABEL: Record<OrderStatus, string> = {
-  pending_acceptance: "بانتظار القبول",
-  preparing: "قيد التحضير",
-  ready: "جاهز للاستلام",
-  expired: "منتهي",
-};
 
 export type OrderItem = { name: string; qty: number; price: number };
 

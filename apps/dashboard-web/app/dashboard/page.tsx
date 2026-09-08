@@ -1,29 +1,34 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import {
-  ORDERS,
-  STATUS_LABEL,
-  money,
-  orderTotal,
-  type Order,
-  type OrderStatus,
-} from "../../lib/mock";
+import { ORDER_STATUS_LABEL_AR, type OrderStatus } from "@sufria/shared";
+import { ORDERS, money, orderTotal, type Order } from "../../lib/mock";
 import styles from "./orders.module.css";
 
+// ألوان بس — النص بيجي من ORDER_STATUS_LABEL_AR وحده.
+// Record كامل بقصد: أي حالة جديدة بـORDER_STATUSES بتوقّع الـtypecheck هون.
 const ACCENT: Record<OrderStatus, { c: string; t: string }> = {
   pending_acceptance: { c: "var(--warn)", t: "var(--warn-tint)" },
+  accepted: { c: "var(--info)", t: "var(--info-tint)" },
   preparing: { c: "var(--info)", t: "var(--info-tint)" },
   ready: { c: "var(--ok)", t: "var(--ok-tint)" },
+  completed: { c: "var(--ink-2)", t: "var(--surface-2)" },
+  cancelled: { c: "var(--crit)", t: "var(--crit-tint)" },
   expired: { c: "var(--crit)", t: "var(--crit-tint)" },
 };
 
+// الحالات اللي إلها شريحة فلترة. النص مصدره @sufria/shared —
+// "الكل" لحاله مكتوب هون لأنه مش حالة طلب.
+const FILTER_STATUSES = [
+  "pending_acceptance",
+  "preparing",
+  "ready",
+  "expired",
+] as const satisfies readonly OrderStatus[];
+
 const FILTERS: { key: OrderStatus | "all"; label: string }[] = [
   { key: "all", label: "الكل" },
-  { key: "pending_acceptance", label: "بانتظار القبول" },
-  { key: "preparing", label: "قيد التحضير" },
-  { key: "ready", label: "جاهز" },
-  { key: "expired", label: "منتهي" },
+  ...FILTER_STATUSES.map((key) => ({ key, label: ORDER_STATUS_LABEL_AR[key] })),
 ];
 
 function Timer({ minutes }: { minutes: number }) {
@@ -61,7 +66,7 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
         </div>
         <span className={styles.badge}>
           <span className={styles.badgeDot} aria-hidden="true" />
-          {STATUS_LABEL[order.status]}
+          {ORDER_STATUS_LABEL_AR[order.status]}
         </span>
       </div>
 
