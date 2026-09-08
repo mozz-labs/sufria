@@ -117,10 +117,7 @@ async function handleInbound(
       { limit: MAX_BODY_BYTES },
       "حمولة webhook أكبر من السقف — انرفضت",
     );
-    send(res, 413, { error: "payload_too_large" });
-    // الطلب ما انقرأ للآخر، فبنسكّر الاتصال بعد ما الرد يطلع.
-    req.destroy();
-    return;
+    return send(res, 413, { error: "payload_too_large" });
   }
 
   // ١. التوقيع قبل أي شي — قبل JSON.parse، قبل أي استعلام.
@@ -166,30 +163,38 @@ async function handleInbound(
   return send(res, 200, { status: "ok" });
 }
 
-/** الجسم كبايتات خام. null لو تجاوز السقف. */
+/**
+ * الجسم كبايتات خام. null لو تجاوز السقف.
+ *
+ * 🔴 لما يتجاوز، بنضل نقرأ الباقي وبنرميه بدل ما نهدّ الاتصال.
+ *
+ *    الطريق اللي بيبان أنضف — pause أو destroy وقت التجاوز — بيكسر الرد.
+ *    الطلب بيكون لسا عم يرفع، فالمقبس عنده بيانات واردة ما انقرأت؛ إغلاقه
+ *    بهالحالة بيبعت RST مش FIN، وRST بيلغي مخزن الإرسال — يعني بايتات الرد
+ *    413 بتنرمى وهي طالعة والمرسِل بيشوف ECONNRESET. الفرق ما بيبان بجهاز
+ *    واحد فاضي، وبيبان أول ما السويت تشتغل تحت حمل.
+ *
+ *    الكلفة إننا بنقرأ بايتات رح نرميها. الذاكرة مش مكشوفة — بنفضّي المخزن
+ *    أول ما نتجاوز — بس عرض الحزمة مكشوف، فالسقف حماية ذاكرة مش حماية من
+ *    إغراق. الإغراق شغل الطبقة اللي قدّام (reverse proxy).
+ */
 function readRawBody(req: IncomingMessage): Promise<Buffer | null> {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
+    let chunks: Buffer[] = [];
     let size = 0;
-    let aborted = false;
+    let tooLarge = false;
 
     req.on("data", (chunk: Buffer) => {
-      if (aborted) return;
+      if (tooLarge) return;
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        // 🔴 pause، مش destroy. تدمير الطلب بيهدّ المقبس، والرد 413 اللي
-        //    بعده بينكتب على مقبس ميّت — يعني المرسِل بيشوف اتصال انقطع بدل
-        //    رمز حالة. بنوقف التجميع بس، والرد بينكتب عادي.
-        aborted = true;
-        req.pause();
-        resolve(null);
+        tooLarge = true;
+        chunks = [];
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => {
-      if (!aborted) resolve(Buffer.concat(chunks));
-    });
+    req.on("end", () => resolve(tooLarge ? null : Buffer.concat(chunks)));
     req.on("error", reject);
   });
 }
