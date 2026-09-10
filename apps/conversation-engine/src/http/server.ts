@@ -192,6 +192,11 @@ async function handleInbound(
       { statuses: parsed.statuses },
       "أحداث حالة تسليم — خارج النطاق",
     );
+  if (parsed.ignoredChanges > 0)
+    logger.debug(
+      { ignoredChanges: parsed.ignoredChanges },
+      "أحداث webhook مش من نوع messages — انتجاهلت وحدها",
+    );
 
   // 🔴 القيمة المرجَّعة تُفحص، لا تُرمى. هي الرد نفسه: أي رسالة بالدفعة ما
   //    انخزنت لسبب قابل للإصلاح بتخلّي الرد 500، وميتا بتعيد الدفعة كاملة.

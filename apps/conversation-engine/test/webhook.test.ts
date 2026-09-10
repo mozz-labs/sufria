@@ -1070,3 +1070,116 @@ describe("مخزن الاتصالات — مهلات بدل الانتظار ا�
     expect(waited).toBeLessThan(limit * 2);
   });
 });
+
+describe("مخطط المظروف — عنصر ما بنعرفه ما بيسقّط الدفعة", () => {
+  /**
+   * 🔴 ميتا بتوفّر ~١٩ نوع webhook غير messages على نفس الاشتراك، والتوثيق
+   *    ما بيضمن وجود metadata.phone_number_id فيهم كلهم. وبما إنها بتجمّع
+   *    الأحداث بطلب واحد، تحديث قالب بيوصل بنفس الطلب مع رسالة زبون.
+   *
+   *    قبل هالإصلاح، change بلا metadata كان يفشّل فحص المظروف كله —
+   *    parseWebhookPayload بترجع null، والرد 200، ورسالة الزبون اللي بنفس
+   *    الدفعة بتنبلع. التساهل لازم يكون على مستوى العنصر، مش المظروف.
+   */
+
+  /** دفعة فيها حدث بلا metadata + رسالة سليمة، بنفس الترتيب اللي بتوصل فيه. */
+  function mixedBatch(waMessageId: string): string {
+    return JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "WABA_TEST",
+          changes: [
+            {
+              // حدث حقيقي من ميتا: تحديث حالة قالب. ولا metadata ولا
+              // phone_number_id — والتوثيق ما بيوعد فيهم.
+              field: "message_template_status_update",
+              value: {
+                event: "APPROVED",
+                message_template_id: 1234567890,
+                message_template_name: "order_confirmation",
+                message_template_language: "ar",
+              },
+            },
+            {
+              field: "messages",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: {
+                  display_phone_number: "962790000000",
+                  phone_number_id: PHONE_ID_A,
+                },
+                messages: [
+                  {
+                    from: CUSTOMER_PHONE,
+                    id: waMessageId,
+                    timestamp: "1757000000",
+                    type: "text",
+                    text: { body: "بدي أطلب — وجاي مع تحديث قالب" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("change بلا metadata + رسالة سليمة: السليمة تُخزَّن والرد 200", async () => {
+    const id = wamid("mixed-batch");
+    const body = mixedBatch(id);
+
+    const res = await postRaw(body, sign(body));
+
+    expect(res.status).toBe(200);
+    // 🔴 التأكيد اللي بيهم: الرسالة السليمة ما انبلعت مع أخوها.
+    const rows = await readAsTenant(RESTAURANT_A, id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.body).toBe("بدي أطلب — وجاي مع تحديث قالب");
+  });
+
+  it("الفرع نفسه: المظروف بينقرأ، والعنصر بينتعدّ متجاهَل مش مشوّه", async () => {
+    // 🔴 الاختبار اللي فوق بيفحص الأثر — انخزنت. هذا بيفحص الفرع:
+    //
+    //      المظروف انقرأ (مش null)  -> التساهل على مستوى العنصر مشي.
+    //      ignoredChanges = 1       -> العنصر انتعدّ متجاهَل، بقصد.
+    //      skipped = 0              -> ولا رسالة انفحصت وفشلت.
+    //
+    //    بلا هالتأكيدات، أي تنفيذ بيرجع 200 على كل شي بيرضّي الاختبار فوق
+    //    طول ما الرسالة السليمة انخزنت لأي سبب تاني.
+    const id = wamid("mixed-branch");
+    const parsed = parseWebhookPayload(JSON.parse(mixedBatch(id)));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messages).toHaveLength(1);
+    expect(parsed?.messages[0]?.phoneNumberId).toBe(PHONE_ID_A);
+    expect(parsed?.ignoredChanges).toBe(1);
+    expect(parsed?.skipped).toBe(0);
+  });
+
+  it("كل الـchanges بلا metadata: 200، ولا رسالة، ولا استثناء", async () => {
+    // ما في رسالة أصلا — يعني ما في إشي ينخزن، والرد 200 لأن التجاهل هون
+    // مقصود ونهائي: إعادة إرسال نفس الحدث رح تنتجاهل بنفس الطريقة.
+    const body = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "WABA_TEST",
+          changes: [
+            { field: "account_alerts", value: { alert_severity: "WARNING" } },
+            { field: "phone_number_quality_update", value: { event: "FLAG" } },
+          ],
+        },
+      ],
+    });
+
+    const res = await postRaw(body, sign(body));
+    expect(res.status).toBe(200);
+
+    const parsed = parseWebhookPayload(JSON.parse(body));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messages).toHaveLength(0);
+    expect(parsed?.ignoredChanges).toBe(2);
+  });
+});
