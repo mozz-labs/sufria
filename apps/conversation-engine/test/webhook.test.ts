@@ -27,7 +27,7 @@ import { Pool } from "pg";
 import { env } from "../src/config/env.js";
 import { inboundMessages } from "../src/db/schema.js";
 import { enginePoolConfig, TenantDb } from "../src/db/tenant-db.js";
-import { createWebhookServer } from "../src/http/server.js";
+import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
 import { parseWebhookPayload } from "../src/whatsapp/payload.js";
 import {
   needsRedelivery,
@@ -162,7 +162,11 @@ function postRaw(
     "content-type": "application/json",
   };
   if (signature !== undefined) headers["x-hub-signature-256"] = signature;
-  return fetch(`${baseUrl}/webhook`, { method: "POST", headers, body });
+  return fetch(`${baseUrl}${WEBHOOK_PATH}`, {
+    method: "POST",
+    headers,
+    body,
+  });
 }
 
 /** الطريق السعيد: تسلسل، توقيع على نفس النص، إرسال. */
@@ -297,9 +301,9 @@ afterAll(async () => {
   await audit.end();
 });
 
-describe("GET /webhook — تحقّق الاشتراك", () => {
+describe("GET /webhooks/whatsapp — تحقّق الاشتراك", () => {
   const verifyUrl = (params: Record<string, string>): string =>
-    `${baseUrl}/webhook?${new URLSearchParams(params).toString()}`;
+    `${baseUrl}${WEBHOOK_PATH}?${new URLSearchParams(params).toString()}`;
 
   it("يرجّع hub.challenge كنص خام لما التوكن يطابق", async () => {
     const res = await fetch(
@@ -337,7 +341,7 @@ describe("GET /webhook — تحقّق الاشتراك", () => {
   });
 });
 
-describe("POST /webhook — التوقيع", () => {
+describe("POST /webhooks/whatsapp — التوقيع", () => {
   it("توقيع صحيح: 200 والرسالة انخزنت عند مطعم الـphone_number_id", async () => {
     const id = wamid("valid-signature");
     const res = await postSigned(
@@ -411,7 +415,7 @@ describe("POST /webhook — التوقيع", () => {
   });
 });
 
-describe("POST /webhook — منع التكرار", () => {
+describe("POST /webhooks/whatsapp — منع التكرار", () => {
   it("نفس message_id مرتين: 200 مرتين، وصف واحد بس", async () => {
     const id = wamid("duplicate");
     const payload = metaPayload({
@@ -474,7 +478,7 @@ describe("POST /webhook — منع التكرار", () => {
   });
 });
 
-describe("POST /webhook — التوجيه والعزل", () => {
+describe("POST /webhooks/whatsapp — التوجيه والعزل", () => {
   it("رقم غير معروف: 500، وولا صف بأي مكان بالجدول", async () => {
     const id = wamid("unknown-phone");
 
@@ -548,7 +552,7 @@ describe("POST /webhook — التوجيه والعزل", () => {
   });
 });
 
-describe("POST /webhook — حمولات ما بنتعامل معها", () => {
+describe("POST /webhooks/whatsapp — حمولات ما بنتعامل معها", () => {
   it("JSON مشوّه: 200 وبلا استثناء", async () => {
     const res = await postRaw("{ not json at all", sign("{ not json at all"));
     expect(res.status).toBe(200);
@@ -637,7 +641,7 @@ describe("POST /webhook — حمولات ما بنتعامل معها", () => {
   });
 });
 
-describe("POST /webhook — فشل التخزين", () => {
+describe("POST /webhooks/whatsapp — فشل التخزين", () => {
   /**
    * 🔴 هالمجموعة هي مقابل عطل "200 على كل شي".
    *
@@ -700,7 +704,7 @@ describe("POST /webhook — فشل التخزين", () => {
       const body = JSON.stringify(
         metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
       );
-      const res = await fetch(`${deadUrl}/webhook`, {
+      const res = await fetch(`${deadUrl}${WEBHOOK_PATH}`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -773,7 +777,7 @@ describe("POST /webhook — فشل التخزين", () => {
   });
 });
 
-describe("POST /webhook — رقم بلا مطعم: الاسترجاع بعد تصليح الربط", () => {
+describe("POST /webhooks/whatsapp — رقم بلا مطعم: الاسترجاع بعد تصليح الربط", () => {
   /**
    * 🔴 هالمجموعة هي جوهر المهمة.
    *
@@ -1181,5 +1185,61 @@ describe("مخطط المظروف — عنصر ما بنعرفه ما بيسقّ
     expect(parsed).not.toBeNull();
     expect(parsed?.messages).toHaveLength(0);
     expect(parsed?.ignoredChanges).toBe(2);
+  });
+});
+
+describe("المسار — /webhooks/whatsapp زي وثيقة Sprint 1", () => {
+  it("المسار المعلن هو اللي بوثيقة S1-01", () => {
+    // مثبّت كقيمة عشان تغييره يصير قرار صريح: هاد نفس النص اللي بينكتب
+    // بإعدادات الـwebhook عند ميتا، وتغييره بعد الربط بيوقف الاستقبال.
+    expect(WEBHOOK_PATH).toBe("/webhooks/whatsapp");
+  });
+
+  it("المسار القديم /webhook: 404 على GET و POST", async () => {
+    const verify = await fetch(
+      `${baseUrl}/webhook?${new URLSearchParams({
+        "hub.mode": "subscribe",
+        "hub.verify_token": env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+        "hub.challenge": "1158201444",
+      }).toString()}`,
+    );
+    expect(verify.status).toBe(404);
+    // 🔴 ومهم إنه ما يرجّع الـchallenge: مسار قديم بيرد على تحقّق الاشتراك
+    //    بيخلي ربط ميتا ينجح على عنوان مهجور، وبعدها كل رسالة بتضرب 404.
+    expect(await verify.text()).not.toContain("1158201444");
+
+    const id = wamid("old-path");
+    const body = JSON.stringify(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+    const inbound = await fetch(`${baseUrl}/webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-hub-signature-256": sign(body),
+      },
+      body,
+    });
+    expect(inbound.status).toBe(404);
+    expect(await countEverywhere(id)).toBe(0);
+  });
+
+  it("المسار الجديد شغّال على الفعلين", async () => {
+    const verify = await fetch(
+      `${baseUrl}${WEBHOOK_PATH}?${new URLSearchParams({
+        "hub.mode": "subscribe",
+        "hub.verify_token": env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+        "hub.challenge": "1158201444",
+      }).toString()}`,
+    );
+    expect(verify.status).toBe(200);
+    expect(await verify.text()).toBe("1158201444");
+
+    const id = wamid("new-path");
+    const res = await postSigned(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+    expect(res.status).toBe(200);
+    expect(await readAsTenant(RESTAURANT_A, id)).toHaveLength(1);
   });
 });

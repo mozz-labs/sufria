@@ -32,6 +32,9 @@ export interface ServerDeps {
 /** حمولات ميتا بالكيلوبايتات. السقف عشان طلب مفتوح ما يبلع الذاكرة. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
+/** المسار زي ما هو بوثيقة Sprint 1 (S1-01). */
+export const WEBHOOK_PATH = "/webhooks/whatsapp";
+
 /**
  * سيرفر HTTP خام عن قصد — بلا إطار وبلا ديكوريتورات.
  *
@@ -64,7 +67,10 @@ async function handle(
   if (url.pathname === "/health" && req.method === "GET")
     return handleHealth(deps, res);
 
-  if (url.pathname !== "/webhook")
+  // 🔴 المسار من وثيقة Sprint 1 (S1-01، docs/06). المسار القديم /webhook كان
+  //    غلط بالتنفيذ، وهو نفسه المسار اللي بينكتب بإعدادات الـwebhook عند ميتا
+  //    — يعني تغييره بعد الربط بيحتاج تعديل الإعداد عندهم كمان.
+  if (url.pathname !== WEBHOOK_PATH)
     return send(res, 404, { error: "not_found" });
 
   if (req.method === "GET") return handleVerification(url, res, deps);
@@ -99,7 +105,7 @@ async function handleHealth(
 }
 
 /**
- * GET /webhook — تحقّق الاشتراك. ميتا بتناديها مرة وحدة وقت ربط الـwebhook.
+ * GET /webhooks/whatsapp — تحقّق الاشتراك. ميتا بتناديها مرة وحدة وقت ربط الـwebhook.
  *
  * الرد لازم يكون hub.challenge **نص خام**، مش JSON. ميتا بتقارن الجسم حرفيا،
  * فـ`"1158201444"` بعلامات تنصيص بتفشل الربط.
@@ -131,7 +137,7 @@ function handleVerification(
 }
 
 /**
- * POST /webhook — الرسائل الواردة.
+ * POST /webhooks/whatsapp — الرسائل الواردة.
  *
  * 🔴 قاعدة الردود، حرفيا:
  *
