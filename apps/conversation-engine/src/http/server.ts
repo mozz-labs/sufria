@@ -8,16 +8,32 @@ import {
 import { logger } from "../logger.js";
 import { parseWebhookPayload } from "../whatsapp/payload.js";
 import { safeTokenEquals, verifySignature } from "../whatsapp/signature.js";
-import type { WebhookService } from "../whatsapp/webhook.service.js";
+import {
+  needsRedelivery,
+  type IngestOutcome,
+  type WebhookService,
+} from "../whatsapp/webhook.service.js";
+
+/**
+ * اللي /health بيحتاجه. نوع بنيوي مش TenantDb مباشرة عشان الاعتمادية تضل
+ * "إشي بيقدر يلمس القاعدة" مش "المخزن كله".
+ */
+export interface HealthProbe {
+  ping(): Promise<void>;
+}
 
 export interface ServerDeps {
   service: WebhookService;
+  health: HealthProbe;
   verifyToken: string;
   appSecret: string;
 }
 
 /** حمولات ميتا بالكيلوبايتات. السقف عشان طلب مفتوح ما يبلع الذاكرة. */
 const MAX_BODY_BYTES = 1024 * 1024;
+
+/** المسار زي ما هو بوثيقة Sprint 1 (S1-01). */
+export const WEBHOOK_PATH = "/webhooks/whatsapp";
 
 /**
  * سيرفر HTTP خام عن قصد — بلا إطار وبلا ديكوريتورات.
@@ -48,13 +64,13 @@ async function handle(
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
 
-  if (url.pathname === "/health" && req.method === "GET") {
-    // ⛔ ممنوع تلمس القاعدة. فايدتها الوحيدة إنك تعرف: ردّت؟ التطبيق عايش
-    //    والمشكلة بالقاعدة. ما ردّت؟ التطبيق ميت.
-    return send(res, 200, { ok: true });
-  }
+  if (url.pathname === "/health" && req.method === "GET")
+    return handleHealth(deps, res);
 
-  if (url.pathname !== "/webhook")
+  // 🔴 المسار من وثيقة Sprint 1 (S1-01، docs/06). المسار القديم /webhook كان
+  //    غلط بالتنفيذ، وهو نفسه المسار اللي بينكتب بإعدادات الـwebhook عند ميتا
+  //    — يعني تغييره بعد الربط بيحتاج تعديل الإعداد عندهم كمان.
+  if (url.pathname !== WEBHOOK_PATH)
     return send(res, 404, { error: "not_found" });
 
   if (req.method === "GET") return handleVerification(url, res, deps);
@@ -65,7 +81,31 @@ async function handle(
 }
 
 /**
- * GET /webhook — تحقّق الاشتراك. ميتا بتناديها مرة وحدة وقت ربط الـwebhook.
+ * GET /health — هل هالعملية قادرة تخدم رسالة فعلا؟
+ *
+ * 🔴 بتلمس القاعدة، لأن "قادرة تخدم" بلا قاعدة ما إلها معنى هون: كل مسار
+ *    بالمستقبِل بينتهي بكتابة. فحص ما بيلمس القاعدة بيرجّع 200 والقاعدة
+ *    واقعة، فالمنسّق بيضل يوجّه الطلبات لعملية بتفشل بكل وحدة منهم.
+ *
+ *    وبما إن الفشل هون بيخلي المنسّق يشيل العملية من الدوران، الرد لازم
+ *    يكون غير-200: 503 (خدمة غير متاحة) مش 500 — العطل مؤقت وبالاعتمادية،
+ *    مش خلل بالطلب.
+ */
+async function handleHealth(
+  deps: ServerDeps,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    await deps.health.ping();
+  } catch (error) {
+    logger.error({ err: error }, "🔴 فحص الصحة ما وصل القاعدة");
+    return send(res, 503, { ok: false, error: "database_unavailable" });
+  }
+  return send(res, 200, { ok: true });
+}
+
+/**
+ * GET /webhooks/whatsapp — تحقّق الاشتراك. ميتا بتناديها مرة وحدة وقت ربط الـwebhook.
  *
  * الرد لازم يكون hub.challenge **نص خام**، مش JSON. ميتا بتقارن الجسم حرفيا،
  * فـ`"1158201444"` بعلامات تنصيص بتفشل الربط.
@@ -97,14 +137,20 @@ function handleVerification(
 }
 
 /**
- * POST /webhook — الرسائل الواردة.
+ * POST /webhooks/whatsapp — الرسائل الواردة.
  *
- * 🔴 قاعدة الردود هون: توقيع فاشل = 401، وكل شي غيره = 200.
+ * 🔴 قاعدة الردود، حرفيا:
  *
- * ميتا بتفسّر أي رد غير 200 كفشل تسليم، بتعيد الإرسال، وبتخفّض تقييم جودة
- * الرقم لو تكرر (NFR-05). يعني حمولة مشوّهة، نوع رسالة ما بنعرفه، حدث مكرر،
- * وحتى خطأ داخلي — كلهم 200 وسطر log. الاستثناء الوحيد هو التوقيع، لأن طلب
- * ما وقّعه صاحب التطبيق مش من ميتا أصلا.
+ *      200      = خزّنتها بأمان، أو تجاهلتها بقصد ونهائيا
+ *                 (JSON مشوّه، نوع غير مدعوم، حدث مكرر).
+ *      غير 200  = ما قدرت — أعِد الإرسال.
+ *
+ * ميتا بتعيد الإرسال بتردد متناقص لحد ٧ أيام على أي رد غير 200. يعني طابور
+ * إعادة الإرسال موجود مجانا، وهو الفرق بين "رسالة اتأخرت دقيقتين" و"رسالة
+ * زبون ضاعت نهائيا وبصمت". 200 على فشل تخزين بيرمي الطابور.
+ *
+ * والاستثناء المعاكس هو التوقيع: 401، لأن طلب ما وقّعه صاحب التطبيق مش من
+ * ميتا أصلا وما في إشي يستاهل إعادة إرساله.
  */
 async function handleInbound(
   req: IncomingMessage,
@@ -152,12 +198,30 @@ async function handleInbound(
       { statuses: parsed.statuses },
       "أحداث حالة تسليم — خارج النطاق",
     );
+  if (parsed.ignoredChanges > 0)
+    logger.debug(
+      { ignoredChanges: parsed.ignoredChanges },
+      "أحداث webhook مش من نوع messages — انتجاهلت وحدها",
+    );
 
+  // 🔴 القيمة المرجَّعة تُفحص، لا تُرمى. هي الرد نفسه: أي رسالة بالدفعة ما
+  //    انخزنت لسبب قابل للإصلاح بتخلّي الرد 500، وميتا بتعيد الدفعة كاملة.
+  //    إعادة الدفعة آمنة لأن اللي انخزن أصلا بتمسكه بوابة منع التكرار.
+  let outcomes: IngestOutcome[];
   try {
-    await deps.service.ingest(parsed);
+    outcomes = await deps.service.ingest(parsed);
   } catch (error) {
     // ingest() ماسكة أخطاء كل رسالة لحالها؛ هاي شبكة أمان لخلل أعم.
     logger.error({ err: error }, "فشل غير متوقع بمعالجة حمولة webhook");
+    return send(res, 500, { error: "ingest_failed" });
+  }
+
+  if (needsRedelivery(outcomes)) {
+    logger.error(
+      { outcomes },
+      "🔴 رسالة واردة ما انخزنت — 500 عشان ميتا تعيد الإرسال",
+    );
+    return send(res, 500, { error: "ingest_failed" });
   }
 
   return send(res, 200, { status: "ok" });

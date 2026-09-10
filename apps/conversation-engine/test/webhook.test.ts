@@ -9,7 +9,8 @@
  *   2. منع التكرار ذرّي: نفس message_id مرتين = صف واحد، مش اتنين.
  *   3. الرسالة بتنكتب تحت سياق المطعم اللي طلع من phone_number_id — وبتنقرأ
  *      من هداك السياق وبس.
- *   4. رقم مش معروف = ولا صف بأي مكان بالجدول، مش صف عند مطعم غلط.
+ *   4. رقم مش معروف = ولا صف بأي مكان بالجدول، مش صف عند مطعم غلط — وولا
+ *      مطالبة منع تكرار كمان، عشان إعادة الإرسال بعد تصليح الربط تنجح.
  *
  * البيانات من db/seed/chain-isolation-fixture.sql، فلازم `pnpm db:migrate`
  * و`pnpm db:seed` يكونوا اشتغلوا. الشكل اللي بيهمّ: مطعم A على PHONE_A،
@@ -25,10 +26,13 @@ import { Pool } from "pg";
 
 import { env } from "../src/config/env.js";
 import { inboundMessages } from "../src/db/schema.js";
-import { TenantDb } from "../src/db/tenant-db.js";
-import { createWebhookServer } from "../src/http/server.js";
+import { enginePoolConfig, TenantDb } from "../src/db/tenant-db.js";
+import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
 import { parseWebhookPayload } from "../src/whatsapp/payload.js";
-import { WebhookService } from "../src/whatsapp/webhook.service.js";
+import {
+  needsRedelivery,
+  WebhookService,
+} from "../src/whatsapp/webhook.service.js";
 
 const RESTAURANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RESTAURANT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -48,6 +52,31 @@ let service: WebhookService;
 let server: Server;
 let baseUrl: string;
 let audit: Pool;
+
+/** مطاعم أنشأها الاختبار. بتنمسح بـafterAll، والرسائل بتنمسح معها cascade. */
+const createdRestaurants: string[] = [];
+
+/**
+ * مطعم مؤقت على رقم خاص بهالتشغيلة.
+ *
+ * لازم يكون صف حقيقي مش fixture ثابت: الاختبار المحوري بيحتاج يبدّل حالة
+ * الربط بنص الاختبار — من "ما في مطعم" لـ"في مطعم" — وتعديل صفوف الـfixture
+ * المشتركة بيكسر باقي السويتات.
+ */
+async function createRestaurant(
+  phoneId: string,
+  status: "active" | "suspended",
+): Promise<string> {
+  const { rows } = await audit.query<{ id: string }>(
+    `INSERT INTO restaurants (name, whatsapp_phone_id, status)
+     VALUES ($1, $2, $3::restaurant_status) RETURNING id`,
+    [`مطعم اختبار ${RUN}`, phoneId, status],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error("ما انكتب صف مطعم للاختبار");
+  createdRestaurants.push(id);
+  return id;
+}
 
 /**
  * اتصال تدقيق بصلاحيات المُهاجِر — للاختبارات وبس.
@@ -133,7 +162,11 @@ function postRaw(
     "content-type": "application/json",
   };
   if (signature !== undefined) headers["x-hub-signature-256"] = signature;
-  return fetch(`${baseUrl}/webhook`, { method: "POST", headers, body });
+  return fetch(`${baseUrl}${WEBHOOK_PATH}`, {
+    method: "POST",
+    headers,
+    body,
+  });
 }
 
 /** الطريق السعيد: تسلسل، توقيع على نفس النص، إرسال. */
@@ -159,6 +192,46 @@ async function countClaims(waMessageId: string): Promise<number> {
     [waMessageId],
   );
   return Number(rows[0]?.n ?? "0");
+}
+
+/**
+ * سيرفر على مخزن معيّن، مع عنوانه ودالة إغلاقه.
+ *
+ * بتستعمله الاختبارات اللي بدها قاعدة **ساقطة فعلا** — مخزن مسكّر، منفذ ما
+ * حدا سامع عليه، اسم قاعدة مش موجود. ولا وحدة منهم mock: الفشل بيجي من
+ * الشبكة أو من Postgres نفسه.
+ */
+async function serverOn(
+  target: TenantDb,
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const instance = createWebhookServer({
+    service: new WebhookService(target),
+    health: target,
+    verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+    appSecret: env().WHATSAPP_APP_SECRET,
+  });
+  await new Promise<void>((resolve) => {
+    instance.listen(0, "127.0.0.1", resolve);
+  });
+  return {
+    url: `http://127.0.0.1:${(instance.address() as AddressInfo).port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        instance.close((err) => (err ? reject(err) : resolve()));
+      }),
+  };
+}
+
+/**
+ * نفس رابط المحرّك بس على اسم قاعدة مش موجود.
+ *
+ * الفشل هون مختلف نوعيا عن المخزن المسكّر: الاتصال بينفتح على TCP وPostgres
+ * نفسه بيرفضه. فمعالج بيميّز "المخزن مسكّر" وبس بينمسك هون.
+ */
+function missingDatabaseUrl(): string {
+  const url = new URL(env().ENGINE_DATABASE_URL);
+  url.pathname = `/sufria_does_not_exist_${RUN.slice(0, 8)}`;
+  return url.toString();
 }
 
 /** بيقرأ من جوّا سياق المطعم — يعني تحت RLS، زي أي كود تطبيق. */
@@ -194,6 +267,7 @@ beforeAll(async () => {
   service = new WebhookService(db);
   server = createWebhookServer({
     service,
+    health: db,
     verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     appSecret: env().WHATSAPP_APP_SECRET,
   });
@@ -218,12 +292,18 @@ afterAll(async () => {
     "DELETE FROM processed_webhook_events WHERE event_id LIKE $1",
     [`wamid.TEST.${RUN}.%`],
   );
+  // المطاعم المؤقتة آخر إشي — رسائلها بتروح معها بـON DELETE CASCADE.
+  if (createdRestaurants.length > 0) {
+    await audit.query("DELETE FROM restaurants WHERE id = ANY($1::uuid[])", [
+      createdRestaurants,
+    ]);
+  }
   await audit.end();
 });
 
-describe("GET /webhook — تحقّق الاشتراك", () => {
+describe("GET /webhooks/whatsapp — تحقّق الاشتراك", () => {
   const verifyUrl = (params: Record<string, string>): string =>
-    `${baseUrl}/webhook?${new URLSearchParams(params).toString()}`;
+    `${baseUrl}${WEBHOOK_PATH}?${new URLSearchParams(params).toString()}`;
 
   it("يرجّع hub.challenge كنص خام لما التوكن يطابق", async () => {
     const res = await fetch(
@@ -261,7 +341,7 @@ describe("GET /webhook — تحقّق الاشتراك", () => {
   });
 });
 
-describe("POST /webhook — التوقيع", () => {
+describe("POST /webhooks/whatsapp — التوقيع", () => {
   it("توقيع صحيح: 200 والرسالة انخزنت عند مطعم الـphone_number_id", async () => {
     const id = wamid("valid-signature");
     const res = await postSigned(
@@ -335,7 +415,7 @@ describe("POST /webhook — التوقيع", () => {
   });
 });
 
-describe("POST /webhook — منع التكرار", () => {
+describe("POST /webhooks/whatsapp — منع التكرار", () => {
   it("نفس message_id مرتين: 200 مرتين، وصف واحد بس", async () => {
     const id = wamid("duplicate");
     const payload = metaPayload({
@@ -398,16 +478,17 @@ describe("POST /webhook — منع التكرار", () => {
   });
 });
 
-describe("POST /webhook — التوجيه والعزل", () => {
-  it("رقم غير معروف: 200، وولا صف بأي مكان بالجدول", async () => {
+describe("POST /webhooks/whatsapp — التوجيه والعزل", () => {
+  it("رقم غير معروف: 500، وولا صف بأي مكان بالجدول", async () => {
     const id = wamid("unknown-phone");
 
     const res = await postSigned(
       metaPayload({ phoneNumberId: PHONE_ID_UNKNOWN, waMessageId: id }),
     );
 
-    // 200 مش 500: رقم مش معروف إعداد غلط عند ميتا، مش عطل بالنظام.
-    expect(res.status).toBe(200);
+    // 🔴 500 مش 200. رقم مش معروف حالة قابلة للتصليح — الربط عند ميتا
+    //    بينتظبط، أو الرقم بينضاف للمطعم — و200 بتقول "خلصت" وبترمي الرسالة.
+    expect(res.status).toBe(500);
 
     // 🔴 التأكيد اللي بيهم: ولا صف — لا عند A ولا B ولا أي مطعم تالت.
     //    هالسؤال بينسأل فوق RLS بالقصد: من جوّا سياق مطعم، "ما شفت صف"
@@ -471,7 +552,7 @@ describe("POST /webhook — التوجيه والعزل", () => {
   });
 });
 
-describe("POST /webhook — حمولات ما بنتعامل معها", () => {
+describe("POST /webhooks/whatsapp — حمولات ما بنتعامل معها", () => {
   it("JSON مشوّه: 200 وبلا استثناء", async () => {
     const res = await postRaw("{ not json at all", sign("{ not json at all"));
     expect(res.status).toBe(200);
@@ -557,5 +638,608 @@ describe("POST /webhook — حمولات ما بنتعامل معها", () => {
     const res = await postRaw(body, sign(body));
     expect(res.status).toBe(200);
     expect(await countEverywhere(wamid("status"))).toBe(0);
+  });
+});
+
+describe("POST /webhooks/whatsapp — فشل التخزين", () => {
+  /**
+   * 🔴 هالمجموعة هي مقابل عطل "200 على كل شي".
+   *
+   *    فشل التخزين بيوصل بأشكال — قاعدة واقعة، قيد رفض، اتصال منقطع،
+   *    deadlock، مهلة — وكلهم بينتهوا بنفس المكان: المعاملة انسحبت وما في
+   *    صف. الرد الصح عليهم واحد: غير 200، عشان طابور إعادة الإرسال عند ميتا
+   *    (٧ أيام) يشتغل. 200 هون معناها الرسالة انمسحت من الوجود.
+   *
+   *    ولا mock: الفشل بينعمل بالقاعدة الحقيقية.
+   */
+
+  it("قيد رفض أثناء الكتابة: 500 مش 200، وولا مطالبة انثبتت", async () => {
+    // بنزرع الصف مسبقا باتصال التدقيق **بلا** مطالبة منع تكرار. فالبوابة
+    // بتمر (المطالبة جديدة)، والتوجيه بينجح، وINSERT بيرتطم بـ
+    // UNIQUE(restaurant_id, wa_message_id) — قيد رفض حقيقي من Postgres.
+    const id = wamid("constraint-violation");
+    await audit.query(
+      `INSERT INTO inbound_messages
+         (restaurant_id, wa_message_id, phone_number_id, from_phone,
+          message_type, body, payload)
+       VALUES ($1, $2, $3, $4, 'text', 'صف مزروع', '{}'::jsonb)`,
+      [RESTAURANT_A, id, PHONE_ID_A, CUSTOMER_PHONE],
+    );
+
+    const res = await postSigned(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+
+    // 🔴 التأكيد المركزي.
+    expect(res.status).toBe(500);
+
+    // الصف المزروع لسا وحده — ما انكتب فوقه ولا انضاف تاني.
+    expect(await countEverywhere(id)).toBe(1);
+    // والمطالبة انسحبت مع المعاملة: بلاها إعادة الإرسال بتتصنّف "مكرر"
+    // وبترجع 200 بلا ما تخزّن إشي — يعني الرسالة بتضيع رغم الـ500.
+    expect(await countClaims(id)).toBe(0);
+  });
+
+  it("اتصال مقطوع: 500، وولا صف وولا مطالبة", async () => {
+    // مخزن اتصالات مسكّر = "القاعدة مش موجودة" من وجهة نظر الكود. نفس
+    // الشكل اللي بيصير فيه failover أو إعادة تشغيل Postgres تحت الحمل.
+    const id = wamid("dead-pool");
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+
+    const deadServer = createWebhookServer({
+      service: new WebhookService(deadDb),
+      health: deadDb,
+      verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      appSecret: env().WHATSAPP_APP_SECRET,
+    });
+    await new Promise<void>((resolve) => {
+      deadServer.listen(0, "127.0.0.1", resolve);
+    });
+    const deadUrl = `http://127.0.0.1:${
+      (deadServer.address() as AddressInfo).port
+    }`;
+
+    try {
+      const body = JSON.stringify(
+        metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+      );
+      const res = await fetch(`${deadUrl}${WEBHOOK_PATH}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": sign(body),
+        },
+        body,
+      });
+
+      expect(res.status).toBe(500);
+      expect(await countEverywhere(id)).toBe(0);
+      expect(await countClaims(id)).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        deadServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("فشل تخزين بالفرع نفسه: ingest بترجّع failed، مش استثناء", async () => {
+    // 🔴 الاختباران فوق بيفحصوا رمز الحالة — أثر جانبي. هذا بيفحص الفرع
+    //    اللي مشى فعليا: القيمة اللي طلعت من ingest() هي "failed"، يعني
+    //    الخطأ انمسك برسالة وحدة وما سقّط الدفعة، والمستدعي عنده معلومة
+    //    كافية يرد فيها 500. لو صار الرد 500 لأن السيرفر انفجر بمكان تاني،
+    //    هذا الاختبار بيضل يمسك الفرق.
+    const id = wamid("failed-branch");
+    await audit.query(
+      `INSERT INTO inbound_messages
+         (restaurant_id, wa_message_id, phone_number_id, from_phone,
+          message_type, payload)
+       VALUES ($1, $2, $3, $4, 'text', '{}'::jsonb)`,
+      [RESTAURANT_A, id, PHONE_ID_A, CUSTOMER_PHONE],
+    );
+
+    const parsed = parseWebhookPayload(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+    if (parsed === null) throw new Error("الحمولة المبنية بالاختبار ما انقرأت");
+
+    await expect(service.ingest(parsed)).resolves.toEqual(["failed"]);
+    expect(needsRedelivery(["failed"])).toBe(true);
+    expect(needsRedelivery(["stored", "duplicate"])).toBe(false);
+  });
+
+  it("رسالة سليمة ورسالة فاشلة بنفس الدفعة: السليمة تُخزَّن والرد 500", async () => {
+    // إعادة الدفعة كاملة آمنة: اللي انخزن بتمسكه بوابة منع التكرار بالتسليم
+    // الجاي، واللي فشل بياخد محاولة تانية. عشان هيك الرد على الدفعة كلها
+    // 500 وما في تقسيم.
+    const good = wamid("batch-good");
+    const bad = wamid("batch-bad");
+    await audit.query(
+      `INSERT INTO inbound_messages
+         (restaurant_id, wa_message_id, phone_number_id, from_phone,
+          message_type, payload)
+       VALUES ($1, $2, $3, $4, 'text', '{}'::jsonb)`,
+      [RESTAURANT_A, bad, PHONE_ID_A, CUSTOMER_PHONE],
+    );
+
+    const res = await postSigned(
+      metaPayload(
+        { phoneNumberId: PHONE_ID_A, waMessageId: good, text: "سليمة" },
+        { phoneNumberId: PHONE_ID_A, waMessageId: bad, text: "بترتطم بقيد" },
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    // الرسالة السليمة ما انسحبت مع أختها — كل وحدة بمعاملتها.
+    expect(await readAsTenant(RESTAURANT_A, good)).toHaveLength(1);
+    expect(await countClaims(good)).toBe(1);
+    expect(await countClaims(bad)).toBe(0);
+  });
+});
+
+describe("POST /webhooks/whatsapp — رقم بلا مطعم: الاسترجاع بعد تصليح الربط", () => {
+  /**
+   * 🔴 هالمجموعة هي جوهر المهمة.
+   *
+   *    العطل اللي كان: رقم مش معروف بيثبّت مطالبة منع التكرار وبيرجع 200 بلا
+   *    ما يخزّن. النتيجة إن الرسالة بتصير **غير قابلة للاسترجاع للأبد**:
+   *    ميتا شافت 200 فما بتعيد، ولو أعادت بتلاقي المطالبة مثبّتة فبتتصنّف
+   *    "مكرر" وبترجع 200 تاني — حتى بعد ما ينتصلّح الربط وتصير الرسالة
+   *    قابلة للتوجيه تماما.
+   *
+   *    فعدّ الصفوف لحاله ما بيكفي هون. التأكيد اللي بيثبت الإصلاح هو
+   *    **غياب صف المطالبة**، وبعده إعادة نفس الرسالة حرفيا بعد تصليح الربط.
+   */
+
+  it("رقم مجهول ثم إصلاح الربط: 500 بلا مطالبة، وإعادة نفس الرسالة بتُخزَّن", async () => {
+    const id = wamid("recover-after-fix");
+    const phoneId = `PHONE_UNMAPPED.${RUN}`;
+    // نفس الحمولة بالضبط بالمحاولتين — هيك بتعيد ميتا: بايتات متطابقة.
+    const payload = metaPayload({
+      phoneNumberId: phoneId,
+      waMessageId: id,
+      text: "بدي أطلب — وصلت قبل ما ينتربط الرقم",
+    });
+
+    // --- المحاولة الأولى: ما في مطعم على هالرقم ---------------------------
+    const first = await postSigned(payload);
+
+    expect(first.status).toBe(500);
+    expect(await countEverywhere(id)).toBe(0);
+    // 🔴 التأكيد المحوري بكل هالمهمة. لو صار 1 هون، المطالبة اتثبّتت على
+    //    رسالة ما انخزنت، وكل إعادة إرسال جاية رح تتصنّف "مكرر" — الرسالة
+    //    ماتت وما في طريق يرجّعها.
+    expect(await countClaims(id)).toBe(0);
+
+    // --- تصليح الربط: الرقم بينضاف لمطعم فعّال ----------------------------
+    const restaurantId = await createRestaurant(phoneId, "active");
+
+    // --- إعادة الإرسال: نفس الرسالة، نفس المعرّف --------------------------
+    const second = await postSigned(payload);
+
+    expect(second.status).toBe(200);
+    const rows = await readAsTenant(restaurantId, id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.body).toBe("بدي أطلب — وصلت قبل ما ينتربط الرقم");
+    expect(await countClaims(id)).toBe(1);
+  });
+
+  it("مطعم موقوف ثم رفع الإيقاف: نفس السلوك بالضبط", async () => {
+    // الإيقاف بيمر من نفس الدالة: 0003 فيها
+    // `AND status <> 'suspended'`، فبترجّع NULL زي الرقم المجهول تماما.
+    // ولو انبلعت الرسالة بـ200، مطعم رجع من الإيقاف بيلاقي طلبات زبائنه
+    // ضايعة من فترة الإيقاف — مش متأخرة، ضايعة.
+    const id = wamid("suspended-then-active");
+    const phoneId = `PHONE_SUSPENDED.${RUN}`;
+    const restaurantId = await createRestaurant(phoneId, "suspended");
+    const payload = metaPayload({
+      phoneNumberId: phoneId,
+      waMessageId: id,
+      text: "وصلت والمطعم موقوف",
+    });
+
+    const first = await postSigned(payload);
+    expect(first.status).toBe(500);
+    expect(await countEverywhere(id)).toBe(0);
+    expect(await countClaims(id)).toBe(0);
+
+    await audit.query(
+      "UPDATE restaurants SET status = 'active' WHERE id = $1",
+      [restaurantId],
+    );
+
+    const second = await postSigned(payload);
+    expect(second.status).toBe(200);
+    expect(await readAsTenant(restaurantId, id)).toHaveLength(1);
+  });
+
+  it("الفرع نفسه: ingest بترجّع unroutable، وهي قابلة لإعادة الإرسال", async () => {
+    // 🔴 الاختباران فوق بيفحصوا الأثر (رمز الحالة، عدّ الصفوف). هذا بيفحص
+    //    الفرع اللي مشى فعليا. الفرق بيبان لو انكسر التوجيه بشكل تاني:
+    //    استثناء عام بالمعاملة كمان بيرجّع 500 وبيخلي عدّ المطالبات صفر —
+    //    يعني الاختباران فوق بيمروا وهم مبسوطين بينما التشخيص غلط تماما.
+    //    "unroutable" بتقول: البوابة مشت، والتوجيه هو اللي قال ما في مطعم.
+    const id = wamid("unroutable-branch");
+    const parsed = parseWebhookPayload(
+      metaPayload({ phoneNumberId: PHONE_ID_UNKNOWN, waMessageId: id }),
+    );
+    if (parsed === null) throw new Error("الحمولة المبنية بالاختبار ما انقرأت");
+
+    await expect(service.ingest(parsed)).resolves.toEqual(["unroutable"]);
+    expect(needsRedelivery(["unroutable"])).toBe(true);
+    expect(await countClaims(id)).toBe(0);
+  });
+
+  it("المطالبة بتضل مسحوبة مهما تكرّرت المحاولة", async () => {
+    // ثلاث إعادات إرسال على رقم لسا مش مربوط. لو وحدة منهم ثبّتت مطالبة،
+    // الرابعة — اللي بتيجي بعد التصليح — بتتصنّف "مكرر" وبتضيع الرسالة.
+    // يعني الخاصية لازم تصمد على التكرار، مش على أول محاولة بس.
+    const id = wamid("repeated-unroutable");
+    const phoneId = `PHONE_STILL_UNMAPPED.${RUN}`;
+    const payload = metaPayload({
+      phoneNumberId: phoneId,
+      waMessageId: id,
+    });
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await postSigned(payload);
+      expect(res.status).toBe(500);
+      expect(await countClaims(id)).toBe(0);
+    }
+
+    const restaurantId = await createRestaurant(phoneId, "active");
+    const recovered = await postSigned(payload);
+    expect(recovered.status).toBe(200);
+    expect(await readAsTenant(restaurantId, id)).toHaveLength(1);
+  });
+});
+describe("GET /health — الفحص لازم يلمس القاعدة", () => {
+  /**
+   * 🔴 فحص صحة ما بيلمس القاعدة بيكذب بأسوأ لحظة.
+   *
+   *    العملية بتضل عايشة والقاعدة واقعة، فالمنسّق بيشوف 200 وبيضل يوجّه
+   *    الطلبات، والمستقبِل بيضل يبلع رسائل الزبائن طول العطل. الفحص اللي
+   *    بيسقط بيخلي العملية تنشال من الدوران، وميتا بتشوف غير-200 وبتحتفظ
+   *    بالرسائل بطابورها لحد ما ترجع القاعدة.
+   */
+
+  it("قاعدة شغّالة: 200 و ok", async () => {
+    const res = await fetch(`${baseUrl}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("قاعدة غير متاحة: غير 200", async () => {
+    // مخزن اتصالات مسكّر — نفس اللي بيصير بإعادة تشغيل Postgres أو failover.
+    // 🔴 لو الفحص ما بيلمس القاعدة، ما في طريقة يفشل فيها هون: بيرجّع 200
+    //    وهو مغمّض. فهذا الاختبار هو اللي بيثبت إنه بيلمسها فعلا.
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+
+    const deadServer = createWebhookServer({
+      service: new WebhookService(deadDb),
+      health: deadDb,
+      verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      appSecret: env().WHATSAPP_APP_SECRET,
+    });
+    await new Promise<void>((resolve) => {
+      deadServer.listen(0, "127.0.0.1", resolve);
+    });
+    const deadUrl = `http://127.0.0.1:${
+      (deadServer.address() as AddressInfo).port
+    }`;
+
+    try {
+      const res = await fetch(`${deadUrl}/health`);
+
+      expect(res.status).not.toBe(200);
+      // 503 تحديدا: العطل بالاعتمادية ومؤقت، والمنسّق بيقرأها "شيلني من
+      // الدوران" مش "الطلب غلط".
+      expect(res.status).toBe(503);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        deadServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("الفرع نفسه: الرد بيقول إنه فرع القاعدة اللي مشى، مش رمز حالة بس", async () => {
+    // 🔴 رمز الحالة أثر. الجسم هو اللي بيميّز الفرعين:
+    //
+    //      نجح الفحص  -> { ok: true }
+    //      فشل الفحص  -> { ok: false, error: "database_unavailable" }
+    //
+    //    معالج بيبلع خطأ الفحص وبيرجّع 200 بيرجّع جسم الفرع التاني — وهاد
+    //    اللي بينمسك هون. ولولا هالتأكيد، أي 503 من أي مكان بالمسار بيرضّي
+    //    الاختبار اللي فوق.
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+    const dead = await serverOn(deadDb);
+
+    try {
+      const res = await fetch(`${dead.url}/health`);
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "database_unavailable",
+      });
+    } finally {
+      await dead.close();
+    }
+  });
+
+  it("قاعدة موجودة عالشبكة بس بترفض: كمان غير 200", async () => {
+    // فشل من نوع تاني تماما: TCP بيوصل وPostgres بيرد بالرفض. الفرع لازم
+    // يكون واحد — "ما قدرت أوصل القاعدة" — مش حالة خاصة بمخزن مسكّر.
+    const refusedDb = new TenantDb(missingDatabaseUrl());
+    const refused = await serverOn(refusedDb);
+
+    try {
+      const res = await fetch(`${refused.url}/health`);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "database_unavailable",
+      });
+    } finally {
+      await refused.close();
+      await refusedDb.stop();
+    }
+  });
+
+  it("الفرع نفسه: ping بيمرّر على قاعدة شغّالة وبيرمي على مسكّرة", async () => {
+    // 🔴 الاختباران فوق بيفحصوا رمز الحالة — أثر. هذا بيفحص الاستعلام نفسه:
+    //    ping() بتوصل القاعدة وبترجع، وبترمي لما ما توصل. لو انمسح جسمها
+    //    وصارت `async ping() {}` فاضية، الاختباران فوق ممكن يضلوا يمروا لو
+    //    صار الفشل بمكان تاني بالمسار — هذا ما بيمر.
+    await expect(db.ping()).resolves.toBeUndefined();
+
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+    await expect(deadDb.ping()).rejects.toThrow();
+  });
+});
+
+describe("مخزن الاتصالات — مهلات بدل الانتظار الأبدي", () => {
+  /**
+   * 🔴 كانوا كلهم غايبين، وافتراض pg بكل وحدة منهم هو انتظار أبدي.
+   *
+   *    الشكل اللي بيظهر فيه العطل واحد بالحالات الثلاث: معالج webhook بيعلّق
+   *    ساكت، ميتا بتقطع من طرفها بلا رد فبتعيد الإرسال، والمعالجات المعلّقة
+   *    بتتكدّس لحد ما تموت العملية بلا سطر log يفسّر. مهلة بتحوّل هالسكوت
+   *    لخطأ صريح ورد 500 — يعني إعادة إرسال مضبوطة بدل موت صامت.
+   */
+
+  it("الثلاث مضبوطين، وstatement_timeout أقصر من query_timeout", async () => {
+    const config = enginePoolConfig();
+
+    expect(config.connectionTimeoutMillis).toBeGreaterThan(0);
+    expect(config.statement_timeout).toBeGreaterThan(0);
+    expect(config.query_timeout).toBeGreaterThan(0);
+
+    // 🔴 الترتيب جزء من الصحة مش تفضيل: إلغاء Postgres (57014) بيرجع خطأ
+    //    نظيف والاتصال بيضل صالح، بينما مهلة العميل بتهدّ الاتصال. فمهلة
+    //    الخادم لازم تفوز بالحالة العادية، والعميل شبكة أمان ورا.
+    expect(Number(config.statement_timeout)).toBeLessThan(
+      Number(config.query_timeout),
+    );
+    await Promise.resolve();
+  });
+
+  it("statement_timeout بيوصل Postgres فعلا — مش بس مكتوب بالإعداد", async () => {
+    // الجلسة نفسها بتنسأل عن قيمتها. لو الخيار انشال من الإعداد، Postgres
+    // بيرجّع "0" — يعني بلا حدود — وهاد بالضبط العطل.
+    const shown = await db.runUnscoped(async (tx) => {
+      const res = await tx.execute<{ statement_timeout: string }>(
+        sql`SHOW statement_timeout`,
+      );
+      return res.rows[0]?.statement_timeout ?? "0";
+    });
+
+    expect(shown).not.toBe("0");
+    // Postgres بيرجّعها بوحدة: "10s" أو "10000ms" حسب القيمة.
+    const ms = shown.endsWith("ms")
+      ? Number(shown.slice(0, -2))
+      : Number(shown.slice(0, -1)) * 1000;
+    expect(ms).toBe(Number(enginePoolConfig().statement_timeout));
+  });
+
+  it("مخزن مشبّع: الاستعلام بيفشل بمهلة بدل ما يعلّق للأبد", async () => {
+    // 🔴 هاي الحالة اللي connectionTimeoutMillis موجود عشانها، وهي مش نادرة:
+    //    كل اتصالات المخزن مشغولة باستعلام بطيء، والطلب الجاي بينحط بالطابور.
+    //    بلا مهلة بيضل بالطابور للأبد.
+    //
+    //    PG_POOL_MAX=1 بالسويت (شوف test/setup-env.ts)، فاستعلام بطيء واحد
+    //    بيشبّع المخزن كله بشكل حاسم.
+    expect(env().PG_POOL_MAX).toBe(1);
+    const limit = Number(enginePoolConfig().connectionTimeoutMillis);
+
+    // بيمسك الاتصال الوحيد لمدة أطول من المهلة بمريح.
+    const holding = db.runUnscoped(async (tx) => {
+      await tx.execute(sql`SELECT pg_sleep(${(limit * 2) / 1000})`);
+    });
+
+    const started = Date.now();
+    let rejected = false;
+    try {
+      await db.ping();
+    } catch {
+      rejected = true;
+    }
+    const waited = Date.now() - started;
+
+    await holding;
+
+    expect(rejected).toBe(true);
+    // فشل، ومن مهلة — مش بعد ما استنى الاستعلام البطيء يخلص.
+    expect(waited).toBeLessThan(limit * 2);
+  });
+});
+
+describe("مخطط المظروف — عنصر ما بنعرفه ما بيسقّط الدفعة", () => {
+  /**
+   * 🔴 ميتا بتوفّر ~١٩ نوع webhook غير messages على نفس الاشتراك، والتوثيق
+   *    ما بيضمن وجود metadata.phone_number_id فيهم كلهم. وبما إنها بتجمّع
+   *    الأحداث بطلب واحد، تحديث قالب بيوصل بنفس الطلب مع رسالة زبون.
+   *
+   *    قبل هالإصلاح، change بلا metadata كان يفشّل فحص المظروف كله —
+   *    parseWebhookPayload بترجع null، والرد 200، ورسالة الزبون اللي بنفس
+   *    الدفعة بتنبلع. التساهل لازم يكون على مستوى العنصر، مش المظروف.
+   */
+
+  /** دفعة فيها حدث بلا metadata + رسالة سليمة، بنفس الترتيب اللي بتوصل فيه. */
+  function mixedBatch(waMessageId: string): string {
+    return JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "WABA_TEST",
+          changes: [
+            {
+              // حدث حقيقي من ميتا: تحديث حالة قالب. ولا metadata ولا
+              // phone_number_id — والتوثيق ما بيوعد فيهم.
+              field: "message_template_status_update",
+              value: {
+                event: "APPROVED",
+                message_template_id: 1234567890,
+                message_template_name: "order_confirmation",
+                message_template_language: "ar",
+              },
+            },
+            {
+              field: "messages",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: {
+                  display_phone_number: "962790000000",
+                  phone_number_id: PHONE_ID_A,
+                },
+                messages: [
+                  {
+                    from: CUSTOMER_PHONE,
+                    id: waMessageId,
+                    timestamp: "1757000000",
+                    type: "text",
+                    text: { body: "بدي أطلب — وجاي مع تحديث قالب" },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  it("change بلا metadata + رسالة سليمة: السليمة تُخزَّن والرد 200", async () => {
+    const id = wamid("mixed-batch");
+    const body = mixedBatch(id);
+
+    const res = await postRaw(body, sign(body));
+
+    expect(res.status).toBe(200);
+    // 🔴 التأكيد اللي بيهم: الرسالة السليمة ما انبلعت مع أخوها.
+    const rows = await readAsTenant(RESTAURANT_A, id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.body).toBe("بدي أطلب — وجاي مع تحديث قالب");
+  });
+
+  it("الفرع نفسه: المظروف بينقرأ، والعنصر بينتعدّ متجاهَل مش مشوّه", async () => {
+    // 🔴 الاختبار اللي فوق بيفحص الأثر — انخزنت. هذا بيفحص الفرع:
+    //
+    //      المظروف انقرأ (مش null)  -> التساهل على مستوى العنصر مشي.
+    //      ignoredChanges = 1       -> العنصر انتعدّ متجاهَل، بقصد.
+    //      skipped = 0              -> ولا رسالة انفحصت وفشلت.
+    //
+    //    بلا هالتأكيدات، أي تنفيذ بيرجع 200 على كل شي بيرضّي الاختبار فوق
+    //    طول ما الرسالة السليمة انخزنت لأي سبب تاني.
+    const id = wamid("mixed-branch");
+    const parsed = parseWebhookPayload(JSON.parse(mixedBatch(id)));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messages).toHaveLength(1);
+    expect(parsed?.messages[0]?.phoneNumberId).toBe(PHONE_ID_A);
+    expect(parsed?.ignoredChanges).toBe(1);
+    expect(parsed?.skipped).toBe(0);
+  });
+
+  it("كل الـchanges بلا metadata: 200، ولا رسالة، ولا استثناء", async () => {
+    // ما في رسالة أصلا — يعني ما في إشي ينخزن، والرد 200 لأن التجاهل هون
+    // مقصود ونهائي: إعادة إرسال نفس الحدث رح تنتجاهل بنفس الطريقة.
+    const body = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "WABA_TEST",
+          changes: [
+            { field: "account_alerts", value: { alert_severity: "WARNING" } },
+            { field: "phone_number_quality_update", value: { event: "FLAG" } },
+          ],
+        },
+      ],
+    });
+
+    const res = await postRaw(body, sign(body));
+    expect(res.status).toBe(200);
+
+    const parsed = parseWebhookPayload(JSON.parse(body));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messages).toHaveLength(0);
+    expect(parsed?.ignoredChanges).toBe(2);
+  });
+});
+
+describe("المسار — /webhooks/whatsapp زي وثيقة Sprint 1", () => {
+  it("المسار المعلن هو اللي بوثيقة S1-01", () => {
+    // مثبّت كقيمة عشان تغييره يصير قرار صريح: هاد نفس النص اللي بينكتب
+    // بإعدادات الـwebhook عند ميتا، وتغييره بعد الربط بيوقف الاستقبال.
+    expect(WEBHOOK_PATH).toBe("/webhooks/whatsapp");
+  });
+
+  it("المسار القديم /webhook: 404 على GET و POST", async () => {
+    const verify = await fetch(
+      `${baseUrl}/webhook?${new URLSearchParams({
+        "hub.mode": "subscribe",
+        "hub.verify_token": env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+        "hub.challenge": "1158201444",
+      }).toString()}`,
+    );
+    expect(verify.status).toBe(404);
+    // 🔴 ومهم إنه ما يرجّع الـchallenge: مسار قديم بيرد على تحقّق الاشتراك
+    //    بيخلي ربط ميتا ينجح على عنوان مهجور، وبعدها كل رسالة بتضرب 404.
+    expect(await verify.text()).not.toContain("1158201444");
+
+    const id = wamid("old-path");
+    const body = JSON.stringify(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+    const inbound = await fetch(`${baseUrl}/webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-hub-signature-256": sign(body),
+      },
+      body,
+    });
+    expect(inbound.status).toBe(404);
+    expect(await countEverywhere(id)).toBe(0);
+  });
+
+  it("المسار الجديد شغّال على الفعلين", async () => {
+    const verify = await fetch(
+      `${baseUrl}${WEBHOOK_PATH}?${new URLSearchParams({
+        "hub.mode": "subscribe",
+        "hub.verify_token": env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+        "hub.challenge": "1158201444",
+      }).toString()}`,
+    );
+    expect(verify.status).toBe(200);
+    expect(await verify.text()).toBe("1158201444");
+
+    const id = wamid("new-path");
+    const res = await postSigned(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+    expect(res.status).toBe(200);
+    expect(await readAsTenant(RESTAURANT_A, id)).toHaveLength(1);
   });
 });

@@ -1,6 +1,6 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
-import { Pool } from "pg";
+import { Pool, type PoolConfig, type QueryConfig } from "pg";
 import * as schema from "@sufria/shared";
 import { env } from "../config/env.js";
 import type { TenantTx } from "./types.js";
@@ -24,15 +24,57 @@ import type { TenantTx } from "./types.js";
  *   3. المعرّف bind parameter — لأن `SET LOCAL x = '<id>'` ما بتقبل واحد،
  *      ودمج النص بالـSQL بيحط ثغرة حقن جوّا حدود المستأجر نفسها.
  */
+/** مهلة استعلام فحص الصحة. أقصر من مهلة الاستعلام العامة بالقصد. */
+const HEALTH_QUERY_TIMEOUT_MS = 2000;
+
+/**
+ * إعداد مخزن الاتصالات، مكشوف عشان ينفحص كبيانات.
+ *
+ * 🔴 المهلات الثلاث مش زينة. بلاها pg بينتظر **للأبد** بكل وحدة من الحالات
+ *    الثلاث: مخزن مشبّع (connectionTimeoutMillis)، استعلام عالق عند Postgres
+ *    (statement_timeout)، وخادم بلع الاستعلام وما رد (query_timeout). وكل
+ *    وحدة منهم بتظهر نفس الشكل بالإنتاج — معالجات webhook بتتكدّس ساكتة لحد
+ *    ما تموت العملية — وولا وحدة منهم بتطلع بسطر log.
+ *
+ *    الترتيب مقصود: statement_timeout < query_timeout. إلغاء الخادم بيفوز
+ *    بالعادة فبيرجع خطأ نظيف (57014) والاتصال بيضل صالح للاستعمال؛ ومهلة
+ *    العميل شبكة الأمان للحالة اللي الخادم فيها ما رد إطلاقا.
+ */
+export function enginePoolConfig(
+  connectionString: string = env().ENGINE_DATABASE_URL,
+): PoolConfig {
+  return {
+    connectionString,
+    max: env().PG_POOL_MAX,
+    connectionTimeoutMillis: env().PG_CONNECT_TIMEOUT_MS,
+    statement_timeout: env().PG_STATEMENT_TIMEOUT_MS,
+    query_timeout: env().PG_QUERY_TIMEOUT_MS,
+  };
+}
+
+/**
+ * pg بيقرأ query_timeout من إعداد الاستعلام نفسه (lib/client.js: `config
+ * .query_timeout || this.connectionParameters.query_timeout`)، بس @types/pg
+ * ما بيعرّفها على QueryConfig. التوسعة هون بدل ما نرمي النوع كله بـany.
+ */
+interface TimedQueryConfig extends QueryConfig {
+  query_timeout: number;
+}
+
 export class TenantDb {
   private readonly pool: Pool;
   private readonly db: NodePgDatabase<typeof schema>;
 
-  constructor() {
-    this.pool = new Pool({
-      connectionString: env().ENGINE_DATABASE_URL,
-      max: env().PG_POOL_MAX,
-    });
+  /**
+   * الرابط اختياري وافتراضه ENGINE_DATABASE_URL — يعني كل كود التطبيق بينادي
+   * `new TenantDb()` وبس.
+   *
+   * الوسيط موجود عشان الاختبارات تقدر تبني مخزن على قاعدة **غير متاحة فعلا**
+   * (منفذ مسكّر، اسم قاعدة مش موجود) بدل ما تزيّف الفشل بـmock. فحص الصحة
+   * تحديدا ما بينثبت إلا بقاعدة ساقطة حقيقية.
+   */
+  constructor(connectionString: string = env().ENGINE_DATABASE_URL) {
+    this.pool = new Pool(enginePoolConfig(connectionString));
     this.db = drizzle(this.pool, { schema });
   }
 
@@ -61,6 +103,29 @@ export class TenantDb {
 
   async stop(): Promise<void> {
     await this.pool.end();
+  }
+
+  /**
+   * استعلام تافه على القاعدة، بمهلة قصيرة. بترمي لو ما وصل.
+   *
+   * 🔴 هذا اللي بيخلي /health يعني إشي.
+   *
+   *    فحص صحة ما بيلمس القاعدة بيجاوب على سؤال واحد: هل العملية عايشة؟
+   *    والعملية بتضل عايشة تماما والقاعدة واقعة — فتضل "سليمة" بنظر
+   *    المنسّق (Fly/Railway/K8s)، وتضل تستقبل webhooks، وتضل تبلع كل رسالة
+   *    زبون طول فترة العطل. فحص بيلمس القاعدة بيسقط، والمنسّق بيوقف توجيه
+   *    الطلبات، وميتا بتشوف غير-200 وبتحتفظ بالرسائل بطابورها.
+   *
+   *    المهلة قصيرة بالقصد وأقصر من مهلة الاستعلام العامة: فحص صحة بيعلّق
+   *    عشر ثواني هو نفسه عطل — المنسّق بيعتبره timeout ومصنّفه "مش سليم"
+   *    بعد ما يكون علّق خيط الفحص طول هالمدة.
+   */
+  async ping(): Promise<void> {
+    const probe: TimedQueryConfig = {
+      text: "SELECT 1",
+      query_timeout: HEALTH_QUERY_TIMEOUT_MS,
+    };
+    await this.pool.query(probe);
   }
 
   /**
@@ -116,8 +181,10 @@ export async function setTenantContext(
  * وممنوحة لـsufria_engine وحده. هي البديل عن إعطاء المحرّك BYPASSRLS: بتجاوب
  * على سؤال واحد وبترجّع عمود واحد، وكل شي بعدها بيمشي تحت RLS عادي.
  *
- * بترجّع null لرقم مش معروف ولمطعم موقوف — والاتنين مش استثناء. رقم مش معروف
- * بيجي من webhook مضبوط عالتطبيق الغلط، والرمي بيخلّي ميتا تعيد الإرسال للأبد.
+ * بترجّع null لرقم مش معروف ولمطعم موقوف. الاتنين حالة قابلة للتصليح — رقم
+ * بينضاف للمطعم، وإيقاف بينرفع — فالمستدعي بيرد 500 وبيسحب مطالبة منع التكرار
+ * عشان إعادة الإرسال من ميتا تلاقي الربط مصلَّح وتنجح. شوف
+ * UnroutableMessageError بـwhatsapp/webhook.service.ts.
  */
 export async function resolveRestaurantByPhoneId(
   tx: TenantTx,

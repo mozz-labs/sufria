@@ -1,6 +1,6 @@
 import { env } from "./config/env.js";
 import { TenantDb } from "./db/tenant-db.js";
-import { createWebhookServer } from "./http/server.js";
+import { createWebhookServer, WEBHOOK_PATH } from "./http/server.js";
 import { logger } from "./logger.js";
 import { WebhookService } from "./whatsapp/webhook.service.js";
 
@@ -14,6 +14,7 @@ async function bootstrap(): Promise<void> {
 
   const server = createWebhookServer({
     service: new WebhookService(db),
+    health: db,
     verifyToken: config.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     appSecret: config.WHATSAPP_APP_SECRET,
   });
@@ -29,8 +30,8 @@ async function bootstrap(): Promise<void> {
 
   server.listen(config.ENGINE_PORT, () => {
     logger.info(
-      { port: config.ENGINE_PORT },
-      "محرّك المحادثة يستمع — POST /webhook",
+      { port: config.ENGINE_PORT, path: WEBHOOK_PATH },
+      "محرّك المحادثة يستمع",
     );
   });
 }

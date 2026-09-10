@@ -35,16 +35,32 @@ const ChangeValueSchema = z.object({
   statuses: z.array(z.unknown()).optional(),
 });
 
+/**
+ * change واحد من نوع messages.
+ *
+ * 🔴 مفصول عن المظروف بالقصد، وبينفحص لحاله لكل عنصر.
+ *
+ *    ميتا بتوفّر حوالي ١٩ نوع webhook غير messages على نفس الاشتراك —
+ *    تحديثات حالة القوالب، جودة الرقم، تنبيهات الحساب — والتوثيق ما بيضمن
+ *    إن `metadata.phone_number_id` موجود فيهم كلهم. لو كان الفحص على مستوى
+ *    المظروف زي قبل، change واحد بلا metadata بيفشّل الفحص كله، فترجع
+ *    parseWebhookPayload بـnull، وكل رسالة زبون بنفس الدفعة بتنتجاهل.
+ *
+ *    ميتا بتجمّع الأحداث بطلب واحد، يعني هاي مش حالة نظرية: تحديث قالب
+ *    بيوصل بنفس الطلب مع رسالة زبون، وبيبلعها.
+ */
+const ChangeSchema = z.object({
+  field: z.string().optional(),
+  value: ChangeValueSchema,
+});
+
 const EnvelopeSchema = z.object({
   object: z.string().optional(),
   entry: z.array(
     z.object({
-      changes: z.array(
-        z.object({
-          field: z.string().optional(),
-          value: ChangeValueSchema,
-        }),
-      ),
+      // z.unknown() مش ChangeSchema — لنفس السبب اللي خلّى messages
+      // z.unknown() تحت: عنصر ما بنعرفه بينتجاهل لحاله، ما بيسقّط إخوانه.
+      changes: z.array(z.unknown()),
     }),
   ),
 });
@@ -68,6 +84,8 @@ export interface ParsedWebhook {
   skipped: number;
   /** أحداث حالة تسليم. خارج نطاق هالشريحة، بتنعدّ عشان السجل. */
   statuses: number;
+  /** changes مش من نوع messages (بلا metadata.phone_number_id). بتنعدّ وبس. */
+  ignoredChanges: number;
 }
 
 /**
@@ -81,10 +99,18 @@ export function parseWebhookPayload(input: unknown): ParsedWebhook | null {
   const messages: InboundMessage[] = [];
   let skipped = 0;
   let statuses = 0;
+  let ignoredChanges = 0;
 
   for (const entry of envelope.data.entry) {
-    for (const change of entry.changes) {
-      const value = change.value;
+    for (const rawChange of entry.changes) {
+      const change = ChangeSchema.safeParse(rawChange);
+      if (!change.success) {
+        // 🔴 هالعنصر وبس. الدفعة بتكمّل — رسالة الزبون اللي جنبه لازم تنخزن.
+        ignoredChanges++;
+        continue;
+      }
+
+      const value = change.data.value;
       statuses += value.statuses?.length ?? 0;
 
       for (const raw of value.messages ?? []) {
@@ -106,7 +132,7 @@ export function parseWebhookPayload(input: unknown): ParsedWebhook | null {
     }
   }
 
-  return { messages, skipped, statuses };
+  return { messages, skipped, statuses, ignoredChanges };
 }
 
 /** ثواني epoch كنص -> Date. أي شي مش رقم بيصير null، مش استثناء. */
