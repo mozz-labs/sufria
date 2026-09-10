@@ -28,7 +28,10 @@ import { inboundMessages } from "../src/db/schema.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer } from "../src/http/server.js";
 import { parseWebhookPayload } from "../src/whatsapp/payload.js";
-import { WebhookService } from "../src/whatsapp/webhook.service.js";
+import {
+  needsRedelivery,
+  WebhookService,
+} from "../src/whatsapp/webhook.service.js";
 
 const RESTAURANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RESTAURANT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -557,5 +560,140 @@ describe("POST /webhook — حمولات ما بنتعامل معها", () => {
     const res = await postRaw(body, sign(body));
     expect(res.status).toBe(200);
     expect(await countEverywhere(wamid("status"))).toBe(0);
+  });
+});
+
+describe("POST /webhook — فشل التخزين", () => {
+  /**
+   * 🔴 هالمجموعة هي مقابل عطل "200 على كل شي".
+   *
+   *    فشل التخزين بيوصل بأشكال — قاعدة واقعة، قيد رفض، اتصال منقطع،
+   *    deadlock، مهلة — وكلهم بينتهوا بنفس المكان: المعاملة انسحبت وما في
+   *    صف. الرد الصح عليهم واحد: غير 200، عشان طابور إعادة الإرسال عند ميتا
+   *    (٧ أيام) يشتغل. 200 هون معناها الرسالة انمسحت من الوجود.
+   *
+   *    ولا mock: الفشل بينعمل بالقاعدة الحقيقية.
+   */
+
+  it("قيد رفض أثناء الكتابة: 500 مش 200، وولا مطالبة انثبتت", async () => {
+    // بنزرع الصف مسبقا باتصال التدقيق **بلا** مطالبة منع تكرار. فالبوابة
+    // بتمر (المطالبة جديدة)، والتوجيه بينجح، وINSERT بيرتطم بـ
+    // UNIQUE(restaurant_id, wa_message_id) — قيد رفض حقيقي من Postgres.
+    const id = wamid("constraint-violation");
+    await audit.query(
+      `INSERT INTO inbound_messages
+         (restaurant_id, wa_message_id, phone_number_id, from_phone,
+          message_type, body, payload)
+       VALUES ($1, $2, $3, $4, 'text', 'صف مزروع', '{}'::jsonb)`,
+      [RESTAURANT_A, id, PHONE_ID_A, CUSTOMER_PHONE],
+    );
+
+    const res = await postSigned(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+
+    // 🔴 التأكيد المركزي.
+    expect(res.status).toBe(500);
+
+    // الصف المزروع لسا وحده — ما انكتب فوقه ولا انضاف تاني.
+    expect(await countEverywhere(id)).toBe(1);
+    // والمطالبة انسحبت مع المعاملة: بلاها إعادة الإرسال بتتصنّف "مكرر"
+    // وبترجع 200 بلا ما تخزّن إشي — يعني الرسالة بتضيع رغم الـ500.
+    expect(await countClaims(id)).toBe(0);
+  });
+
+  it("اتصال مقطوع: 500، وولا صف وولا مطالبة", async () => {
+    // مخزن اتصالات مسكّر = "القاعدة مش موجودة" من وجهة نظر الكود. نفس
+    // الشكل اللي بيصير فيه failover أو إعادة تشغيل Postgres تحت الحمل.
+    const id = wamid("dead-pool");
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+
+    const deadServer = createWebhookServer({
+      service: new WebhookService(deadDb),
+      verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      appSecret: env().WHATSAPP_APP_SECRET,
+    });
+    await new Promise<void>((resolve) => {
+      deadServer.listen(0, "127.0.0.1", resolve);
+    });
+    const deadUrl = `http://127.0.0.1:${
+      (deadServer.address() as AddressInfo).port
+    }`;
+
+    try {
+      const body = JSON.stringify(
+        metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+      );
+      const res = await fetch(`${deadUrl}/webhook`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-hub-signature-256": sign(body),
+        },
+        body,
+      });
+
+      expect(res.status).toBe(500);
+      expect(await countEverywhere(id)).toBe(0);
+      expect(await countClaims(id)).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        deadServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("فشل تخزين بالفرع نفسه: ingest بترجّع failed، مش استثناء", async () => {
+    // 🔴 الاختباران فوق بيفحصوا رمز الحالة — أثر جانبي. هذا بيفحص الفرع
+    //    اللي مشى فعليا: القيمة اللي طلعت من ingest() هي "failed"، يعني
+    //    الخطأ انمسك برسالة وحدة وما سقّط الدفعة، والمستدعي عنده معلومة
+    //    كافية يرد فيها 500. لو صار الرد 500 لأن السيرفر انفجر بمكان تاني،
+    //    هذا الاختبار بيضل يمسك الفرق.
+    const id = wamid("failed-branch");
+    await audit.query(
+      `INSERT INTO inbound_messages
+         (restaurant_id, wa_message_id, phone_number_id, from_phone,
+          message_type, payload)
+       VALUES ($1, $2, $3, $4, 'text', '{}'::jsonb)`,
+      [RESTAURANT_A, id, PHONE_ID_A, CUSTOMER_PHONE],
+    );
+
+    const parsed = parseWebhookPayload(
+      metaPayload({ phoneNumberId: PHONE_ID_A, waMessageId: id }),
+    );
+    if (parsed === null) throw new Error("الحمولة المبنية بالاختبار ما انقرأت");
+
+    await expect(service.ingest(parsed)).resolves.toEqual(["failed"]);
+    expect(needsRedelivery(["failed"])).toBe(true);
+    expect(needsRedelivery(["stored", "duplicate"])).toBe(false);
+  });
+
+  it("رسالة سليمة ورسالة فاشلة بنفس الدفعة: السليمة تُخزَّن والرد 500", async () => {
+    // إعادة الدفعة كاملة آمنة: اللي انخزن بتمسكه بوابة منع التكرار بالتسليم
+    // الجاي، واللي فشل بياخد محاولة تانية. عشان هيك الرد على الدفعة كلها
+    // 500 وما في تقسيم.
+    const good = wamid("batch-good");
+    const bad = wamid("batch-bad");
+    await audit.query(
+      `INSERT INTO inbound_messages
+         (restaurant_id, wa_message_id, phone_number_id, from_phone,
+          message_type, payload)
+       VALUES ($1, $2, $3, $4, 'text', '{}'::jsonb)`,
+      [RESTAURANT_A, bad, PHONE_ID_A, CUSTOMER_PHONE],
+    );
+
+    const res = await postSigned(
+      metaPayload(
+        { phoneNumberId: PHONE_ID_A, waMessageId: good, text: "سليمة" },
+        { phoneNumberId: PHONE_ID_A, waMessageId: bad, text: "بترتطم بقيد" },
+      ),
+    );
+
+    expect(res.status).toBe(500);
+    // الرسالة السليمة ما انسحبت مع أختها — كل وحدة بمعاملتها.
+    expect(await readAsTenant(RESTAURANT_A, good)).toHaveLength(1);
+    expect(await countClaims(good)).toBe(1);
+    expect(await countClaims(bad)).toBe(0);
   });
 });

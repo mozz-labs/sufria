@@ -8,7 +8,11 @@ import {
 import { logger } from "../logger.js";
 import { parseWebhookPayload } from "../whatsapp/payload.js";
 import { safeTokenEquals, verifySignature } from "../whatsapp/signature.js";
-import type { WebhookService } from "../whatsapp/webhook.service.js";
+import {
+  needsRedelivery,
+  type IngestOutcome,
+  type WebhookService,
+} from "../whatsapp/webhook.service.js";
 
 export interface ServerDeps {
   service: WebhookService;
@@ -99,12 +103,18 @@ function handleVerification(
 /**
  * POST /webhook — الرسائل الواردة.
  *
- * 🔴 قاعدة الردود هون: توقيع فاشل = 401، وكل شي غيره = 200.
+ * 🔴 قاعدة الردود، حرفيا:
  *
- * ميتا بتفسّر أي رد غير 200 كفشل تسليم، بتعيد الإرسال، وبتخفّض تقييم جودة
- * الرقم لو تكرر (NFR-05). يعني حمولة مشوّهة، نوع رسالة ما بنعرفه، حدث مكرر،
- * وحتى خطأ داخلي — كلهم 200 وسطر log. الاستثناء الوحيد هو التوقيع، لأن طلب
- * ما وقّعه صاحب التطبيق مش من ميتا أصلا.
+ *      200      = خزّنتها بأمان، أو تجاهلتها بقصد ونهائيا
+ *                 (JSON مشوّه، نوع غير مدعوم، حدث مكرر).
+ *      غير 200  = ما قدرت — أعِد الإرسال.
+ *
+ * ميتا بتعيد الإرسال بتردد متناقص لحد ٧ أيام على أي رد غير 200. يعني طابور
+ * إعادة الإرسال موجود مجانا، وهو الفرق بين "رسالة اتأخرت دقيقتين" و"رسالة
+ * زبون ضاعت نهائيا وبصمت". 200 على فشل تخزين بيرمي الطابور.
+ *
+ * والاستثناء المعاكس هو التوقيع: 401، لأن طلب ما وقّعه صاحب التطبيق مش من
+ * ميتا أصلا وما في إشي يستاهل إعادة إرساله.
  */
 async function handleInbound(
   req: IncomingMessage,
@@ -153,11 +163,24 @@ async function handleInbound(
       "أحداث حالة تسليم — خارج النطاق",
     );
 
+  // 🔴 القيمة المرجَّعة تُفحص، لا تُرمى. هي الرد نفسه: أي رسالة بالدفعة ما
+  //    انخزنت لسبب قابل للإصلاح بتخلّي الرد 500، وميتا بتعيد الدفعة كاملة.
+  //    إعادة الدفعة آمنة لأن اللي انخزن أصلا بتمسكه بوابة منع التكرار.
+  let outcomes: IngestOutcome[];
   try {
-    await deps.service.ingest(parsed);
+    outcomes = await deps.service.ingest(parsed);
   } catch (error) {
     // ingest() ماسكة أخطاء كل رسالة لحالها؛ هاي شبكة أمان لخلل أعم.
     logger.error({ err: error }, "فشل غير متوقع بمعالجة حمولة webhook");
+    return send(res, 500, { error: "ingest_failed" });
+  }
+
+  if (needsRedelivery(outcomes)) {
+    logger.error(
+      { outcomes },
+      "🔴 رسالة واردة ما انخزنت — 500 عشان ميتا تعيد الإرسال",
+    );
+    return send(res, 500, { error: "ingest_failed" });
   }
 
   return send(res, 200, { status: "ok" });
