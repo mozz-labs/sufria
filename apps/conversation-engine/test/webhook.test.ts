@@ -9,7 +9,8 @@
  *   2. منع التكرار ذرّي: نفس message_id مرتين = صف واحد، مش اتنين.
  *   3. الرسالة بتنكتب تحت سياق المطعم اللي طلع من phone_number_id — وبتنقرأ
  *      من هداك السياق وبس.
- *   4. رقم مش معروف = ولا صف بأي مكان بالجدول، مش صف عند مطعم غلط.
+ *   4. رقم مش معروف = ولا صف بأي مكان بالجدول، مش صف عند مطعم غلط — وولا
+ *      مطالبة منع تكرار كمان، عشان إعادة الإرسال بعد تصليح الربط تنجح.
  *
  * البيانات من db/seed/chain-isolation-fixture.sql، فلازم `pnpm db:migrate`
  * و`pnpm db:seed` يكونوا اشتغلوا. الشكل اللي بيهمّ: مطعم A على PHONE_A،
@@ -51,6 +52,31 @@ let service: WebhookService;
 let server: Server;
 let baseUrl: string;
 let audit: Pool;
+
+/** مطاعم أنشأها الاختبار. بتنمسح بـafterAll، والرسائل بتنمسح معها cascade. */
+const createdRestaurants: string[] = [];
+
+/**
+ * مطعم مؤقت على رقم خاص بهالتشغيلة.
+ *
+ * لازم يكون صف حقيقي مش fixture ثابت: الاختبار المحوري بيحتاج يبدّل حالة
+ * الربط بنص الاختبار — من "ما في مطعم" لـ"في مطعم" — وتعديل صفوف الـfixture
+ * المشتركة بيكسر باقي السويتات.
+ */
+async function createRestaurant(
+  phoneId: string,
+  status: "active" | "suspended",
+): Promise<string> {
+  const { rows } = await audit.query<{ id: string }>(
+    `INSERT INTO restaurants (name, whatsapp_phone_id, status)
+     VALUES ($1, $2, $3::restaurant_status) RETURNING id`,
+    [`مطعم اختبار ${RUN}`, phoneId, status],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error("ما انكتب صف مطعم للاختبار");
+  createdRestaurants.push(id);
+  return id;
+}
 
 /**
  * اتصال تدقيق بصلاحيات المُهاجِر — للاختبارات وبس.
@@ -221,6 +247,12 @@ afterAll(async () => {
     "DELETE FROM processed_webhook_events WHERE event_id LIKE $1",
     [`wamid.TEST.${RUN}.%`],
   );
+  // المطاعم المؤقتة آخر إشي — رسائلها بتروح معها بـON DELETE CASCADE.
+  if (createdRestaurants.length > 0) {
+    await audit.query("DELETE FROM restaurants WHERE id = ANY($1::uuid[])", [
+      createdRestaurants,
+    ]);
+  }
   await audit.end();
 });
 
@@ -402,15 +434,16 @@ describe("POST /webhook — منع التكرار", () => {
 });
 
 describe("POST /webhook — التوجيه والعزل", () => {
-  it("رقم غير معروف: 200، وولا صف بأي مكان بالجدول", async () => {
+  it("رقم غير معروف: 500، وولا صف بأي مكان بالجدول", async () => {
     const id = wamid("unknown-phone");
 
     const res = await postSigned(
       metaPayload({ phoneNumberId: PHONE_ID_UNKNOWN, waMessageId: id }),
     );
 
-    // 200 مش 500: رقم مش معروف إعداد غلط عند ميتا، مش عطل بالنظام.
-    expect(res.status).toBe(200);
+    // 🔴 500 مش 200. رقم مش معروف حالة قابلة للتصليح — الربط عند ميتا
+    //    بينتظبط، أو الرقم بينضاف للمطعم — و200 بتقول "خلصت" وبترمي الرسالة.
+    expect(res.status).toBe(500);
 
     // 🔴 التأكيد اللي بيهم: ولا صف — لا عند A ولا B ولا أي مطعم تالت.
     //    هالسؤال بينسأل فوق RLS بالقصد: من جوّا سياق مطعم، "ما شفت صف"
@@ -695,5 +728,122 @@ describe("POST /webhook — فشل التخزين", () => {
     expect(await readAsTenant(RESTAURANT_A, good)).toHaveLength(1);
     expect(await countClaims(good)).toBe(1);
     expect(await countClaims(bad)).toBe(0);
+  });
+});
+
+describe("POST /webhook — رقم بلا مطعم: الاسترجاع بعد تصليح الربط", () => {
+  /**
+   * 🔴 هالمجموعة هي جوهر المهمة.
+   *
+   *    العطل اللي كان: رقم مش معروف بيثبّت مطالبة منع التكرار وبيرجع 200 بلا
+   *    ما يخزّن. النتيجة إن الرسالة بتصير **غير قابلة للاسترجاع للأبد**:
+   *    ميتا شافت 200 فما بتعيد، ولو أعادت بتلاقي المطالبة مثبّتة فبتتصنّف
+   *    "مكرر" وبترجع 200 تاني — حتى بعد ما ينتصلّح الربط وتصير الرسالة
+   *    قابلة للتوجيه تماما.
+   *
+   *    فعدّ الصفوف لحاله ما بيكفي هون. التأكيد اللي بيثبت الإصلاح هو
+   *    **غياب صف المطالبة**، وبعده إعادة نفس الرسالة حرفيا بعد تصليح الربط.
+   */
+
+  it("رقم مجهول ثم إصلاح الربط: 500 بلا مطالبة، وإعادة نفس الرسالة بتُخزَّن", async () => {
+    const id = wamid("recover-after-fix");
+    const phoneId = `PHONE_UNMAPPED.${RUN}`;
+    // نفس الحمولة بالضبط بالمحاولتين — هيك بتعيد ميتا: بايتات متطابقة.
+    const payload = metaPayload({
+      phoneNumberId: phoneId,
+      waMessageId: id,
+      text: "بدي أطلب — وصلت قبل ما ينتربط الرقم",
+    });
+
+    // --- المحاولة الأولى: ما في مطعم على هالرقم ---------------------------
+    const first = await postSigned(payload);
+
+    expect(first.status).toBe(500);
+    expect(await countEverywhere(id)).toBe(0);
+    // 🔴 التأكيد المحوري بكل هالمهمة. لو صار 1 هون، المطالبة اتثبّتت على
+    //    رسالة ما انخزنت، وكل إعادة إرسال جاية رح تتصنّف "مكرر" — الرسالة
+    //    ماتت وما في طريق يرجّعها.
+    expect(await countClaims(id)).toBe(0);
+
+    // --- تصليح الربط: الرقم بينضاف لمطعم فعّال ----------------------------
+    const restaurantId = await createRestaurant(phoneId, "active");
+
+    // --- إعادة الإرسال: نفس الرسالة، نفس المعرّف --------------------------
+    const second = await postSigned(payload);
+
+    expect(second.status).toBe(200);
+    const rows = await readAsTenant(restaurantId, id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.body).toBe("بدي أطلب — وصلت قبل ما ينتربط الرقم");
+    expect(await countClaims(id)).toBe(1);
+  });
+
+  it("مطعم موقوف ثم رفع الإيقاف: نفس السلوك بالضبط", async () => {
+    // الإيقاف بيمر من نفس الدالة: 0003 فيها
+    // `AND status <> 'suspended'`، فبترجّع NULL زي الرقم المجهول تماما.
+    // ولو انبلعت الرسالة بـ200، مطعم رجع من الإيقاف بيلاقي طلبات زبائنه
+    // ضايعة من فترة الإيقاف — مش متأخرة، ضايعة.
+    const id = wamid("suspended-then-active");
+    const phoneId = `PHONE_SUSPENDED.${RUN}`;
+    const restaurantId = await createRestaurant(phoneId, "suspended");
+    const payload = metaPayload({
+      phoneNumberId: phoneId,
+      waMessageId: id,
+      text: "وصلت والمطعم موقوف",
+    });
+
+    const first = await postSigned(payload);
+    expect(first.status).toBe(500);
+    expect(await countEverywhere(id)).toBe(0);
+    expect(await countClaims(id)).toBe(0);
+
+    await audit.query(
+      "UPDATE restaurants SET status = 'active' WHERE id = $1",
+      [restaurantId],
+    );
+
+    const second = await postSigned(payload);
+    expect(second.status).toBe(200);
+    expect(await readAsTenant(restaurantId, id)).toHaveLength(1);
+  });
+
+  it("الفرع نفسه: ingest بترجّع unroutable، وهي قابلة لإعادة الإرسال", async () => {
+    // 🔴 الاختباران فوق بيفحصوا الأثر (رمز الحالة، عدّ الصفوف). هذا بيفحص
+    //    الفرع اللي مشى فعليا. الفرق بيبان لو انكسر التوجيه بشكل تاني:
+    //    استثناء عام بالمعاملة كمان بيرجّع 500 وبيخلي عدّ المطالبات صفر —
+    //    يعني الاختباران فوق بيمروا وهم مبسوطين بينما التشخيص غلط تماما.
+    //    "unroutable" بتقول: البوابة مشت، والتوجيه هو اللي قال ما في مطعم.
+    const id = wamid("unroutable-branch");
+    const parsed = parseWebhookPayload(
+      metaPayload({ phoneNumberId: PHONE_ID_UNKNOWN, waMessageId: id }),
+    );
+    if (parsed === null) throw new Error("الحمولة المبنية بالاختبار ما انقرأت");
+
+    await expect(service.ingest(parsed)).resolves.toEqual(["unroutable"]);
+    expect(needsRedelivery(["unroutable"])).toBe(true);
+    expect(await countClaims(id)).toBe(0);
+  });
+
+  it("المطالبة بتضل مسحوبة مهما تكرّرت المحاولة", async () => {
+    // ثلاث إعادات إرسال على رقم لسا مش مربوط. لو وحدة منهم ثبّتت مطالبة،
+    // الرابعة — اللي بتيجي بعد التصليح — بتتصنّف "مكرر" وبتضيع الرسالة.
+    // يعني الخاصية لازم تصمد على التكرار، مش على أول محاولة بس.
+    const id = wamid("repeated-unroutable");
+    const phoneId = `PHONE_STILL_UNMAPPED.${RUN}`;
+    const payload = metaPayload({
+      phoneNumberId: phoneId,
+      waMessageId: id,
+    });
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await postSigned(payload);
+      expect(res.status).toBe(500);
+      expect(await countClaims(id)).toBe(0);
+    }
+
+    const restaurantId = await createRestaurant(phoneId, "active");
+    const recovered = await postSigned(payload);
+    expect(recovered.status).toBe(200);
+    expect(await readAsTenant(restaurantId, id)).toHaveLength(1);
   });
 });

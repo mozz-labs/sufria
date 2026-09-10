@@ -10,7 +10,37 @@ import type { InboundMessage, ParsedWebhook } from "./payload.js";
 
 /** نتيجة معالجة رسالة واحدة. مكشوفة عشان الاختبارات تتأكد من الفرع اللي مشى. */
 export type IngestOutcome =
-  "stored" | "duplicate" | "unknown_phone_id" | "failed";
+  /** انكتبت تحت مطعمها. 200. */
+  | "stored"
+  /** بوابة منع التكرار مسكتها — انعالجت قبل هيك. 200. */
+  | "duplicate"
+  /** ما في مطعم فعّال على هالـphone_number_id. 500، والمطالبة انسحبت. */
+  | "unroutable"
+  /** فشل تخزين: قاعدة واقعة، قيد رفض، اتصال منقطع، deadlock، مهلة. 500. */
+  | "failed";
+
+/**
+ * phone_number_id ما إله مطعم فعّال — رقم مش معنا، أو مطعم موقوف.
+ *
+ * 🔴 بترمي بالقصد، وبتنرمى **جوّا** المعاملة، عشان المعاملة تنسحب والمطالبة
+ *    تنسحب معها. هاد مش تفصيل أسلوب:
+ *
+ *    الثابت اللي هالملف بيحافظ عليه هو "المطالبة بتثبت إذا وإذا فقط الرسالة
+ *    انخزنت (أو كانت مكرر حقيقي)". لو المطالبة ثبتت والرسالة ما انخزنت، أي
+ *    إعادة إرسال جاية بتتصنّف "مكرر" وبترجع 200 بلا ما تخزّن إشي — يعني
+ *    الرسالة بتصير غير قابلة للاسترجاع **للأبد**، حتى بعد ما ينتصلّح الربط
+ *    عند ميتا أو يرجع المطعم من الإيقاف. والرسالة الوحيدة اللي بعتها الزبون
+ *    ما إلها نسخة تانية بأي مكان.
+ *
+ *    وبما إن كل خطوات ingestOne جوّا معاملة وحدة، الانسحاب هو القاعدة العامة:
+ *    أي فشل بعد المطالبة بيلغيها. عشان هيك الرمي، مش `return`.
+ */
+class UnroutableMessageError extends Error {
+  constructor(readonly phoneNumberId: string) {
+    super(`ما في مطعم فعّال على phone_number_id: ${phoneNumberId}`);
+    this.name = "UnroutableMessageError";
+  }
+}
 
 /**
  * النتائج اللي لازم ميتا تعيد إرسالها.
@@ -22,6 +52,7 @@ export type IngestOutcome =
  */
 const RETRYABLE: ReadonlySet<IngestOutcome> = new Set<IngestOutcome>([
   "failed",
+  "unroutable",
 ]);
 
 /** true لو في ولو نتيجة وحدة بتحتاج إعادة إرسال. المستدعي بيرد 500. */
@@ -85,15 +116,18 @@ export class WebhookService {
           message.phoneNumberId,
         );
 
+        // 🔴 رقم مش معروف أو مطعم موقوف = ما قدرنا، مش خلصنا.
+        //
+        //    الاتنين بيرجعوا NULL من نفس الدالة (0003: `WHERE
+        //    whatsapp_phone_id = $1 AND status <> 'suspended'`)، والاتنين
+        //    حالتهم قابلة للتصليح: رقم بينضاف للمطعم، وإيقاف بينرفع. فالرد
+        //    الصح 500 وترك الرسالة بطابور ميتا لحد ما يتصلّح الربط — مش
+        //    ابتلاعها بـ200 وضياعها.
+        //
+        //    والرمي هون هو اللي بيسحب مطالبة منع التكرار. شوف
+        //    UnroutableMessageError فوق.
         if (restaurantId === null) {
-          logger.warn(
-            {
-              phoneNumberId: message.phoneNumberId,
-              waMessageId: message.waMessageId,
-            },
-            "phone_number_id غير معروف — الرسالة ما انسندت لأي مطعم",
-          );
-          return "unknown_phone_id";
+          throw new UnroutableMessageError(message.phoneNumberId);
         }
 
         // ---------------------------------------------------------------
@@ -124,6 +158,17 @@ export class WebhookService {
         return "stored";
       });
     } catch (error) {
+      if (error instanceof UnroutableMessageError) {
+        logger.error(
+          {
+            phoneNumberId: message.phoneNumberId,
+            waMessageId: message.waMessageId,
+          },
+          "🔴 ما في مطعم فعّال على هالرقم — 500، والمطالبة انسحبت عشان إعادة الإرسال تنفع",
+        );
+        return "unroutable";
+      }
+
       // 🔴 المعاملة انسحبت كاملة، والمطالبة معها — يعني إعادة إرسال من ميتا
       //    بتقدر تنجح. عشان هيك هالنتيجة قابلة لإعادة الإرسال والرد بيصير
       //    500: القاعدة الواقعة، قيد الرفض، الاتصال المقطوع، الـdeadlock
