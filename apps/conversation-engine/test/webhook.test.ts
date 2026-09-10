@@ -190,6 +190,46 @@ async function countClaims(waMessageId: string): Promise<number> {
   return Number(rows[0]?.n ?? "0");
 }
 
+/**
+ * سيرفر على مخزن معيّن، مع عنوانه ودالة إغلاقه.
+ *
+ * بتستعمله الاختبارات اللي بدها قاعدة **ساقطة فعلا** — مخزن مسكّر، منفذ ما
+ * حدا سامع عليه، اسم قاعدة مش موجود. ولا وحدة منهم mock: الفشل بيجي من
+ * الشبكة أو من Postgres نفسه.
+ */
+async function serverOn(
+  target: TenantDb,
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const instance = createWebhookServer({
+    service: new WebhookService(target),
+    health: target,
+    verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+    appSecret: env().WHATSAPP_APP_SECRET,
+  });
+  await new Promise<void>((resolve) => {
+    instance.listen(0, "127.0.0.1", resolve);
+  });
+  return {
+    url: `http://127.0.0.1:${(instance.address() as AddressInfo).port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        instance.close((err) => (err ? reject(err) : resolve()));
+      }),
+  };
+}
+
+/**
+ * نفس رابط المحرّك بس على اسم قاعدة مش موجود.
+ *
+ * الفشل هون مختلف نوعيا عن المخزن المسكّر: الاتصال بينفتح على TCP وPostgres
+ * نفسه بيرفضه. فمعالج بيميّز "المخزن مسكّر" وبس بينمسك هون.
+ */
+function missingDatabaseUrl(): string {
+  const url = new URL(env().ENGINE_DATABASE_URL);
+  url.pathname = `/sufria_does_not_exist_${RUN.slice(0, 8)}`;
+  return url.toString();
+}
+
 /** بيقرأ من جوّا سياق المطعم — يعني تحت RLS، زي أي كود تطبيق. */
 function readAsTenant(
   restaurantId: string,
@@ -892,14 +932,53 @@ describe("GET /health — الفحص لازم يلمس القاعدة", () => {
       // 503 تحديدا: العطل بالاعتمادية ومؤقت، والمنسّق بيقرأها "شيلني من
       // الدوران" مش "الطلب غلط".
       expect(res.status).toBe(503);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        deadServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("الفرع نفسه: الرد بيقول إنه فرع القاعدة اللي مشى، مش رمز حالة بس", async () => {
+    // 🔴 رمز الحالة أثر. الجسم هو اللي بيميّز الفرعين:
+    //
+    //      نجح الفحص  -> { ok: true }
+    //      فشل الفحص  -> { ok: false, error: "database_unavailable" }
+    //
+    //    معالج بيبلع خطأ الفحص وبيرجّع 200 بيرجّع جسم الفرع التاني — وهاد
+    //    اللي بينمسك هون. ولولا هالتأكيد، أي 503 من أي مكان بالمسار بيرضّي
+    //    الاختبار اللي فوق.
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+    const dead = await serverOn(deadDb);
+
+    try {
+      const res = await fetch(`${dead.url}/health`);
       expect(await res.json()).toEqual({
         ok: false,
         error: "database_unavailable",
       });
     } finally {
-      await new Promise<void>((resolve, reject) => {
-        deadServer.close((err) => (err ? reject(err) : resolve()));
+      await dead.close();
+    }
+  });
+
+  it("قاعدة موجودة عالشبكة بس بترفض: كمان غير 200", async () => {
+    // فشل من نوع تاني تماما: TCP بيوصل وPostgres بيرد بالرفض. الفرع لازم
+    // يكون واحد — "ما قدرت أوصل القاعدة" — مش حالة خاصة بمخزن مسكّر.
+    const refusedDb = new TenantDb(missingDatabaseUrl());
+    const refused = await serverOn(refusedDb);
+
+    try {
+      const res = await fetch(`${refused.url}/health`);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "database_unavailable",
       });
+    } finally {
+      await refused.close();
+      await refusedDb.stop();
     }
   });
 

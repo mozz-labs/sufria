@@ -40,9 +40,17 @@ export class TenantDb {
   private readonly pool: Pool;
   private readonly db: NodePgDatabase<typeof schema>;
 
-  constructor() {
+  /**
+   * الرابط اختياري وافتراضه ENGINE_DATABASE_URL — يعني كل كود التطبيق بينادي
+   * `new TenantDb()` وبس.
+   *
+   * الوسيط موجود عشان الاختبارات تقدر تبني مخزن على قاعدة **غير متاحة فعلا**
+   * (منفذ مسكّر، اسم قاعدة مش موجود) بدل ما تزيّف الفشل بـmock. فحص الصحة
+   * تحديدا ما بينثبت إلا بقاعدة ساقطة حقيقية.
+   */
+  constructor(connectionString: string = env().ENGINE_DATABASE_URL) {
     this.pool = new Pool({
-      connectionString: env().ENGINE_DATABASE_URL,
+      connectionString,
       max: env().PG_POOL_MAX,
     });
     this.db = drizzle(this.pool, { schema });
