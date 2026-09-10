@@ -14,8 +14,17 @@ import {
   type WebhookService,
 } from "../whatsapp/webhook.service.js";
 
+/**
+ * اللي /health بيحتاجه. نوع بنيوي مش TenantDb مباشرة عشان الاعتمادية تضل
+ * "إشي بيقدر يلمس القاعدة" مش "المخزن كله".
+ */
+export interface HealthProbe {
+  ping(): Promise<void>;
+}
+
 export interface ServerDeps {
   service: WebhookService;
+  health: HealthProbe;
   verifyToken: string;
   appSecret: string;
 }
@@ -52,11 +61,8 @@ async function handle(
 ): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
 
-  if (url.pathname === "/health" && req.method === "GET") {
-    // ⛔ ممنوع تلمس القاعدة. فايدتها الوحيدة إنك تعرف: ردّت؟ التطبيق عايش
-    //    والمشكلة بالقاعدة. ما ردّت؟ التطبيق ميت.
-    return send(res, 200, { ok: true });
-  }
+  if (url.pathname === "/health" && req.method === "GET")
+    return handleHealth(deps, res);
 
   if (url.pathname !== "/webhook")
     return send(res, 404, { error: "not_found" });
@@ -66,6 +72,30 @@ async function handle(
 
   res.setHeader("allow", "GET, POST");
   return send(res, 405, { error: "method_not_allowed" });
+}
+
+/**
+ * GET /health — هل هالعملية قادرة تخدم رسالة فعلا؟
+ *
+ * 🔴 بتلمس القاعدة، لأن "قادرة تخدم" بلا قاعدة ما إلها معنى هون: كل مسار
+ *    بالمستقبِل بينتهي بكتابة. فحص ما بيلمس القاعدة بيرجّع 200 والقاعدة
+ *    واقعة، فالمنسّق بيضل يوجّه الطلبات لعملية بتفشل بكل وحدة منهم.
+ *
+ *    وبما إن الفشل هون بيخلي المنسّق يشيل العملية من الدوران، الرد لازم
+ *    يكون غير-200: 503 (خدمة غير متاحة) مش 500 — العطل مؤقت وبالاعتمادية،
+ *    مش خلل بالطلب.
+ */
+async function handleHealth(
+  deps: ServerDeps,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    await deps.health.ping();
+  } catch (error) {
+    logger.error({ err: error }, "🔴 فحص الصحة ما وصل القاعدة");
+    return send(res, 503, { ok: false, error: "database_unavailable" });
+  }
+  return send(res, 200, { ok: true });
 }
 
 /**

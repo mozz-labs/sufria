@@ -1,6 +1,6 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
-import { Pool } from "pg";
+import { Pool, type QueryConfig } from "pg";
 import * as schema from "@sufria/shared";
 import { env } from "../config/env.js";
 import type { TenantTx } from "./types.js";
@@ -24,6 +24,18 @@ import type { TenantTx } from "./types.js";
  *   3. المعرّف bind parameter — لأن `SET LOCAL x = '<id>'` ما بتقبل واحد،
  *      ودمج النص بالـSQL بيحط ثغرة حقن جوّا حدود المستأجر نفسها.
  */
+/** مهلة استعلام فحص الصحة. أقصر من مهلة الاستعلام العامة بالقصد. */
+const HEALTH_QUERY_TIMEOUT_MS = 2000;
+
+/**
+ * pg بيقرأ query_timeout من إعداد الاستعلام نفسه (lib/client.js: `config
+ * .query_timeout || this.connectionParameters.query_timeout`)، بس @types/pg
+ * ما بيعرّفها على QueryConfig. التوسعة هون بدل ما نرمي النوع كله بـany.
+ */
+interface TimedQueryConfig extends QueryConfig {
+  query_timeout: number;
+}
+
 export class TenantDb {
   private readonly pool: Pool;
   private readonly db: NodePgDatabase<typeof schema>;
@@ -61,6 +73,29 @@ export class TenantDb {
 
   async stop(): Promise<void> {
     await this.pool.end();
+  }
+
+  /**
+   * استعلام تافه على القاعدة، بمهلة قصيرة. بترمي لو ما وصل.
+   *
+   * 🔴 هذا اللي بيخلي /health يعني إشي.
+   *
+   *    فحص صحة ما بيلمس القاعدة بيجاوب على سؤال واحد: هل العملية عايشة؟
+   *    والعملية بتضل عايشة تماما والقاعدة واقعة — فتضل "سليمة" بنظر
+   *    المنسّق (Fly/Railway/K8s)، وتضل تستقبل webhooks، وتضل تبلع كل رسالة
+   *    زبون طول فترة العطل. فحص بيلمس القاعدة بيسقط، والمنسّق بيوقف توجيه
+   *    الطلبات، وميتا بتشوف غير-200 وبتحتفظ بالرسائل بطابورها.
+   *
+   *    المهلة قصيرة بالقصد وأقصر من مهلة الاستعلام العامة: فحص صحة بيعلّق
+   *    عشر ثواني هو نفسه عطل — المنسّق بيعتبره timeout ومصنّفه "مش سليم"
+   *    بعد ما يكون علّق خيط الفحص طول هالمدة.
+   */
+  async ping(): Promise<void> {
+    const probe: TimedQueryConfig = {
+      text: "SELECT 1",
+      query_timeout: HEALTH_QUERY_TIMEOUT_MS,
+    };
+    await this.pool.query(probe);
   }
 
   /**

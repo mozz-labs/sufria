@@ -223,6 +223,7 @@ beforeAll(async () => {
   service = new WebhookService(db);
   server = createWebhookServer({
     service,
+    health: db,
     verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     appSecret: env().WHATSAPP_APP_SECRET,
   });
@@ -644,6 +645,7 @@ describe("POST /webhook — فشل التخزين", () => {
 
     const deadServer = createWebhookServer({
       service: new WebhookService(deadDb),
+      health: deadDb,
       verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
       appSecret: env().WHATSAPP_APP_SECRET,
     });
@@ -845,5 +847,71 @@ describe("POST /webhook — رقم بلا مطعم: الاسترجاع بعد ت
     const recovered = await postSigned(payload);
     expect(recovered.status).toBe(200);
     expect(await readAsTenant(restaurantId, id)).toHaveLength(1);
+  });
+});
+describe("GET /health — الفحص لازم يلمس القاعدة", () => {
+  /**
+   * 🔴 فحص صحة ما بيلمس القاعدة بيكذب بأسوأ لحظة.
+   *
+   *    العملية بتضل عايشة والقاعدة واقعة، فالمنسّق بيشوف 200 وبيضل يوجّه
+   *    الطلبات، والمستقبِل بيضل يبلع رسائل الزبائن طول العطل. الفحص اللي
+   *    بيسقط بيخلي العملية تنشال من الدوران، وميتا بتشوف غير-200 وبتحتفظ
+   *    بالرسائل بطابورها لحد ما ترجع القاعدة.
+   */
+
+  it("قاعدة شغّالة: 200 و ok", async () => {
+    const res = await fetch(`${baseUrl}/health`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("قاعدة غير متاحة: غير 200", async () => {
+    // مخزن اتصالات مسكّر — نفس اللي بيصير بإعادة تشغيل Postgres أو failover.
+    // 🔴 لو الفحص ما بيلمس القاعدة، ما في طريقة يفشل فيها هون: بيرجّع 200
+    //    وهو مغمّض. فهذا الاختبار هو اللي بيثبت إنه بيلمسها فعلا.
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+
+    const deadServer = createWebhookServer({
+      service: new WebhookService(deadDb),
+      health: deadDb,
+      verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      appSecret: env().WHATSAPP_APP_SECRET,
+    });
+    await new Promise<void>((resolve) => {
+      deadServer.listen(0, "127.0.0.1", resolve);
+    });
+    const deadUrl = `http://127.0.0.1:${
+      (deadServer.address() as AddressInfo).port
+    }`;
+
+    try {
+      const res = await fetch(`${deadUrl}/health`);
+
+      expect(res.status).not.toBe(200);
+      // 503 تحديدا: العطل بالاعتمادية ومؤقت، والمنسّق بيقرأها "شيلني من
+      // الدوران" مش "الطلب غلط".
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({
+        ok: false,
+        error: "database_unavailable",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        deadServer.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("الفرع نفسه: ping بيمرّر على قاعدة شغّالة وبيرمي على مسكّرة", async () => {
+    // 🔴 الاختباران فوق بيفحصوا رمز الحالة — أثر. هذا بيفحص الاستعلام نفسه:
+    //    ping() بتوصل القاعدة وبترجع، وبترمي لما ما توصل. لو انمسح جسمها
+    //    وصارت `async ping() {}` فاضية، الاختباران فوق ممكن يضلوا يمروا لو
+    //    صار الفشل بمكان تاني بالمسار — هذا ما بيمر.
+    await expect(db.ping()).resolves.toBeUndefined();
+
+    const deadDb = new TenantDb();
+    await deadDb.stop();
+    await expect(deadDb.ping()).rejects.toThrow();
   });
 });

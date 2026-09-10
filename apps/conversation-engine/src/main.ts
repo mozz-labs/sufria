@@ -14,6 +14,7 @@ async function bootstrap(): Promise<void> {
 
   const server = createWebhookServer({
     service: new WebhookService(db),
+    health: db,
     verifyToken: config.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     appSecret: config.WHATSAPP_APP_SECRET,
   });
