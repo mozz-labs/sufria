@@ -26,7 +26,7 @@ import { Pool } from "pg";
 
 import { env } from "../src/config/env.js";
 import { inboundMessages } from "../src/db/schema.js";
-import { TenantDb } from "../src/db/tenant-db.js";
+import { enginePoolConfig, TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer } from "../src/http/server.js";
 import { parseWebhookPayload } from "../src/whatsapp/payload.js";
 import {
@@ -992,5 +992,81 @@ describe("GET /health — الفحص لازم يلمس القاعدة", () => {
     const deadDb = new TenantDb();
     await deadDb.stop();
     await expect(deadDb.ping()).rejects.toThrow();
+  });
+});
+
+describe("مخزن الاتصالات — مهلات بدل الانتظار الأبدي", () => {
+  /**
+   * 🔴 كانوا كلهم غايبين، وافتراض pg بكل وحدة منهم هو انتظار أبدي.
+   *
+   *    الشكل اللي بيظهر فيه العطل واحد بالحالات الثلاث: معالج webhook بيعلّق
+   *    ساكت، ميتا بتقطع من طرفها بلا رد فبتعيد الإرسال، والمعالجات المعلّقة
+   *    بتتكدّس لحد ما تموت العملية بلا سطر log يفسّر. مهلة بتحوّل هالسكوت
+   *    لخطأ صريح ورد 500 — يعني إعادة إرسال مضبوطة بدل موت صامت.
+   */
+
+  it("الثلاث مضبوطين، وstatement_timeout أقصر من query_timeout", async () => {
+    const config = enginePoolConfig();
+
+    expect(config.connectionTimeoutMillis).toBeGreaterThan(0);
+    expect(config.statement_timeout).toBeGreaterThan(0);
+    expect(config.query_timeout).toBeGreaterThan(0);
+
+    // 🔴 الترتيب جزء من الصحة مش تفضيل: إلغاء Postgres (57014) بيرجع خطأ
+    //    نظيف والاتصال بيضل صالح، بينما مهلة العميل بتهدّ الاتصال. فمهلة
+    //    الخادم لازم تفوز بالحالة العادية، والعميل شبكة أمان ورا.
+    expect(Number(config.statement_timeout)).toBeLessThan(
+      Number(config.query_timeout),
+    );
+    await Promise.resolve();
+  });
+
+  it("statement_timeout بيوصل Postgres فعلا — مش بس مكتوب بالإعداد", async () => {
+    // الجلسة نفسها بتنسأل عن قيمتها. لو الخيار انشال من الإعداد، Postgres
+    // بيرجّع "0" — يعني بلا حدود — وهاد بالضبط العطل.
+    const shown = await db.runUnscoped(async (tx) => {
+      const res = await tx.execute<{ statement_timeout: string }>(
+        sql`SHOW statement_timeout`,
+      );
+      return res.rows[0]?.statement_timeout ?? "0";
+    });
+
+    expect(shown).not.toBe("0");
+    // Postgres بيرجّعها بوحدة: "10s" أو "10000ms" حسب القيمة.
+    const ms = shown.endsWith("ms")
+      ? Number(shown.slice(0, -2))
+      : Number(shown.slice(0, -1)) * 1000;
+    expect(ms).toBe(Number(enginePoolConfig().statement_timeout));
+  });
+
+  it("مخزن مشبّع: الاستعلام بيفشل بمهلة بدل ما يعلّق للأبد", async () => {
+    // 🔴 هاي الحالة اللي connectionTimeoutMillis موجود عشانها، وهي مش نادرة:
+    //    كل اتصالات المخزن مشغولة باستعلام بطيء، والطلب الجاي بينحط بالطابور.
+    //    بلا مهلة بيضل بالطابور للأبد.
+    //
+    //    PG_POOL_MAX=1 بالسويت (شوف test/setup-env.ts)، فاستعلام بطيء واحد
+    //    بيشبّع المخزن كله بشكل حاسم.
+    expect(env().PG_POOL_MAX).toBe(1);
+    const limit = Number(enginePoolConfig().connectionTimeoutMillis);
+
+    // بيمسك الاتصال الوحيد لمدة أطول من المهلة بمريح.
+    const holding = db.runUnscoped(async (tx) => {
+      await tx.execute(sql`SELECT pg_sleep(${(limit * 2) / 1000})`);
+    });
+
+    const started = Date.now();
+    let rejected = false;
+    try {
+      await db.ping();
+    } catch {
+      rejected = true;
+    }
+    const waited = Date.now() - started;
+
+    await holding;
+
+    expect(rejected).toBe(true);
+    // فشل، ومن مهلة — مش بعد ما استنى الاستعلام البطيء يخلص.
+    expect(waited).toBeLessThan(limit * 2);
   });
 });

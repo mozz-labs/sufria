@@ -1,6 +1,6 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { sql } from "drizzle-orm";
-import { Pool, type QueryConfig } from "pg";
+import { Pool, type PoolConfig, type QueryConfig } from "pg";
 import * as schema from "@sufria/shared";
 import { env } from "../config/env.js";
 import type { TenantTx } from "./types.js";
@@ -28,6 +28,31 @@ import type { TenantTx } from "./types.js";
 const HEALTH_QUERY_TIMEOUT_MS = 2000;
 
 /**
+ * إعداد مخزن الاتصالات، مكشوف عشان ينفحص كبيانات.
+ *
+ * 🔴 المهلات الثلاث مش زينة. بلاها pg بينتظر **للأبد** بكل وحدة من الحالات
+ *    الثلاث: مخزن مشبّع (connectionTimeoutMillis)، استعلام عالق عند Postgres
+ *    (statement_timeout)، وخادم بلع الاستعلام وما رد (query_timeout). وكل
+ *    وحدة منهم بتظهر نفس الشكل بالإنتاج — معالجات webhook بتتكدّس ساكتة لحد
+ *    ما تموت العملية — وولا وحدة منهم بتطلع بسطر log.
+ *
+ *    الترتيب مقصود: statement_timeout < query_timeout. إلغاء الخادم بيفوز
+ *    بالعادة فبيرجع خطأ نظيف (57014) والاتصال بيضل صالح للاستعمال؛ ومهلة
+ *    العميل شبكة الأمان للحالة اللي الخادم فيها ما رد إطلاقا.
+ */
+export function enginePoolConfig(
+  connectionString: string = env().ENGINE_DATABASE_URL,
+): PoolConfig {
+  return {
+    connectionString,
+    max: env().PG_POOL_MAX,
+    connectionTimeoutMillis: env().PG_CONNECT_TIMEOUT_MS,
+    statement_timeout: env().PG_STATEMENT_TIMEOUT_MS,
+    query_timeout: env().PG_QUERY_TIMEOUT_MS,
+  };
+}
+
+/**
  * pg بيقرأ query_timeout من إعداد الاستعلام نفسه (lib/client.js: `config
  * .query_timeout || this.connectionParameters.query_timeout`)، بس @types/pg
  * ما بيعرّفها على QueryConfig. التوسعة هون بدل ما نرمي النوع كله بـany.
@@ -49,10 +74,7 @@ export class TenantDb {
    * تحديدا ما بينثبت إلا بقاعدة ساقطة حقيقية.
    */
   constructor(connectionString: string = env().ENGINE_DATABASE_URL) {
-    this.pool = new Pool({
-      connectionString,
-      max: env().PG_POOL_MAX,
-    });
+    this.pool = new Pool(enginePoolConfig(connectionString));
     this.db = drizzle(this.pool, { schema });
   }
 

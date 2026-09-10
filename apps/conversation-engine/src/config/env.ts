@@ -26,6 +26,24 @@ const EnvSchema = z.object({
 
   ENGINE_PORT: z.coerce.number().int().positive().default(3001),
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
+
+  // 🔴 مهلات مخزن الاتصالات. الافتراضي عند pg بكل وحدة منهم هو **انتظار
+  //    أبدي**، وهاد مش تحفّظ — هو أسوأ سلوك ممكن هون. مخزن مشبّع أو قاعدة
+  //    ما بترد بيعلّقوا معالج الـwebhook للأبد، وميتا بتقطع الطلب من طرفها
+  //    بلا رد، والمعالجات المعلّقة بتتكدّس لحد ما تموت العملية بلا سبب باين.
+  //    مهلة بتخلّي الفشل صريح وسريع، والرد بيصير 500 وميتا بتعيد الإرسال.
+
+  /** انتظار اتصال حر من المخزن (أو فتح اتصال جديد). */
+  PG_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+  /** Postgres بيلغي الاستعلام. جهة الخادم. */
+  PG_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+  /**
+   * pg بيستسلم عن القراءة. جهة العميل، وشبكة أمان خلف اللي قبله:
+   * لازم تكون **أكبر** من statement_timeout عشان إلغاء الخادم يفوز بالعادة
+   * (خطأ نظيف والاتصال بيضل صالح)، وهاي ما بتشتغل إلا لما الخادم ما يرد
+   * أصلا — شبكة انقطعت بنص استعلام.
+   */
+  PG_QUERY_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
