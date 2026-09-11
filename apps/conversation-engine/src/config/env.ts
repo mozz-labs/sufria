@@ -24,6 +24,27 @@ const EnvSchema = z.object({
     .string()
     .min(1, "WHATSAPP_APP_SECRET مفقود — بلاه ما في تحقق توقيع"),
 
+  // 🔴 توكن Meta Cloud API للإرسال الصادر. مطلوب عند الإقلاع لنفس سبب
+  //    WHATSAPP_APP_SECRET فوق: بلاه المحرّك بيقلع وبيستقبل وبيخزّن تمام،
+  //    وكل رد بيطلع للزبون بيفشل — والعطل ما بيبان إلا بسطر log، بعد ما يكون
+  //    أول زبون بعت رسالة وما وصله إشي. الانفجار عند الإقلاع أرخص.
+  WHATSAPP_ACCESS_TOKEN: z
+    .string()
+    .min(1, "WHATSAPP_ACCESS_TOKEN مفقود — بلاه ما في إرسال صادر"),
+
+  /** نسخة Graph API. مفصولة عن الرابط عشان الترقية تصير بمتغيّر بيئة مش بنشر. */
+  WHATSAPP_GRAPH_API_VERSION: z.string().min(1).default("v21.0"),
+  WHATSAPP_GRAPH_API_BASE: z
+    .string()
+    .url()
+    .default("https://graph.facebook.com"),
+
+  /**
+   * مهلة طلب الإرسال لميتا. نفس منطق مهلات مخزن الاتصالات تحت: بلاها الطلب
+   * بيعلّق للأبد جوّا معاملة قاعدة بيانات مفتوحة، وبيقفل اتصال المخزن معه.
+   */
+  WHATSAPP_SEND_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+
   ENGINE_PORT: z.coerce.number().int().positive().default(3001),
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
 

@@ -33,6 +33,8 @@ import {
   needsRedelivery,
   WebhookService,
 } from "../src/whatsapp/webhook.service.js";
+import { ConversationService } from "../src/conversation/session.service.js";
+import { RecordingWhatsAppSender } from "../src/whatsapp/sender.js";
 
 const RESTAURANT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RESTAURANT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -52,6 +54,16 @@ let service: WebhookService;
 let server: Server;
 let baseUrl: string;
 let audit: Pool;
+
+/**
+ * خطوة المحادثة إجبارية بمُنشئ WebhookService، فلازم تنمرّر هون كمان.
+ *
+ * 🔴 هالملف ما بيفحص الردود — بيفحص التخزين والتوجيه ومنع التكرار. المزيّف
+ *    موجود عشان ولا اختبار بهالملف يضرب ميتا، مش عشان ينفحص. الردود إلها
+ *    ملفها: conversation-session.test.ts.
+ */
+const replies = new RecordingWhatsAppSender();
+const conversation = new ConversationService(replies);
 
 /** مطاعم أنشأها الاختبار. بتنمسح بـafterAll، والرسائل بتنمسح معها cascade. */
 const createdRestaurants: string[] = [];
@@ -205,7 +217,7 @@ async function serverOn(
   target: TenantDb,
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const instance = createWebhookServer({
-    service: new WebhookService(target),
+    service: new WebhookService(target, conversation),
     health: target,
     verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     appSecret: env().WHATSAPP_APP_SECRET,
@@ -264,7 +276,7 @@ beforeAll(async () => {
   // وكل تأكيد عزل بهالملف بيمر بلا ما يفحص إشي. الرمية هون بتوقف السويت.
   await db.start();
 
-  service = new WebhookService(db);
+  service = new WebhookService(db, conversation);
   server = createWebhookServer({
     service,
     health: db,
@@ -688,7 +700,7 @@ describe("POST /webhooks/whatsapp — فشل التخزين", () => {
     await deadDb.stop();
 
     const deadServer = createWebhookServer({
-      service: new WebhookService(deadDb),
+      service: new WebhookService(deadDb, conversation),
       health: deadDb,
       verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
       appSecret: env().WHATSAPP_APP_SECRET,
@@ -917,7 +929,7 @@ describe("GET /health — الفحص لازم يلمس القاعدة", () => {
     await deadDb.stop();
 
     const deadServer = createWebhookServer({
-      service: new WebhookService(deadDb),
+      service: new WebhookService(deadDb, conversation),
       health: deadDb,
       verifyToken: env().WHATSAPP_WEBHOOK_VERIFY_TOKEN,
       appSecret: env().WHATSAPP_APP_SECRET,

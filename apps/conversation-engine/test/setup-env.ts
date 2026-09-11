@@ -63,3 +63,10 @@ fallback("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "test-only-verify-token");
 // بمخزن أكبر، الاستعلام اللي بعده ممكن يقع على عضو تاني، واختبار التسريب
 // بيمر بلا ما يثبت إشي.
 process.env["PG_POOL_MAX"] = "1";
+
+/**
+ * 🔴 توكن وهمي. السويت ما بتضرب Graph API إطلاقا — كل اختبار بيوصل
+ * RecordingWhatsAppSender، وMetaWhatsAppSender ما بينبنى ولا مرة بالاختبارات.
+ * القيمة موجودة عشان env() تمر بس، لأنها بتفحص كل المتغيّرات عند أول import.
+ */
+fallback("WHATSAPP_ACCESS_TOKEN", "test-only-access-token-never-sent-anywhere");
