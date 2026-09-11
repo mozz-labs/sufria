@@ -1,7 +1,9 @@
+import { ConversationService } from "./conversation/session.service.js";
 import { env } from "./config/env.js";
 import { TenantDb } from "./db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "./http/server.js";
 import { logger } from "./logger.js";
+import { MetaWhatsAppSender } from "./whatsapp/sender.js";
 import { WebhookService } from "./whatsapp/webhook.service.js";
 
 async function bootstrap(): Promise<void> {
@@ -12,8 +14,12 @@ async function bootstrap(): Promise<void> {
   // بيرفض الإقلاع لو الاتصال كـsuperuser. قبل المنفذ كمان.
   await db.start();
 
+  // 🔴 المسار الوحيد للإنتاج. RecordingWhatsAppSender بـwhatsapp/sender.ts
+  //    موجود للاختبارات وللتشغيل المحلي بلا توكن، وما بينوصل من هون أبدا.
+  const conversation = new ConversationService(new MetaWhatsAppSender());
+
   const server = createWebhookServer({
-    service: new WebhookService(db),
+    service: new WebhookService(db, conversation),
     health: db,
     verifyToken: config.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
     appSecret: config.WHATSAPP_APP_SECRET,

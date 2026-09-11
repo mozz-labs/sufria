@@ -1,3 +1,4 @@
+import type { ConversationService } from "../conversation/session.service.js";
 import { claimWebhookEvent } from "../db/critical-primitives.js";
 import {
   resolveRestaurantByPhoneId,
@@ -61,13 +62,23 @@ export function needsRedelivery(outcomes: readonly IngestOutcome[]): boolean {
 }
 
 /**
- * استقبال الرسائل الواردة: بوابة منع التكرار، ثم التوجيه، ثم التخزين.
+ * استقبال الرسائل الواردة: بوابة منع التكرار، ثم التوجيه، ثم التخزين، ثم خطوة
+ * المحادثة (بوابة ساعات الدوام والجلسة وأول رد).
  *
- * ⛔ حدود هالشريحة: ولا سطر عن آلة حالات الطلب، ولا إرسال أي رسالة، ولا منطق
- *    قائمة. الملف هذا بيستقبل وبيخزّن وبيسكت.
+ * ⛔ حدود هالشريحة: ولا سلة، ولا عنوان، ولا دفع، ولا إنشاء طلب. خطوة المحادثة
+ *    كلها بـconversation/session.service.ts، وهالملف بيضل مسؤول عن شي واحد:
+ *    إن الرسالة الواردة تنخزّن تحت مطعمها مرة وحدة بالضبط.
  */
 export class WebhookService {
-  constructor(private readonly db: TenantDb) {}
+  /**
+   * 🔴 `conversation` إجبارية مش اختيارية. اعتمادية اختيارية معناها إن محرّكا
+   *    منشورا بلا توصيل صحيح بيستقبل وبيخزّن ويسكت، وولا اختبار بيلاحظ —
+   *    والعطل بيبان لما زبون حقيقي يبعت رسالة وما يجيه رد.
+   */
+  constructor(
+    private readonly db: TenantDb,
+    private readonly conversation: ConversationService,
+  ) {}
 
   /**
    * ميتا بتجمّع كذا رسالة بطلب واحد. كل وحدة بمعاملتها وبمحاولتها المستقلة:
@@ -155,6 +166,29 @@ export class WebhookService {
           },
           "رسالة واردة انخزنت",
         );
+
+        // ---------------------------------------------------------------
+        // ٤. خطوة المحادثة — بنفس المعاملة وبنفس السياق.
+        //
+        // 🔴 بعد التخزين، مش قبله. لو انعكس الترتيب، فشل بأي خطوة من خطوات
+        //    المحادثة بيسحب معه تخزين رسالة الزبون — والرسالة الواردة هي
+        //    الشي الوحيد اللي ما إله نسخة تانية عندنا.
+        //
+        //    ونتيجتها ما بتغيّر رد الـwebhook: كل فروعها نهائية (رحّبنا، أو
+        //    المطعم مغلق، أو تجاهل مكرر، أو قائمة أطول من السقف) والرد 200.
+        //    الفشل العابر الوحيد — إرسال ما نجح — بيطلع كاستثناء وبيوصل
+        //    catch تحت فبيصير "failed" و500، وهاد المطلوب بالضبط.
+        // ---------------------------------------------------------------
+        const conversation = await this.conversation.handleInbound(tx, {
+          restaurantId,
+          phoneNumberId: message.phoneNumberId,
+          from: message.from,
+        });
+        logger.debug(
+          { restaurantId, waMessageId: message.waMessageId, conversation },
+          "خطوة المحادثة خلصت",
+        );
+
         return "stored";
       });
     } catch (error) {
