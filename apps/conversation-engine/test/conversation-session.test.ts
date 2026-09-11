@@ -29,7 +29,9 @@ import type { Server } from "node:http";
 import { Pool } from "pg";
 import {
   CLOSED_AR,
+  CLOSED_WITH_HOURS_AR,
   MENU_HEADER_AR,
+  WELCOME_AR,
   closedMessageAr,
   conversationSessions,
   welcomeMessageAr,
@@ -979,5 +981,65 @@ describe("decideHours — الحالات الحدّية", () => {
       days: { sunday: [{ open: "10:00", close: "23:00" }] },
     };
     expect(decideHours(hours, sundayAt("08:00:00")).open).toBe(true);
+  });
+});
+
+// ===========================================================================
+// حراسة قرار، مش حراسة كود — على نمط اختبارات dashboard-web.
+// النصوص اللي بتوصل الزبون إلها قيود مكتوبة، وكلها بتنكسر بسهولة لما حدا
+// يضيف نصا جديدا مستعجلا أو "يحسّن" صياغة موجودة.
+// ===========================================================================
+describe("قيود النصوص اللي بتوصل الزبون", () => {
+  const CUSTOMER_TEXTS = [
+    CLOSED_AR,
+    CLOSED_WITH_HOURS_AR,
+    WELCOME_AR,
+    MENU_HEADER_AR,
+  ];
+
+  it("أرقام غربية فقط — ولا رقم عربي-هندي بأي نص", () => {
+    for (const text of CUSTOMER_TEXTS) {
+      expect(text).not.toMatch(/[\u0660-\u0669\u06F0-\u06F9]/);
+    }
+  });
+
+  it("ولا كلمة من الممنوعات (لهجة محلية أو صياغة مكتبية)", () => {
+    // القائمة من قرار المرحلة 2: عربية سليمة بمفردات طبيعية، بلا لهجة محلية.
+    const BANNED = [
+      "هلق",
+      "شو",
+      "بدي",
+      "يُرجى",
+      "نأسف لإبلاغكم",
+      "قم بـ",
+      "انقر هنا",
+      "تم بنجاح",
+      "مسكّرين",
+    ];
+    for (const text of CUSTOMER_TEXTS) {
+      for (const word of BANNED) {
+        expect(text).not.toContain(word);
+      }
+    }
+  });
+
+  it("🔴 ولا نص عربي للزبون مكتوب inline بمنطق المحرّك", async () => {
+    // الكسر اللي هذا بيمسكه: حدا بيكتب «المطعم مغلق حاليا.» حرفيا بمكان النداء
+    // بدل ما يستوردها، فبيصير في نسختين وبتفترقوا أول ما تتعدّل وحدة.
+    // __dirname مش import.meta: tsconfig.spec.json بيترجم السويت كـCommonJS
+    // (ts-jest)، زي ما setup-env.ts بيعمل بالضبط.
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const files = [
+      "src/conversation/session.service.ts",
+      "src/restaurant/menu.ts",
+      "src/whatsapp/sender.ts",
+    ];
+    for (const file of files) {
+      const source = await readFile(resolve(__dirname, "..", file), "utf8");
+      for (const text of CUSTOMER_TEXTS) {
+        expect(source).not.toContain(text);
+      }
+    }
   });
 });
