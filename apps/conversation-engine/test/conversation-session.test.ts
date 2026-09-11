@@ -29,6 +29,7 @@ import {
 
 import { env } from "../src/config/env.js";
 import { ConversationService } from "../src/conversation/session.service.js";
+import { advanceSessionState } from "../src/db/critical-primitives.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
 import { decideHours } from "../src/restaurant/business-hours.js";
@@ -508,6 +509,143 @@ describe("رسالتين بفارق ميلي ثانية", () => {
 
     expect(await sessionsOf(restaurantId)).toHaveLength(1);
     expect(replies.forRestaurant(restaurantId)).toHaveLength(1);
+  });
+});
+
+// ===========================================================================
+// اختبارات انضافت بعد تمرين الكسر المتعمّد: كل وحدة منهم بتفحص الفرع اللي مشى
+// فعليا، بعد ما تبيّن إن كسر البند ما بيسقّط إلا اختبارا واحدا — أو ولا واحد.
+// ===========================================================================
+describe("الفروع اللي ما كان عليها اختبار", () => {
+  it("🔴 زبون رجع بعد ما خلص طلبه: جلسة جديدة بتنفتح، مش محجوز بالقديمة", async () => {
+    // كسر "فحص الجلسة النشطة بيتجاهل الحالة" ما أسقط ولا اختبار. يعني ولا شي
+    // كان بيثبت إن 'order_placed' و'abandoned' مش حالات نشطة — وبلا هاد، زبون
+    // طلب مرة بيضل محجوز بجلسة واحدة **مدى الحياة**، وما بياخد ترحيبا ولا
+    // قائمة ولا مرة تانية.
+    const pid = phoneId("returning");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+    const from = nextCustomer();
+    const ctx = { restaurantId, phoneNumberId: pid, from };
+
+    expect(
+      await db.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+    ).toBe("greeted");
+
+    // الجلسة خلصت بطلب.
+    await audit.query(
+      "UPDATE conversation_sessions SET state = 'order_placed' WHERE restaurant_id = $1",
+      [restaurantId],
+    );
+
+    // 🔴 الفرع نفسه: بترجع "greeted" مش "active_session".
+    expect(
+      await db.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+    ).toBe("greeted");
+
+    const sessions = await sessionsOf(restaurantId);
+    expect(sessions).toHaveLength(2);
+    expect(sessions.filter((x) => x.state === "order_placed")).toHaveLength(1);
+    expect(sessions.filter((x) => x.state === "browsing")).toHaveLength(1);
+    expect(replies.forRestaurant(restaurantId)).toHaveLength(2);
+  });
+
+  it("🔴 فهرس 0007 نفسه: جلستان نشطتان لنفس الزبون مرفوضتان من القاعدة", async () => {
+    // كسر إزالة ON CONFLICT أسقط اختبارا واحدا بس، وهو اختبار تزامن. هذا بيفحص
+    // القيد نفسه مباشرة: حتى لو الكود غلط، القاعدة بترفض.
+    const pid = phoneId("index-itself");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    const from = nextCustomer();
+
+    const { rows } = await audit.query<{ id: string }>(
+      `INSERT INTO customers (restaurant_id, phone_number) VALUES ($1, $2) RETURNING id`,
+      [restaurantId, from],
+    );
+    const customerId = rows[0]?.id;
+
+    const insertSession = (state: string): Promise<unknown> =>
+      audit.query(
+        `INSERT INTO conversation_sessions (restaurant_id, customer_id, state)
+         VALUES ($1, $2, $3::conversation_state)`,
+        [restaurantId, customerId, state],
+      );
+
+    await insertSession("new");
+    // التانية نشطة كمان -> لازم القاعدة ترفض.
+    await expect(insertSession("browsing")).rejects.toThrow(
+      /idx_sessions_one_active_per_customer|duplicate key/i,
+    );
+
+    // وجلسة **منتهية** مسموحة: القيد جزئي، مش على كل الصفوف.
+    await expect(insertSession("order_placed")).resolves.toBeDefined();
+    await expect(insertSession("abandoned")).resolves.toBeDefined();
+  });
+
+  it("🔴 CAS نفسه: النداء التاني بنفس الحالة المتوقعة بيرجّع false", async () => {
+    // كسر إلغاء CAS أسقط اختبار تزامن واحد. هذا بيفحص البدائية مباشرة:
+    // نداءان متتاليان، الأول بيفوز والتاني بيخسر — وهي بالضبط "ضغطة مكررة".
+    const pid = phoneId("cas-itself");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    const from = nextCustomer();
+
+    const { rows: c } = await audit.query<{ id: string }>(
+      `INSERT INTO customers (restaurant_id, phone_number) VALUES ($1, $2) RETURNING id`,
+      [restaurantId, from],
+    );
+    const { rows: s } = await audit.query<{ id: string }>(
+      `INSERT INTO conversation_sessions (restaurant_id, customer_id, state)
+       VALUES ($1, $2, 'new') RETURNING id`,
+      [restaurantId, c[0]?.id],
+    );
+    const sessionId = s[0]?.id ?? "";
+
+    const [first, second] = await db.runInTenant(restaurantId, async (tx) => [
+      await advanceSessionState(tx, sessionId, "new", "browsing"),
+      await advanceSessionState(tx, sessionId, "new", "browsing"),
+    ]);
+
+    expect(first).toBe(true);
+    // 🔴 صفر صفوف = ضغطة مكررة، تُتجاهَل بصمت. مش استثناء.
+    expect(second).toBe(false);
+  });
+
+  it("🔴 إغلاق بعد منتصف الليل عبر المسار الحقيقي: جلسة بتنفتح الساعة 1:00 ص", async () => {
+    // فحص decideHours لحاله أسقط اختبارا واحدا. هذا بيمشي نفس الحالة من طرف
+    // لطرف: مطعم بيسكّر 2:00 ص، زبون بيراسل 1:00 ص -> لازم جلسة وترحيب.
+    const pid = phoneId("after-midnight");
+    const restaurantId = await createRestaurant({
+      phoneNumberId: pid,
+      businessHours: {
+        timezone: "Asia/Amman",
+        days: { sun: [{ open: "22:00", close: "02:00" }] },
+      },
+    });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+    const from = nextCustomer();
+    const ctx = { restaurantId, phoneNumberId: pid, from };
+
+    // الاثنين 01:00 بعمّان = الأحد 22:00 UTC. ذيل نافذة الأحد.
+    const onePastMidnight = new ConversationService(
+      replies,
+      () => new Date("2026-09-13T22:00:00Z"),
+    );
+    expect(
+      await db.runInTenant(restaurantId, (tx) => onePastMidnight.handleInbound(tx, ctx)),
+    ).toBe("greeted");
+    expect(await sessionsOf(restaurantId)).toHaveLength(1);
+
+    // ونفس المطعم الساعة 3:00 ص (بعد ما سكّر) بيرفض — عشان الاختبار ما يمر
+    // لمجرد إن البوابة دايما مفتوحة.
+    const other = nextCustomer();
+    const threeAm = new ConversationService(
+      replies,
+      () => new Date("2026-09-14T00:00:00Z"),
+    );
+    expect(
+      await db.runInTenant(restaurantId, (tx) =>
+        threeAm.handleInbound(tx, { ...ctx, from: other }),
+      ),
+    ).toBe("closed");
   });
 });
 
