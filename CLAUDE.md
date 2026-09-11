@@ -21,7 +21,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks (order state machine not built yet) |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session + first reply (order state machine not built yet) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -115,6 +115,21 @@ only after `RestaurantContextGuard` verified membership, and never leaves it on
 the pooled connection. The SQL gate sets that context by hand, so all twelve of
 its assertions would still pass with the guard deleted.
 
+`conversation-engine/test/conversation-session.test.ts` covers the reply half:
+the business-hours gate, opening exactly one session, and the first outbound
+message. It never calls Graph API — `WhatsAppSender` has a recording
+implementation next to the real one, and both run the same length check, so a
+test that passes against the fake means something about the real one. The clock
+is injected, so "closes at 2:00 am" is written as a fixed fact instead of
+something that depends on when the suite runs.
+
+Two of its tests exist because deliberately breaking the code dropped too few:
+breaking the active-session state filter dropped *zero* tests, so nothing
+asserted that a customer who has ordered can start a new conversation. The
+conflict-branch test is ordered rather than raced — it holds the winner's
+transaction open — because a `Promise.all` race passes or fails depending on
+machine load, which it did.
+
 `conversation-engine/test/webhook.test.ts` does the same for the inbound webhook,
 which has no guard and no logged-in staff: the tenant comes from a
 `phone_number_id`, so the test asserts the message lands under that restaurant
@@ -131,9 +146,42 @@ RLS.
   it — `inbound_messages` is mirrored in
   `apps/conversation-engine/src/db/schema.ts` instead and is therefore unchecked.
   Move it to `packages/shared` the moment a second package reads it.
-- `@sufria/conversation-engine` handles inbound WhatsApp webhooks only. There is
-  no order state machine, no outbound sending, and no customer/session
-  resolution yet — a message is deduped, routed to a restaurant, and stored.
+- `@sufria/conversation-engine` now dedupes, routes, stores, applies the
+  business-hours gate, opens a conversation session and sends the first reply.
+  There is still **no order state machine**: a message from a customer who
+  already has an active session only refreshes `last_message_at`. No cart, no
+  address, no payment, no order creation.
+- **`business_hours` has no schema beyond this engine.** Migration 0001 declared
+  the column and nothing ever wrote a shape into it; the shape is defined in
+  `apps/conversation-engine/src/restaurant/business-hours.ts`
+  (`{timezone, days: {sun: [{open, close}]}}`) and the dashboard's settings
+  screen has to agree with it when it is built. The timezone lives inside that
+  jsonb because `restaurants` is mirrored in `packages/shared` and a new column
+  there is a schema-drift failure — the shape was chosen around that.
+- **A malformed `business_hours` reads as open, not closed.** Deliberate: a
+  restaurant that silently stops taking orders because of a broken jsonb loses
+  money without knowing, while one that receives a message out of hours sees it
+  and acts. The empty field is "always open" by product decision; malformed gets
+  the same treatment plus an error log.
+- **A closed restaurant answers every message with the closing text.** No session
+  is opened by design, so nothing remembers that the customer was already told.
+  Rate-limiting that repeat belongs with the state machine.
+- **The menu is sent whole, in one message.** A menu that exceeds WhatsApp's
+  4096-character limit is detected, logged as an error and *not* sent — never
+  truncated — and no session is opened, so it recovers by itself once the menu
+  is shortened. Paging the menu, or a category-selection step, is a deliberate
+  deferral.
+- **A split shift shows only its first window** in the closing message: the text
+  has two slots, not four. Showing the *next* window would be a computed promise,
+  which is the thing that text deliberately avoids.
+- **Per-restaurant message text (`message_templates`) is deferred, not rejected.**
+  The table exists since 0001 with `restaurant_id NULL` meaning a platform
+  default, but nothing reads it. Customer-facing Arabic lives in
+  `packages/shared/src/domain.ts` instead. Letting each restaurant edit its own
+  wording is not needed in Sprint 1 or 2, costs a read per message and a
+  migration per wording change, and works against the decision that the
+  templates keep one voice that suits both an upmarket restaurant and a shawarma
+  counter.
 
 ---
 
