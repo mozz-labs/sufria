@@ -137,7 +137,8 @@ export class MetaWhatsAppSender implements WhatsAppSender {
 export class RecordingWhatsAppSender implements WhatsAppSender {
   readonly sent: OutboundTextMessage[] = [];
 
-  // eslint-disable-next-line @typescript-eslint/require-await
+  // async رغم إنه ما في await: الواجهة بترجّع Promise، و assertWithinTextLimit
+  // بترمي — فلازم الرمية تطلع كـrejection زي الحقيقي بالضبط، مش استثناء متزامن.
   async sendText(message: OutboundTextMessage): Promise<void> {
     // نفس فحص الحقيقي بالضبط، وقبل التسجيل: رسالة أطول من السقف ما بتنعدّ
     // "انبعثت" بالاختبار، زي ما ميتا ما كانت لتقبلها.
