@@ -25,7 +25,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { Pool } from "pg";
 
 import { env } from "../src/config/env.js";
-import { inboundMessages } from "../src/db/schema.js";
+import { inboundMessages } from "@sufria/shared";
 import { enginePoolConfig, TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
 import { parseWebhookPayload } from "../src/whatsapp/payload.js";

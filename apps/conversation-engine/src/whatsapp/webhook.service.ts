@@ -5,7 +5,7 @@ import {
   setTenantContext,
   type TenantDb,
 } from "../db/tenant-db.js";
-import { inboundMessages } from "../db/schema.js";
+import { inboundMessages } from "@sufria/shared";
 import { logger, maskPhone } from "../logger.js";
 import type { InboundMessage, ParsedWebhook } from "./payload.js";
 
