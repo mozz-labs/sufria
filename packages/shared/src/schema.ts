@@ -111,6 +111,9 @@ export const restaurants = pgTable("restaurants", {
   name: text("name").notNull(),
   logoUrl: text("logo_url"),
   location: text("location"),
+  // 0008 — the restaurant's IANA timezone. Lived inside the business_hours
+  // jsonb until 0008 moved it out; that jsonb now carries only {days:{...}}.
+  timezone: text("timezone").notNull().default("Asia/Amman"),
   businessHours: jsonb("business_hours").notNull().default({}),
   whatsappNumber: text("whatsapp_number"),
   whatsappPhoneId: text("whatsapp_phone_id").unique(),

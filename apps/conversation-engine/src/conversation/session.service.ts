@@ -10,7 +10,10 @@ import {
 import { advanceSessionState } from "../db/critical-primitives.js";
 import type { TenantTx } from "../db/types.js";
 import { logger, maskPhone } from "../logger.js";
-import { decideHours } from "../restaurant/business-hours.js";
+import {
+  decideHours,
+  legacyTimezoneKey,
+} from "../restaurant/business-hours.js";
 import { buildMenu } from "../restaurant/menu.js";
 import {
   OutboundTextTooLongError,
@@ -93,7 +96,21 @@ export class ConversationService {
     // ---------------------------------------------------------------------
     // ٢. 🔴 بوابة ساعات الدوام — FR-22. قبل أي جلسة، وقبل أي قائمة.
     // ---------------------------------------------------------------------
-    const hours = decideHours(restaurant.businessHours, this.now());
+    // مفتاح `timezone` جوّا الـjsonb مهجور من 0008 والهجرة شالته. رجوعه معناه
+    // إشي كتبه من جديد وبيتوقّع إنه بينقرا — وهو ما بينقرا. سطر تحذير بدل عطل صامت.
+    const legacyZone = legacyTimezoneKey(restaurant.businessHours);
+    if (legacyZone !== null) {
+      logger.warn(
+        { restaurantId: ctx.restaurantId, legacyZone },
+        "business_hours فيه مفتاح timezone مهجور — العمود restaurants.timezone هو المقروء",
+      );
+    }
+
+    const hours = decideHours(
+      restaurant.businessHours,
+      restaurant.timezone,
+      this.now(),
+    );
     if (!hours.open) {
       await this.sender.sendText({
         restaurantId: ctx.restaurantId,
@@ -189,14 +206,15 @@ export class ConversationService {
   private async readRestaurant(
     tx: TenantTx,
     restaurantId: string,
-  ): Promise<{ name: string; businessHours: unknown }> {
+  ): Promise<{ name: string; businessHours: unknown; timezone: string }> {
     // 🔴 `resolve_restaurant_by_phone_id` بترجّع uuid وبس، فالاسم وساعات الدوام
-    //    بدهم قراءة. الشرط على المعرّف مش هو اللي بيعزل — سياسة tenant_isolation
+    //    والمنطقة الزمنية بدهم قراءة. الشرط على المعرّف مش هو اللي بيعزل — سياسة tenant_isolation
     //    بـ0003 بتعزل. موجود عشان الفشل يكون صريح لو السياق ما انضبط.
     const [row] = await tx
       .select({
         name: restaurants.name,
         businessHours: restaurants.businessHours,
+        timezone: restaurants.timezone,
       })
       .from(restaurants)
       .where(eq(restaurants.id, restaurantId))
