@@ -141,6 +141,17 @@ RLS.
 ## Known gaps
 
 
+- **`pnpm db:reset` assumes Docker and does nothing useful on a native
+  PostgreSQL install.** It runs `docker compose down -v && pnpm db:up`, so
+  against a native server on 5432 it tears down a volume nothing uses and then
+  fails to bind the port. The native path — terminate connections, `DROP
+  DATABASE sufria`, recreate it with the same locale (`TEMPLATE template0
+  ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'ar-JO' LOCALE 'C.UTF-8'`),
+  then `pnpm db:migrate && pnpm db:seed` — is described in prose in
+  `docs/02-تجهيز-البيئة.md` but is not automated anywhere. Since migrations only
+  ever run against a clean database, this friction repeats on **every** new
+  migration. A `db:reset:native` script would remove it.
+
 - **Every mirror lives in `packages/shared`, and `pnpm test:db` now enforces
   that.** It used to iterate the TS schema only, so a SQL table mirrored
   somewhere else was invisible to it — `inbound_messages` sat in
