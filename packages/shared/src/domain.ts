@@ -173,10 +173,12 @@ export const WELCOME_AR = `أهلا بك في ${RESTAURANT_NAME_SLOT}.`;
 export const MENU_HEADER_AR = "القائمة — أرسل رقم الصنف الذي تريده.";
 
 /** `CLOSED_WITH_HOURS_AR` بخاناتها مستبدلة. بترجّع `CLOSED_AR` لو ما في أوقات. */
-export function closedMessageAr(window: {
-  opensAt: string;
-  closesAt: string;
-} | null): string {
+export function closedMessageAr(
+  window: {
+    opensAt: string;
+    closesAt: string;
+  } | null,
+): string {
   if (window === null) return CLOSED_AR;
   return CLOSED_WITH_HOURS_AR.replace(OPENS_AT_SLOT, window.opensAt).replace(
     CLOSES_AT_SLOT,

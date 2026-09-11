@@ -140,7 +140,11 @@ export class ConversationService {
       return "reply_too_long";
     }
 
-    const customerId = await this.upsertCustomer(tx, ctx.restaurantId, ctx.from);
+    const customerId = await this.upsertCustomer(
+      tx,
+      ctx.restaurantId,
+      ctx.from,
+    );
     const sessionId = await this.openSession(tx, ctx.restaurantId, customerId);
     if (sessionId === null) {
       // ما قدرنا نمسك الجلسة إطلاقا — سباق انتهى لصالح غيرنا وما عاد في صف

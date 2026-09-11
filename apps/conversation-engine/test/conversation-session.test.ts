@@ -15,7 +15,14 @@
  * البيانات كلها بتتعمل بهالملف عبر اتصال التدقيق: ساعات الدوام والقوائم لازم
  * تتغيّر بنص الاختبار، وتعديل صفوف الـfixture المشتركة بيكسر باقي السويتات.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "@jest/globals";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+} from "@jest/globals";
 import { createHmac, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -24,6 +31,7 @@ import {
   CLOSED_AR,
   MENU_HEADER_AR,
   closedMessageAr,
+  conversationSessions,
   welcomeMessageAr,
 } from "@sufria/shared";
 
@@ -46,7 +54,8 @@ const phoneId = (label: string): string => `PHONE.SESSION.${RUN}.${label}`;
 
 /** رقم زبون فريد لكل اختبار: الجلسة مفتاحها (مطعم، زبون). */
 let customerSeq = 0;
-const nextCustomer = (): string => `96279${String(++customerSeq).padStart(7, "0")}`;
+const nextCustomer = (): string =>
+  `96279${String(++customerSeq).padStart(7, "0")}`;
 
 /** دوام يغطي اليوم كله بكل أيام الأسبوع — "مفتوح" بلا الاعتماد على الساعة. */
 const ALWAYS_OPEN_HOURS = {
@@ -201,7 +210,10 @@ function metaPayload(...messages: MessageOpts[]): Record<string, unknown> {
           field: "messages",
           value: {
             messaging_product: "whatsapp",
-            metadata: { display_phone_number: "962790000000", phone_number_id: pid },
+            metadata: {
+              display_phone_number: "962790000000",
+              phone_number_id: pid,
+            },
             messages: bucket.map((m) => ({
               from: m.from,
               id: m.waMessageId,
@@ -217,8 +229,15 @@ function metaPayload(...messages: MessageOpts[]): Record<string, unknown> {
 }
 
 /** نص القائمة وحده، بلا الترحيب — لمقارنة ترتيبين متتاليين. */
-async function buildMenuForTest(tx: Parameters<typeof buildMenu>[0]): Promise<string> {
+async function buildMenuForTest(
+  tx: Parameters<typeof buildMenu>[0],
+): Promise<string> {
   return (await buildMenu(tx)).text;
+}
+
+/** بتسيب حلقة الأحداث تمشي كفاية لمعاملة تانية توصل لمكانها وتنحبس. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 150));
 }
 
 async function postSigned(payload: unknown): Promise<Response> {
@@ -283,9 +302,7 @@ describe("بوابة ساعات الدوام — FR-22", () => {
       phoneNumberId: pid,
       businessHours: ALWAYS_CLOSED_HOURS,
     });
-    await addCategory(restaurantId, "مقبلات", [
-      { name: "حمص", price: "2.50" },
-    ]);
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
 
     const res = await postSigned(
@@ -385,7 +402,11 @@ describe("أول رسالة من زبون بلا جلسة", () => {
     const from = nextCustomer();
 
     await db.runInTenant(restaurantId, (tx) =>
-      conversation.handleInbound(tx, { restaurantId, phoneNumberId: pid, from }),
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
     );
 
     const body = replies.forRestaurant(restaurantId)[0]?.body ?? "";
@@ -420,7 +441,11 @@ describe("أول رسالة من زبون بلا جلسة", () => {
 
     const from = nextCustomer();
     await db.runInTenant(restaurantId, (tx) =>
-      conversation.handleInbound(tx, { restaurantId, phoneNumberId: pid, from }),
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
     );
 
     const body = replies.forRestaurant(restaurantId)[0]?.body ?? "";
@@ -445,10 +470,18 @@ describe("أول رسالة من زبون بلا جلسة", () => {
     const from = nextCustomer();
 
     const first = await db.runInTenant(restaurantId, (tx) =>
-      conversation.handleInbound(tx, { restaurantId, phoneNumberId: pid, from }),
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
     );
     const second = await db.runInTenant(restaurantId, (tx) =>
-      conversation.handleInbound(tx, { restaurantId, phoneNumberId: pid, from }),
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
     );
 
     expect(first).toBe("greeted");
@@ -481,27 +514,97 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     expect(replies.forRestaurant(restaurantId)).toHaveLength(1);
   });
 
-  it("معاملتان متوازيتان فعلا على اتصالين: جلسة وحدة، والخاسر بيتجاهل بصمت", async () => {
+  it("🔴 فرع التعارض بالضبط: الخاسر بيقرأ صف الفائز وبيتجاهل بصمت", async () => {
+    // 🔴 هذا الاختبار **مُرتَّب**، مش سباق. Promise.all على معاملتين ما بيضمن
+    //    تداخلا: لو وحدة commit قبل ما التانية تبلّش، التانية بتلاقي جلسة نشطة
+    //    وبترجع "active_session" — وهو سلوك صحيح، بس فرع تاني بالكامل. الاختبار
+    //    اللي بيعتمد على التوقيت بيتقلّب بين الفرعين حسب حمل الجهاز (وهاد صار
+    //    فعلا: مرّ لحاله وسقط تحت `pnpm -r test` المتوازي).
+    //
+    //    الترتيب هون بيجبر التداخل: الفائز بيكتب وبيمسك معاملته مفتوحة، فالخاسر
+    //    بيوصل الإدراج وبينحبس على الفهرس الفريد، وبعدين الفائز بيعمل commit.
+    const pid = phoneId("conflict-branch");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+    const from = nextCustomer();
+    const ctx = { restaurantId, phoneNumberId: pid, from };
+
+    const { rows } = await audit.query<{ id: string }>(
+      `INSERT INTO customers (restaurant_id, phone_number) VALUES ($1, $2) RETURNING id`,
+      [restaurantId, from],
+    );
+    const customerId = rows[0]?.id ?? "";
+
+    const winnerDb = new TenantDb();
+    let releaseWinner = (): void => {};
+    const winnerHeld = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+
+    try {
+      // الفائز بيعمل بالضبط اللي بيعمله المسار الحقيقي — جلسة 'new' ثم CAS
+      // لـ'browsing' — وبعدين بيمسك المعاملة مفتوحة.
+      const winner = winnerDb.runInTenant(restaurantId, async (tx) => {
+        const [row] = await tx
+          .insert(conversationSessions)
+          .values({ restaurantId, customerId, state: "new" })
+          .returning({ id: conversationSessions.id });
+        await advanceSessionState(tx, row?.id ?? "", "new", "browsing");
+        await winnerHeld;
+      });
+
+      await settle();
+
+      // الخاسر بيمشي المسار الحقيقي كاملا، وبينحبس عند الإدراج على الفهرس.
+      const loser = db.runInTenant(restaurantId, (tx) =>
+        conversation.handleInbound(tx, ctx),
+      );
+
+      await settle();
+      releaseWinner();
+      await winner;
+
+      // 🔴 الفرع اللي مشى: تعارض على الفهرس -> قراءة صف الفائز -> CAS خسر.
+      await expect(loser).resolves.toBe("duplicate_ignored");
+    } finally {
+      releaseWinner();
+      await winnerDb.stop();
+    }
+
+    // والثابت اللي كل هذا موجود عشانه: جلسة وحدة، وولا ترحيب من الخاسر.
+    expect(await sessionsOf(restaurantId)).toHaveLength(1);
+    expect(replies.forRestaurant(restaurantId)).toEqual([]);
+  });
+
+  it("تزامن حقيقي على اتصالين: الثابت بيصمد مهما كان الترتيب", async () => {
+    // هذا الاختبار **ما بيثبّت أي فرع** — التوقيت بيقرّر مين بيفوز وهل في
+    // تداخل أصلا. اللي بيثبّته هو الثابت وحده: جلسة وحدة وترحيب واحد، سواء
+    // مشى الخاسر من فرع التعارض أو من فرع "جلسة نشطة".
     const pid = phoneId("true-race");
     const restaurantId = await createRestaurant({ phoneNumberId: pid });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
 
-    // 🔴 مخزنان مستقلان. بمخزن واحد (PG_POOL_MAX=1) المعاملتان بتتسلسلا
-    //    وبيصير الاختبار "متتاليتان" مش "متوازيتان"، والفهرس الفريد ما بينفحص
-    //    تحت تزامن حقيقي إطلاقا.
     const dbA = new TenantDb();
     const dbB = new TenantDb();
     try {
       const ctx = { restaurantId, phoneNumberId: pid, from };
-      const [a, b] = await Promise.all([
-        dbA.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
-        dbB.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+      const outcomes = await Promise.all([
+        dbA.runInTenant(restaurantId, (tx) =>
+          conversation.handleInbound(tx, ctx),
+        ),
+        dbB.runInTenant(restaurantId, (tx) =>
+          conversation.handleInbound(tx, ctx),
+        ),
       ]);
 
-      // واحد رحّب، والتاني تجاهل بصمت. أيهما فاز مش مهم.
-      expect([a, b].filter((o) => o === "greeted")).toHaveLength(1);
-      expect([a, b].filter((o) => o === "duplicate_ignored")).toHaveLength(1);
+      // ترحيب واحد بالضبط. والتاني إما تعارض أو جلسة نشطة — الاتنين صح.
+      expect(outcomes.filter((o) => o === "greeted")).toHaveLength(1);
+      expect(
+        outcomes.filter(
+          (o) => o === "duplicate_ignored" || o === "active_session",
+        ),
+      ).toHaveLength(1);
     } finally {
       await dbA.stop();
       await dbB.stop();
@@ -529,7 +632,9 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
     const ctx = { restaurantId, phoneNumberId: pid, from };
 
     expect(
-      await db.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+      await db.runInTenant(restaurantId, (tx) =>
+        conversation.handleInbound(tx, ctx),
+      ),
     ).toBe("greeted");
 
     // الجلسة خلصت بطلب.
@@ -540,7 +645,9 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
 
     // 🔴 الفرع نفسه: بترجع "greeted" مش "active_session".
     expect(
-      await db.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+      await db.runInTenant(restaurantId, (tx) =>
+        conversation.handleInbound(tx, ctx),
+      ),
     ).toBe("greeted");
 
     const sessions = await sessionsOf(restaurantId);
@@ -630,7 +737,9 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
       () => new Date("2026-09-13T22:00:00Z"),
     );
     expect(
-      await db.runInTenant(restaurantId, (tx) => onePastMidnight.handleInbound(tx, ctx)),
+      await db.runInTenant(restaurantId, (tx) =>
+        onePastMidnight.handleInbound(tx, ctx),
+      ),
     ).toBe("greeted");
     expect(await sessionsOf(restaurantId)).toHaveLength(1);
 
@@ -659,12 +768,14 @@ describe("عزل المستأجرين", () => {
     //    وهاد هو الشكل اللي بينفلت من اختبار مكتوب على مطعمين ما إلهم علاقة.
     const restaurantA = await createRestaurant({ phoneNumberId: pidA });
     const restaurantB = await createRestaurant({ phoneNumberId: pidB });
-    await audit.query("UPDATE restaurants SET chain_id = $1 WHERE id = ANY($2::uuid[])", [
-      chainId,
-      [restaurantA, restaurantB],
-    ]);
+    await audit.query(
+      "UPDATE restaurants SET chain_id = $1 WHERE id = ANY($2::uuid[])",
+      [chainId, [restaurantA, restaurantB]],
+    );
     await addCategory(restaurantA, "مقبلات", [{ name: "حمص", price: "2.50" }]);
-    await addCategory(restaurantB, "مقبلات", [{ name: "بابا غنوج", price: "3.00" }]);
+    await addCategory(restaurantB, "مقبلات", [
+      { name: "بابا غنوج", price: "3.00" },
+    ]);
 
     const from = nextCustomer();
     const res = await postSigned(
@@ -681,7 +792,9 @@ describe("عزل المستأجرين", () => {
     expect(replies.sent.every((m) => m.phoneNumberId === pidA)).toBe(true);
 
     // وقائمة B ما ظهرت بنص الرسالة اللي راحت لزبون A.
-    expect(replies.forRestaurant(restaurantA)[0]?.body).not.toContain("بابا غنوج");
+    expect(replies.forRestaurant(restaurantA)[0]?.body).not.toContain(
+      "بابا غنوج",
+    );
   });
 });
 
@@ -702,7 +815,11 @@ describe("سقف نص واتساب", () => {
     const from = nextCustomer();
 
     const outcome = await db.runInTenant(restaurantId, (tx) =>
-      conversation.handleInbound(tx, { restaurantId, phoneNumberId: pid, from }),
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
     );
 
     // 🔴 الفرع نفسه، مش أثر جانبي.
@@ -728,7 +845,9 @@ describe("سقف نص واتساب", () => {
     const ctx = { restaurantId, phoneNumberId: pid, from };
 
     expect(
-      await db.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+      await db.runInTenant(restaurantId, (tx) =>
+        conversation.handleInbound(tx, ctx),
+      ),
     ).toBe("reply_too_long");
 
     // المطعم قصّر قائمته.
@@ -738,7 +857,9 @@ describe("سقف نص واتساب", () => {
     );
 
     expect(
-      await db.runInTenant(restaurantId, (tx) => conversation.handleInbound(tx, ctx)),
+      await db.runInTenant(restaurantId, (tx) =>
+        conversation.handleInbound(tx, ctx),
+      ),
     ).toBe("greeted");
     expect(await sessionsOf(restaurantId)).toHaveLength(1);
     const body = replies.forRestaurant(restaurantId)[0]?.body ?? "";

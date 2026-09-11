@@ -27,15 +27,7 @@ export const DEFAULT_TIMEZONE = "Asia/Amman";
  * الترتيب بيبدا بالأحد لأنه أول أيام الأسبوع بالأردن — بس الترتيب هون ما إله
  * أي أثر على المنطق، المفتاح بينقرا بالاسم مش بالفهرس.
  */
-const DAY_KEYS = [
-  "sun",
-  "mon",
-  "tue",
-  "wed",
-  "thu",
-  "fri",
-  "sat",
-] as const;
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 export type DayKey = (typeof DAY_KEYS)[number];
 
 const LONG_TO_SHORT: Record<string, DayKey> = {

@@ -50,7 +50,9 @@ async function readMenu(tx: TenantTx): Promise<MenuRow[]> {
     })
     .from(menuCategories)
     .innerJoin(menuItems, eq(menuItems.categoryId, menuCategories.id))
-    .where(and(eq(menuCategories.isActive, true), eq(menuItems.isAvailable, true)))
+    .where(
+      and(eq(menuCategories.isActive, true), eq(menuItems.isAvailable, true)),
+    )
     // 🔴 الترتيب لازم يكون كليّا (total order)، مش جزئيا. `display_order`
     //    وحده ما بيكفي: تصنيفين بنفس الرقم — والصفر هو الافتراضي، يعني هاي
     //    الحالة الشائعة مش النادرة — بيتركوا الترتيب لـPostgres، فبيتغيّر مع

@@ -34,7 +34,10 @@ const EnvSchema = z.object({
 
   /** نسخة Graph API. مفصولة عن الرابط عشان الترقية تصير بمتغيّر بيئة مش بنشر. */
   WHATSAPP_GRAPH_API_VERSION: z.string().min(1).default("v21.0"),
-  WHATSAPP_GRAPH_API_BASE: z.string().url().default("https://graph.facebook.com"),
+  WHATSAPP_GRAPH_API_BASE: z
+    .string()
+    .url()
+    .default("https://graph.facebook.com"),
 
   /**
    * مهلة طلب الإرسال لميتا. نفس منطق مهلات مخزن الاتصالات تحت: بلاها الطلب
