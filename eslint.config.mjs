@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "**/.next/**",
+      ".claude/**",
       "apps/dashboard-web/**",
       "docs/**",
       "**/*.d.ts",
