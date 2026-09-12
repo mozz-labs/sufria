@@ -74,6 +74,7 @@ existing one fails loudly at `0001` by design. The upgrade path is always
 4. **SQL is the source, TypeScript is the mirror.** `packages/shared/src/schema.ts`
    is maintained by hand. Never run `drizzle-kit generate` — it silently drops every
    RLS policy, CHECK constraint, and partial index. `pnpm test:db` catches drift.
+   (coverage is not complete — see Known gaps)
 5. **`DATABASE_URL` must be `sufria_dashboard` (or `sufria_engine`), never
    `postgres`.** A superuser bypasses RLS with no error at all, so isolation checks
    pass without checking anything. `TenantDbService` refuses to start if it detects
@@ -185,6 +186,34 @@ RLS.
 
 ---
 
+## قبل أي سطر كود — قواعد قراءة البريف
+
+🔴 **أي جملة في أي بريف تصف هذا الريبو — ملف موجود، دالة موجودة، عمود موجود،
+مسار كذا — هي افتراض من كاتب البريف، لا حقيقة.** تحقّق منها بنفسك أولا.
+
+🔴 **إذا خالف الواقعُ البريفَ: قف واذكر الفرق.** لا تكمّل على أيهما، ولا تُصلح
+البريف ضمنا.
+
+🔴 **إذا تعارضت تعليمتان في البريف: قف واسأل.** لا تختر واحدة بنفسك.
+حصل ثلاث مرات في يوم واحد: (١) «اختبارات حقيقية» مع «ممنوع dependencies»،
+(٢) مسار مخالف لوثيقة Sprint 1، (٣) «النصوص من shared» مع «ممنوع تضيف فيها».
+
+🔴 **إذا كان سؤالك التقني يخفي خلفه قرار منتج أو معمارية — سمِّ القرار صراحة
+في سؤالك.** ثلاثة قرارات كادت تُتخذ ضمنا داخل أسئلة صياغة: نص مرقّم مقابل قائمة
+تفاعلية · وقت محسوب مقابل حقيقة مخزّنة · سلوك القائمة الطويلة.
+
+🔴 **النصوص العربية الظاهرة للمستخدم لا تُخترع ولا يُعاد صياغتها.** تُطلب من
+محمد حرفيا، وتُنسخ كما هي.
+
+
+
+## ملكية الموارد — يحدّدها كل بريف صراحة
+
+`pnpm-lock.yaml` · `package.json` · `packages/shared` · رقم الهجرة التالي.
+**البريف الذي لا يحدّدها يُسأل عنها قبل البدء، لا يُفترض.**
+
+---
+
 ## شروط الإنجاز — إلزامية لكل مهمة
 
 المهمة لا تُحتسب منجزة إلا إذا:
@@ -233,6 +262,10 @@ RLS.
 ## مصائد ممنوع فتحها
 
 - **إعادة توليد مخططات `.png`** — `mmdc` يجرّ Puppeteer/Chromium ويفشل على WSL. مصيدة وقت مسجّلة.
+
+🔴 **سكربت اختبار الكسر يسترجع الملف المكسور وحده — ممنوع `git checkout -- .`**
+
+(مسح تعديلات غير مكوَّمة فعلا.)
 
 ## أسلوب العمل
 
