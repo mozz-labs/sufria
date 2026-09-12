@@ -42,7 +42,10 @@ import { ConversationService } from "../src/conversation/session.service.js";
 import { advanceSessionState } from "../src/db/critical-primitives.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
-import { decideHours } from "../src/restaurant/business-hours.js";
+import {
+  decideHours,
+  legacyTimezoneKey,
+} from "../src/restaurant/business-hours.js";
 import { buildMenu } from "../src/restaurant/menu.js";
 import {
   RecordingWhatsAppSender,
@@ -61,7 +64,6 @@ const nextCustomer = (): string =>
 
 /** دوام يغطي اليوم كله بكل أيام الأسبوع — "مفتوح" بلا الاعتماد على الساعة. */
 const ALWAYS_OPEN_HOURS = {
-  timezone: "Asia/Amman",
   days: Object.fromEntries(
     ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((d) => [
       d,
@@ -72,7 +74,6 @@ const ALWAYS_OPEN_HOURS = {
 
 /** ولا يوم مفتوح — "مغلق" بلا الاعتماد على الساعة. */
 const ALWAYS_CLOSED_HOURS = {
-  timezone: "Asia/Amman",
   days: { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] },
 };
 
@@ -99,16 +100,19 @@ interface RestaurantOpts {
   phoneNumberId: string;
   businessHours?: unknown;
   name?: string;
+  /** عمود `restaurants.timezone` (هجرة 0008) — مش جوّا الـjsonb. */
+  timezone?: string;
 }
 
 async function createRestaurant(opts: RestaurantOpts): Promise<string> {
   const { rows } = await audit.query<{ id: string }>(
-    `INSERT INTO restaurants (name, whatsapp_phone_id, status, business_hours)
-     VALUES ($1, $2, 'active'::restaurant_status, $3::jsonb) RETURNING id`,
+    `INSERT INTO restaurants (name, whatsapp_phone_id, status, business_hours, timezone)
+     VALUES ($1, $2, 'active'::restaurant_status, $3::jsonb, $4) RETURNING id`,
     [
       opts.name ?? `مطعم ${RUN}`,
       opts.phoneNumberId,
       JSON.stringify(opts.businessHours ?? ALWAYS_OPEN_HOURS),
+      opts.timezone ?? "Asia/Amman",
     ],
   );
   const id = rows[0]?.id;
@@ -328,10 +332,8 @@ describe("بوابة ساعات الدوام — FR-22", () => {
     // الأحد مفتوح 10:00-23:00، وباقي الأيام مغلقة. الساعة المحقونة يوم أحد 08:00.
     const restaurantId = await createRestaurant({
       phoneNumberId: pid,
-      businessHours: {
-        timezone: "Asia/Amman",
-        days: { sun: [{ open: "10:00", close: "23:00" }] },
-      },
+      businessHours: { days: { sun: [{ open: "10:00", close: "23:00" }] } },
+      timezone: "Asia/Amman",
     });
     const from = nextCustomer();
 
@@ -718,16 +720,60 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
     expect(second).toBe(false);
   });
 
+  it("🔴 عمود timezone بينقرا من القاعدة: نفس الساعات، منطقتين، جوابين", async () => {
+    // الإثبات إن العمود موصول فعلا لحد القرار، مش إن الدالة بتاخد وسيطا.
+    // نفس الـjsonb حرفيا لكلا المطعمين — الفرق الوحيد عمود timezone.
+    // لو حدا شال قراءة العمود من readRestaurant ورجّع الافتراضي الثابت،
+    // المطعمين بيردّوا نفس الرد وهالاختبار بيسقط.
+    const hours = { days: { sun: [{ open: "10:00", close: "23:00" }] } };
+
+    const ammanPid = phoneId("tz-amman");
+    const ammanId = await createRestaurant({
+      phoneNumberId: ammanPid,
+      businessHours: hours,
+      timezone: "Asia/Amman",
+    });
+    await addCategory(ammanId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+
+    const utcPid = phoneId("tz-utc");
+    const utcId = await createRestaurant({
+      phoneNumberId: utcPid,
+      businessHours: hours,
+      timezone: "UTC",
+    });
+    await addCategory(utcId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+
+    // 08:00 UTC = 11:00 بعمّان (جوّا 10:00-23:00) و08:00 بـUTC (قبل الفتح).
+    const moment = new Date("2026-09-13T08:00:00Z");
+    const scoped = new ConversationService(replies, () => moment);
+
+    const ammanOutcome = await db.runInTenant(ammanId, (tx) =>
+      scoped.handleInbound(tx, {
+        restaurantId: ammanId,
+        phoneNumberId: ammanPid,
+        from: nextCustomer(),
+      }),
+    );
+    const utcOutcome = await db.runInTenant(utcId, (tx) =>
+      scoped.handleInbound(tx, {
+        restaurantId: utcId,
+        phoneNumberId: utcPid,
+        from: nextCustomer(),
+      }),
+    );
+
+    expect(ammanOutcome).toBe("greeted");
+    expect(utcOutcome).toBe("closed");
+  });
+
   it("🔴 إغلاق بعد منتصف الليل عبر المسار الحقيقي: جلسة بتنفتح الساعة 1:00 ص", async () => {
     // فحص decideHours لحاله أسقط اختبارا واحدا. هذا بيمشي نفس الحالة من طرف
     // لطرف: مطعم بيسكّر 2:00 ص، زبون بيراسل 1:00 ص -> لازم جلسة وترحيب.
     const pid = phoneId("after-midnight");
     const restaurantId = await createRestaurant({
       phoneNumberId: pid,
-      businessHours: {
-        timezone: "Asia/Amman",
-        days: { sun: [{ open: "22:00", close: "02:00" }] },
-      },
+      businessHours: { days: { sun: [{ open: "22:00", close: "02:00" }] } },
+      timezone: "Asia/Amman",
     });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
@@ -876,85 +922,101 @@ describe("سقف نص واتساب", () => {
 describe("decideHours — الحالات الحدّية", () => {
   /** 2026-09-13 أحد · 2026-09-14 اثنين. */
   const sundayAt = (utc: string): Date => new Date(`2026-09-13T${utc}Z`);
+  /** المنطقة الزمنية صارت وسيطا — قيمة عمود `restaurants.timezone`. */
+  const AMMAN = "Asia/Amman";
 
   it("الحقل الفاضي = مفتوح دايما", () => {
-    expect(decideHours({}, sundayAt("00:00:00")).open).toBe(true);
-    expect(decideHours({}, sundayAt("13:00:00")).open).toBe(true);
+    expect(decideHours({}, AMMAN, sundayAt("00:00:00")).open).toBe(true);
+    expect(decideHours({}, AMMAN, sundayAt("13:00:00")).open).toBe(true);
   });
 
   it("حقل مشوّه = مفتوح، مش مغلق", () => {
     // 🔴 الاتجاه عند الشك. مطعم ما بيقدر يستقبل طلبات بسبب jsonb مكسور بيخسر
     //    مبيعات وهو ما بيعرف؛ مطعم استقبل رسالة وهو مسكّر بيشوفها وبيتصرّف.
-    expect(decideHours("مش كائن", sundayAt("13:00:00")).open).toBe(true);
-    expect(decideHours(null, sundayAt("13:00:00")).open).toBe(true);
-    expect(decideHours(42, sundayAt("13:00:00")).open).toBe(true);
+    expect(decideHours("مش كائن", AMMAN, sundayAt("13:00:00")).open).toBe(true);
+    expect(decideHours(null, AMMAN, sundayAt("13:00:00")).open).toBe(true);
+    expect(decideHours(42, AMMAN, sundayAt("13:00:00")).open).toBe(true);
   });
 
   it("المنطقة الزمنية بتحكم، مش توقيت الخادم", () => {
-    const hours = {
-      timezone: "Asia/Amman",
-      days: { sun: [{ open: "10:00", close: "23:00" }] },
-    };
+    const hours = { days: { sun: [{ open: "10:00", close: "23:00" }] } };
     // 08:00 UTC = 11:00 بعمّان (UTC+3 ثابتة — الأردن ألغى التوقيت الصيفي 2022).
-    expect(decideHours(hours, sundayAt("08:00:00")).open).toBe(true);
+    expect(decideHours(hours, AMMAN, sundayAt("08:00:00")).open).toBe(true);
     // 05:00 UTC = 08:00 بعمّان -> مسكّر، مع إنه 05:00 UTC ممكن يكون ضمن الدوام
     // لو انقرأ بتوقيت الخادم.
-    expect(decideHours(hours, sundayAt("05:00:00")).open).toBe(false);
+    expect(decideHours(hours, AMMAN, sundayAt("05:00:00")).open).toBe(false);
 
-    // نفس اللحظة بمنطقة تانية بتعطي جوابا مختلفا — وهاد بالضبط اللي بينكسر
-    // لما حدا يستعمل توقيت الخادم.
-    const utcHours = {
-      timezone: "UTC",
-      days: { sun: [{ open: "10:00", close: "23:00" }] },
-    };
-    expect(decideHours(utcHours, sundayAt("05:00:00")).open).toBe(false);
-    expect(decideHours(utcHours, sundayAt("11:00:00")).open).toBe(true);
+    // 🔴 نفس الـjsonb بالضبط، وبس المنطقة الزمنية اختلفت -> جواب مختلف. هاد
+    //    اللي بيثبت إن العمود هو اللي بيحكم: قبل 0008 كان لازم يتغيّر الـjsonb.
+    expect(decideHours(hours, "UTC", sundayAt("05:00:00")).open).toBe(false);
+    expect(decideHours(hours, "UTC", sundayAt("11:00:00")).open).toBe(true);
   });
 
   it("منطقة زمنية مش معروفة = مفتوح، مش انفجار", () => {
-    const hours = {
-      timezone: "Mars/Olympus_Mons",
+    const hours = { days: { sun: [{ open: "10:00", close: "23:00" }] } };
+    expect(
+      decideHours(hours, "Mars/Olympus_Mons", sundayAt("05:00:00")).open,
+    ).toBe(true);
+  });
+
+  it("🔴 مفتاح timezone اللي ضل جوّا الـjsonb ما بينقرا — العمود بيغلب", () => {
+    // العقد اللي تغيّر بهجرة 0008، مكتوب كاختبار:
+    //   قبل:  business_hours = {timezone, days}      <- الـjsonb بيحكم
+    //   بعد:  business_hours = {days} + عمود timezone <- العمود بيحكم
+    // لو حدا رجّع يقرا الـjsonb، هالاختبار بيسقط.
+    const stale = {
+      timezone: "UTC",
       days: { sun: [{ open: "10:00", close: "23:00" }] },
     };
-    expect(decideHours(hours, sundayAt("05:00:00")).open).toBe(true);
+    // 05:00 UTC = 08:00 بعمّان -> مسكّر. لو الـjsonb ("UTC") انقرا بدل العمود
+    // كان صار 05:00 محلي -> برضو مسكّر، فهاي اللحظة ما بتفرّق. 11:00 UTC بتفرّق:
+    //   بعمّان = 14:00 -> مفتوح · بـUTC = 11:00 -> مفتوح. برضو ما بتفرّق.
+    // اللحظة اللي بتفرّق هي 08:00 UTC: بعمّان 11:00 مفتوح، بـUTC 08:00 مسكّر.
+    expect(decideHours(stale, AMMAN, sundayAt("08:00:00")).open).toBe(true);
+    expect(decideHours(stale, "UTC", sundayAt("08:00:00")).open).toBe(false);
+  });
+
+  it("مفتاح timezone المهجور بينكشف عشان ينسجّل، مش عشان ينستعمل", () => {
+    // الهجرة شالت المفتاح من كل الصفوف. رجوعه معناه إشي كتبه من جديد
+    // وبيتوقّع إنه بينقرا — والتحذير هو اللي بيمنع العطل الصامت.
+    expect(legacyTimezoneKey({ timezone: "UTC", days: {} })).toBe("UTC");
+    expect(legacyTimezoneKey({ days: {} })).toBeNull();
+    expect(legacyTimezoneKey({ timezone: "   " })).toBeNull();
+    expect(legacyTimezoneKey({ timezone: 42 })).toBeNull();
+    expect(legacyTimezoneKey(null)).toBeNull();
+    expect(legacyTimezoneKey("مش كائن")).toBeNull();
+    expect(legacyTimezoneKey([{ timezone: "UTC" }])).toBeNull();
   });
 
   it("🔴 إغلاق بعد منتصف الليل: 22:00 -> 02:00 بيضل مفتوح الساعة 1:00 ص", () => {
-    const hours = {
-      timezone: "Asia/Amman",
-      days: { sun: [{ open: "22:00", close: "02:00" }] },
-    };
+    const hours = { days: { sun: [{ open: "22:00", close: "02:00" }] } };
     // الأحد 23:00 بعمّان = 20:00 UTC الأحد -> جوّا نافذة الأحد.
-    expect(decideHours(hours, sundayAt("20:00:00")).open).toBe(true);
+    expect(decideHours(hours, AMMAN, sundayAt("20:00:00")).open).toBe(true);
 
     // الاثنين 01:00 بعمّان = 22:00 UTC الأحد. هاي **ذيل نافذة الأحد**، والاثنين
     // نفسه ما إله نافذة. بلا فحص اليوم السابق بترجع "مغلق" وهو مفتوح.
     const mondayOneAm = new Date("2026-09-13T22:00:00Z");
-    expect(decideHours(hours, mondayOneAm).open).toBe(true);
+    expect(decideHours(hours, AMMAN, mondayOneAm).open).toBe(true);
 
     // الاثنين 03:00 بعمّان = 00:00 UTC الاثنين -> بعد ما سكّر.
     const mondayThreeAm = new Date("2026-09-14T00:00:00Z");
-    expect(decideHours(hours, mondayThreeAm).open).toBe(false);
+    expect(decideHours(hours, AMMAN, mondayThreeAm).open).toBe(false);
   });
 
   it("🔴 نافذة صفرية (open == close) = مغلق، مش أربعا وعشرين ساعة", () => {
-    const hours = {
-      timezone: "Asia/Amman",
-      days: { sun: [{ open: "00:00", close: "00:00" }] },
-    };
+    const hours = { days: { sun: [{ open: "00:00", close: "00:00" }] } };
     // اليوم معرَّف (فمش "مفتوح دايما")، بس نافذته الوحيدة صفرية فانشالت.
     // التفسير الغلط — "00:00 لـ00:00 يعني اليوم كله" — بيخلّي غلطة إدخال
     // تفتح المطعم أبدا. المسار الموثّق للـ24 ساعة هو business_hours فاضي.
-    const decision = decideHours(hours, sundayAt("13:00:00"));
+    const decision = decideHours(hours, AMMAN, sundayAt("13:00:00"));
     expect(decision.open).toBe(false);
     expect(decision.todayWindow).toBeNull();
     // والفرق عن الفاضي: الفاضي مفتوح.
-    expect(decideHours({}, sundayAt("13:00:00")).open).toBe(true);
+    expect(decideHours({}, AMMAN, sundayAt("13:00:00")).open).toBe(true);
   });
 
   it("دوام مقسوم: مسكّر بين النافذتين", () => {
     const hours = {
-      timezone: "Asia/Amman",
       days: {
         sun: [
           { open: "10:00", close: "14:00" },
@@ -963,24 +1025,23 @@ describe("decideHours — الحالات الحدّية", () => {
       },
     };
     // 12:00 بعمّان = 09:00 UTC -> جوّا الأولى.
-    expect(decideHours(hours, sundayAt("09:00:00")).open).toBe(true);
+    expect(decideHours(hours, AMMAN, sundayAt("09:00:00")).open).toBe(true);
     // 16:00 بعمّان = 13:00 UTC -> بالفجوة.
-    expect(decideHours(hours, sundayAt("13:00:00")).open).toBe(false);
+    expect(decideHours(hours, AMMAN, sundayAt("13:00:00")).open).toBe(false);
     // 20:00 بعمّان = 17:00 UTC -> جوّا التانية.
-    expect(decideHours(hours, sundayAt("17:00:00")).open).toBe(true);
+    expect(decideHours(hours, AMMAN, sundayAt("17:00:00")).open).toBe(true);
     // الرسالة بتعرض أول نافذة — خانتين مش أربعة.
-    expect(decideHours(hours, sundayAt("13:00:00")).todayWindow).toEqual({
-      opensAt: "10:00",
-      closesAt: "14:00",
-    });
+    expect(decideHours(hours, AMMAN, sundayAt("13:00:00")).todayWindow).toEqual(
+      {
+        opensAt: "10:00",
+        closesAt: "14:00",
+      },
+    );
   });
 
   it("أسماء الأيام الطويلة مقبولة زي الثلاثية", () => {
-    const hours = {
-      timezone: "Asia/Amman",
-      days: { sunday: [{ open: "10:00", close: "23:00" }] },
-    };
-    expect(decideHours(hours, sundayAt("08:00:00")).open).toBe(true);
+    const hours = { days: { sunday: [{ open: "10:00", close: "23:00" }] } };
+    expect(decideHours(hours, AMMAN, sundayAt("08:00:00")).open).toBe(true);
   });
 });
 

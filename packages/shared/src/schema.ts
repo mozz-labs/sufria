@@ -22,6 +22,7 @@ import {
   bigserial,
   char,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 
 // --- enums (must match 0001_enums_and_tables.sql exactly) -------------------
@@ -110,6 +111,9 @@ export const restaurants = pgTable("restaurants", {
   name: text("name").notNull(),
   logoUrl: text("logo_url"),
   location: text("location"),
+  // 0008 — the restaurant's IANA timezone. Lived inside the business_hours
+  // jsonb until 0008 moved it out; that jsonb now carries only {days:{...}}.
+  timezone: text("timezone").notNull().default("Asia/Amman"),
   businessHours: jsonb("business_hours").notNull().default({}),
   whatsappNumber: text("whatsapp_number"),
   whatsappPhoneId: text("whatsapp_phone_id").unique(),
@@ -348,4 +352,46 @@ export const messageTemplates = pgTable(
       .defaultNow(),
   },
   (t) => [unique().on(t.restaurantId, t.templateType)],
+);
+
+/**
+ * 0006 — inbound WhatsApp messages.
+ *
+ * This mirror lived in `apps/conversation-engine/src/db/schema.ts` until it was
+ * moved here. The engine is still the only writer, so the move is not about a
+ * second consumer: `tests/db/schema-drift.verify.ts` iterates the tables
+ * exported from *this* file and nothing else, so a mirror parked in an app is a
+ * mirror no drift check can see. `inbound_messages` was the one table whose SQL
+ * and TypeScript could disagree silently.
+ *
+ * The `(restaurant_id, wa_message_id)` UNIQUE below is the redelivery guard that
+ * 0006 relies on — Meta retries for up to 7 days, and the insert is what makes a
+ * retry idempotent. It is mirrored here so a rename shows up as a type error.
+ */
+export const inboundMessages = pgTable(
+  "inbound_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    restaurantId: uuid("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    waMessageId: text("wa_message_id").notNull(),
+    phoneNumberId: text("phone_number_id").notNull(),
+    fromPhone: text("from_phone").notNull(),
+    messageType: text("message_type").notNull(),
+    body: text("body"),
+    payload: jsonb("payload").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique().on(t.restaurantId, t.waMessageId),
+    index("idx_inbound_messages_conversation").on(
+      t.restaurantId,
+      t.fromPhone,
+      t.receivedAt.desc(),
+    ),
+  ],
 );

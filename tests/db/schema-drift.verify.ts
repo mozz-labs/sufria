@@ -21,9 +21,11 @@ async function main() {
   }
 
   let problems = 0;
+  const mirrored = new Set<string>();
   for (const [key, val] of Object.entries(schema)) {
     if (!(val instanceof PgTable)) continue;
     const cfg = getTableConfig(val as PgTable);
+    mirrored.add(cfg.name);
     const actual = dbCols.get(cfg.name);
     if (!actual) {
       console.log(`  ✗ table "${cfg.name}" (${key}) is not in the database`);
@@ -47,6 +49,20 @@ async function main() {
     }
     if (!missing.length && !extra.length)
       console.log(`  ✓ ${cfg.name} (${declared.size} cols)`);
+  }
+
+  // A table this loop never visits is a table this check never checked. Until
+  // inbound_messages moved into packages/shared its mirror lived in
+  // apps/conversation-engine, so every column of it could drift in silence and
+  // the run above still printed "schema mirror matches the migrations".
+  // Iterating the TS side alone cannot notice that: the absence of a mirror is
+  // invisible from the mirrors. So walk the database's own table list too.
+  for (const table of [...dbCols.keys()].sort()) {
+    if (mirrored.has(table)) continue;
+    console.log(
+      `  ✗ table "${table}" exists in SQL but is mirrored nowhere in packages/shared — drift for it is undetectable`,
+    );
+    problems++;
   }
 
   console.log(

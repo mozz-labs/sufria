@@ -16,6 +16,15 @@ import { z } from "zod";
  *
  *    وهاد بيتوافق مع القاعدة اللي جاية من المنتج: `business_hours` فاضي = مفتوح
  *    دايما. الفاضي والمشوّه بياخدوا نفس المعاملة، والفرق إن المشوّه بينسجّل.
+ *
+ * 🔴 المنطقة الزمنية **مش** جوّا هالحقل. من هجرة 0008 صارت عمود
+ *    `restaurants.timezone`، وبتوصل لهون كوسيط. الشكل:
+ *
+ *      قبل:  business_hours = {timezone, days: {...}}
+ *      بعد:  business_hours = {days: {...}}   +   restaurants.timezone
+ *
+ *    مفتاح `timezone` اللي بيضل جوّا الـjsonb ما بينقرا — `legacyTimezoneKey`
+ *    تحت بتكشفه عشان المستدعي يسجّله بدل ما ينضرب بصمت.
  */
 
 /** المنطقة الزمنية لما المطعم ما يحدّد وحدة. الأردن — نفس عملة `subscriptions`. */
@@ -56,9 +65,20 @@ const WindowSchema = z.object({
  * إنه مش كائن أصلا.
  */
 const BusinessHoursSchema = z.object({
-  timezone: z.string().min(1).optional(),
   days: z.record(z.string(), z.unknown()).optional(),
 });
+
+/**
+ * مفتاح `timezone` مهجور من 0008. الهجرة شالته من كل الصفوف، فوجوده هلأ معناه
+ * إشي كتبه من جديد — شاشة الإعدادات على الأغلب. بترجّع القيمة عشان المستدعي
+ * يسجّلها، وما بتأثر على أي قرار: العمود هو المصدر الوحيد.
+ */
+export function legacyTimezoneKey(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    return null;
+  const value = (raw as Record<string, unknown>)["timezone"];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
 
 export interface OpenWindow {
   /** دقائق من منتصف الليل المحلي. */
@@ -70,6 +90,7 @@ export interface OpenWindow {
 }
 
 export interface BusinessHours {
+  /** جاية من عمود `restaurants.timezone`، مش من الـjsonb. */
   timezone: string;
   /** يوم غير موجود بالخريطة = مغلق كليا. مفتاح موجود بمصفوفة فاضية = نفس الشي. */
   days: Partial<Record<DayKey, OpenWindow[]>>;
@@ -88,11 +109,16 @@ function toMinutes(hhmm: string): number {
  * بترجّع null لما الحقل مش كائن أصلا — المستدعي بيعتبرها "مفتوح" وبيسجّل.
  * الحقل الفاضي `{}` **مش** null: هو قيمة صالحة معناها مفتوح دايما.
  */
-export function parseBusinessHours(raw: unknown): BusinessHours | null {
+export function parseBusinessHours(
+  raw: unknown,
+  timezone: string,
+): BusinessHours | null {
   const parsed = BusinessHoursSchema.safeParse(raw);
   if (!parsed.success) return null;
 
-  const timezone = parsed.data.timezone ?? DEFAULT_TIMEZONE;
+  // العمود NOT NULL وعليه CHECK بيمنع الفاضي، فهاد احتياط لمستدعي مش من القاعدة
+  // (اختبار، أو صف انقرا قبل 0008) — مش مسار متوقّع.
+  const zone = timezone.trim() === "" ? DEFAULT_TIMEZONE : timezone;
   const days: Partial<Record<DayKey, OpenWindow[]>> = {};
   let defined = 0;
 
@@ -118,7 +144,7 @@ export function parseBusinessHours(raw: unknown): BusinessHours | null {
       .sort((a, b) => a.openMinutes - b.openMinutes);
   }
 
-  return { timezone, days, alwaysOpen: defined === 0 };
+  return { timezone: zone, days, alwaysOpen: defined === 0 };
 }
 
 function normaliseDayKey(raw: string): DayKey | null {
@@ -196,9 +222,16 @@ const ALWAYS_OPEN: HoursDecision = { open: true, todayWindow: null };
  *
  *   2. **المنطقة الزمنية** — الخادم ممكن يكون بأي مكان. المقارنة كلها بتصير
  *      بالوقت المحلي للمطعم، واللحظة بتتحوّل مرة وحدة فوق.
+ *
+ * الوسيطين الأولين هما حقلَي صف المطعم بالترتيب اللي بينقرا فيه: الساعات
+ * والمنطقة الزمنية (عمود `restaurants.timezone` من 0008)، وبعدين الساعة.
  */
-export function decideHours(raw: unknown, now: Date): HoursDecision {
-  const hours = parseBusinessHours(raw);
+export function decideHours(
+  raw: unknown,
+  timezone: string,
+  now: Date,
+): HoursDecision {
+  const hours = parseBusinessHours(raw, timezone);
   if (hours === null || hours.alwaysOpen) return ALWAYS_OPEN;
 
   let moment: LocalMoment;

@@ -142,23 +142,42 @@ RLS.
 ## Known gaps
 
 
-- **`pnpm test:db` only detects drift for tables mirrored in `packages/shared`.**
-  It iterates the TS schema, so a SQL table with no mirror there is invisible to
-  it — `inbound_messages` is mirrored in
-  `apps/conversation-engine/src/db/schema.ts` instead and is therefore unchecked.
-  Move it to `packages/shared` the moment a second package reads it.
+- **`pnpm db:reset` assumes Docker and does nothing useful on a native
+  PostgreSQL install.** It runs `docker compose down -v && pnpm db:up`, so
+  against a native server on 5432 it tears down a volume nothing uses and then
+  fails to bind the port. The native path — terminate connections, `DROP
+  DATABASE sufria`, recreate it with the same locale (`TEMPLATE template0
+  ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'ar-JO' LOCALE 'C.UTF-8'`),
+  then `pnpm db:migrate && pnpm db:seed` — is described in prose in
+  `docs/02-تجهيز-البيئة.md` but is not automated anywhere. Since migrations only
+  ever run against a clean database, this friction repeats on **every** new
+  migration. A `db:reset:native` script would remove it.
+
+- **Every mirror lives in `packages/shared`, and `pnpm test:db` now enforces
+  that.** It used to iterate the TS schema only, so a SQL table mirrored
+  somewhere else was invisible to it — `inbound_messages` sat in
+  `apps/conversation-engine/src/db/schema.ts` and went unchecked. That mirror
+  moved into `packages/shared`, and the drift check now also walks the
+  database's own table list, so a table mirrored nowhere is a failure rather
+  than a silent gap. Put new mirrors in `packages/shared`; anywhere else fails.
 - `@sufria/conversation-engine` now dedupes, routes, stores, applies the
   business-hours gate, opens a conversation session and sends the first reply.
   There is still **no order state machine**: a message from a customer who
   already has an active session only refreshes `last_message_at`. No cart, no
   address, no payment, no order creation.
-- **`business_hours` has no schema beyond this engine.** Migration 0001 declared
-  the column and nothing ever wrote a shape into it; the shape is defined in
-  `apps/conversation-engine/src/restaurant/business-hours.ts`
-  (`{timezone, days: {sun: [{open, close}]}}`) and the dashboard's settings
-  screen has to agree with it when it is built. The timezone lives inside that
-  jsonb because `restaurants` is mirrored in `packages/shared` and a new column
-  there is a schema-drift failure — the shape was chosen around that.
+- **`business_hours` has no schema in the database — its contract is
+  `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
+  nothing ever wrote a shape into it; the shape is still defined by
+  `apps/conversation-engine/src/restaurant/business-hours.ts`, but it is now
+  written down for the settings screen instead of being folklore.
+  The shape is `{days: {sun: [{open, close}]}}` — **the timezone is no longer
+  in it.** Migration 0008 moved it to a real `restaurants.timezone` column,
+  backfilled it and stripped the key from every row; a `timezone` key that
+  reappears in the jsonb is ignored and logged as a warning. The old rationale
+  recorded here — that a new column on `restaurants` would be a schema-drift
+  failure — was simply wrong: drift fails when SQL changes and the mirror does
+  not, and changing both together is what the check is for. 0007 already said
+  so in its own header.
 - **A malformed `business_hours` reads as open, not closed.** Deliberate: a
   restaurant that silently stops taking orders because of a broken jsonb loses
   money without knowing, while one that receives a message out of hours sees it
