@@ -75,8 +75,8 @@ existing one fails loudly at `0001` by design. The upgrade path is always
 4. **SQL is the source, TypeScript is the mirror.** `packages/shared/src/schema.ts`
    is maintained by hand. Never run `drizzle-kit generate` — it silently drops every
    RLS policy, CHECK constraint, and partial index. `pnpm test:db` catches drift.
-   (coverage is not complete — see Known gaps)
-5. **`DATABASE_URL` must be `sufria_dashboard` (or `sufria_engine`), never
+   `test:db` compares table and column *names* only — RLS policies, CHECK
+   constraints, indexes, types and defaults are not checked. Review those by hand.5. **`DATABASE_URL` must be `sufria_dashboard` (or `sufria_engine`), never
    `postgres`.** A superuser bypasses RLS with no error at all, so isolation checks
    pass without checking anything. `TenantDbService` refuses to start if it detects
    a superuser or BYPASSRLS role.
@@ -165,6 +165,7 @@ RLS.
   already has an active session only refreshes `last_message_at`. No cart, no
   address, no payment, no order creation.
 - **`business_hours` has no schema in the database — its contract is
+
   `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
   nothing ever wrote a shape into it; the shape is still defined by
   `apps/conversation-engine/src/restaurant/business-hours.ts`, but it is now
@@ -182,6 +183,11 @@ RLS.
   money without knowing, while one that receives a message out of hours sees it
   and acts. The empty field is "always open" by product decision; malformed gets
   the same treatment plus an error log.
+  - **The 0008 backfill branch has never actually run.** Every seeded row had
+  `business_hours = {}`, so the `UPDATE` matched zero rows: the SQL passed, but its
+  behaviour on a row that really carries a legacy `timezone` key is unverified.
+  No production database exists, so nothing is at risk today. If a legacy database
+  ever appears, check it by hand before migrating.
 - **A closed restaurant answers every message with the closing text.** No session
   is opened by design, so nothing remembers that the customer was already told.
   Rate-limiting that repeat belongs with the state machine.
