@@ -76,7 +76,8 @@ existing one fails loudly at `0001` by design. The upgrade path is always
    is maintained by hand. Never run `drizzle-kit generate` — it silently drops every
    RLS policy, CHECK constraint, and partial index. `pnpm test:db` catches drift.
    `test:db` compares table and column *names* only — RLS policies, CHECK
-   constraints, indexes, types and defaults are not checked. Review those by hand.5. **`DATABASE_URL` must be `sufria_dashboard` (or `sufria_engine`), never
+   constraints, indexes, types and defaults are not checked. Review those by hand.
+5. **`DATABASE_URL` must be `sufria_dashboard` (or `sufria_engine`), never
    `postgres`.** A superuser bypasses RLS with no error at all, so isolation checks
    pass without checking anything. `TenantDbService` refuses to start if it detects
    a superuser or BYPASSRLS role.
@@ -165,7 +166,6 @@ RLS.
   already has an active session only refreshes `last_message_at`. No cart, no
   address, no payment, no order creation.
 - **`business_hours` has no schema in the database — its contract is
-
   `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
   nothing ever wrote a shape into it; the shape is still defined by
   `apps/conversation-engine/src/restaurant/business-hours.ts`, but it is now
