@@ -30,6 +30,7 @@ import { Pool } from "pg";
 import {
   CLOSED_AR,
   CLOSED_WITH_HOURS_AR,
+  MENU_COMMANDS_TAIL_AR,
   MENU_HEADER_AR,
   WELCOME_AR,
   closedMessageAr,
@@ -189,6 +190,17 @@ async function sessionRestaurantsFor(phone: string): Promise<string[]> {
     [phone],
   );
   return rows.map((r) => r.restaurant_id);
+}
+
+/** `context` الجلسة، مقروءا فوق RLS. الاختبار بيسأل القاعدة، مش الكود. */
+async function contextOf(sessionId: string): Promise<Record<string, unknown>> {
+  const { rows } = await audit.query<{ context: Record<string, unknown> }>(
+    `SELECT context FROM conversation_sessions WHERE id = $1`,
+    [sessionId],
+  );
+  const context = rows[0]?.context;
+  if (context === undefined) throw new Error(`ولا جلسة بالمعرّف ${sessionId}`);
+  return context;
 }
 
 // --- حمولة ميتا -------------------------------------------------------------
@@ -1056,6 +1068,7 @@ describe("قيود النصوص اللي بتوصل الزبون", () => {
     CLOSED_WITH_HOURS_AR,
     WELCOME_AR,
     MENU_HEADER_AR,
+    MENU_COMMANDS_TAIL_AR,
   ];
 
   it("أرقام غربية فقط — ولا رقم عربي-هندي بأي نص", () => {
@@ -1087,20 +1100,298 @@ describe("قيود النصوص اللي بتوصل الزبون", () => {
   it("🔴 ولا نص عربي للزبون مكتوب inline بمنطق المحرّك", async () => {
     // الكسر اللي هذا بيمسكه: حدا بيكتب «المطعم مغلق حاليا.» حرفيا بمكان النداء
     // بدل ما يستوردها، فبيصير في نسختين وبتفترقوا أول ما تتعدّل وحدة.
-    // __dirname مش import.meta: tsconfig.spec.json بيترجم السويت كـCommonJS
-    // (ts-jest)، زي ما setup-env.ts بيعمل بالضبط.
-    const { readFile } = await import("node:fs/promises");
-    const { resolve } = await import("node:path");
-    const files = [
-      "src/conversation/session.service.ts",
-      "src/restaurant/menu.ts",
-      "src/whatsapp/sender.ts",
-    ];
+    //
+    // 🔴 الفحص على **السلاسل النصية وحدها**، بمحلّل TypeScript نفسه — مش على
+    //    نص الملف. لما انقصر MENU_HEADER_AR لـ«القائمة» صار فحص الاحتواء
+    //    الخام يوقع على **تعليقات** عربية عادية ("🔴 القائمة أطول من سقف
+    //    واتساب"). الحل مش شطب النص من الحراسة — الحل تمييز الكود عن التعليق،
+    //    والنسخة المكررة بتسكن بسلسلة نصية بالتعريف.
+    //
+    // وبيمشي على `src` كلها لا على قائمة ملفات مكتوبة باليد: قائمة ثابتة
+    // بتخلّي أول ملف جديد يمرق بلا حراسة، وهاد صار فعلا.
+    const { readFile, readdir } = await import("node:fs/promises");
+    const { resolve, join } = await import("node:path");
+    const ts = await import("typescript");
+
+    const srcRoot = resolve(__dirname, "..", "src");
+    const walk = async (dir: string): Promise<string[]> => {
+      const found: string[] = [];
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) found.push(...(await walk(full)));
+        else if (full.endsWith(".ts")) found.push(full);
+      }
+      return found;
+    };
+
+    const literalsOf = (source: string): string[] => {
+      const sourceFile = ts.createSourceFile(
+        "scan.ts",
+        source,
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      const out: string[] = [];
+      const visit = (node: import("typescript").Node): void => {
+        if (
+          ts.isStringLiteral(node) ||
+          ts.isNoSubstitutionTemplateLiteral(node) ||
+          ts.isTemplateHead(node) ||
+          ts.isTemplateMiddle(node) ||
+          ts.isTemplateTail(node)
+        ) {
+          out.push(node.text);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
+      return out;
+    };
+
+    const files = await walk(srcRoot);
+    expect(files.length).toBeGreaterThan(5);
+
+    // 🔴 قاعدتان، والفرق بينهم مقصود:
+    //
+    //   - **جملة** (فيها مسافة) بتنفحص بالاحتواء: نسخة منها ممكن تسكن جوّا
+    //     قالب أطول، والجملة مميزة كفاية إنها ما بتطلع صدفة.
+    //   - **كلمة وحدة** بتنفحص بالتساوي التام وبس. MENU_HEADER_AR انقصر
+    //     لـ«القائمة» — اسم شائع بيطلع بسطور اللوق وبرسائل الأخطاء بشكل
+    //     مشروع تماما. الاحتواء عليه بيولّد إنذارات كاذبة للأبد، والإنذار
+    //     الكاذب المتكرر بينتهي بحدا يشطب الحارس. التساوي بيضل يمسك
+    //     الازدواج الحقيقي: `body: "القائمة"` مكتوبة بمكان النداء.
+    const isPhrase = (text: string): boolean => text.includes(" ");
+
     for (const file of files) {
-      const source = await readFile(resolve(__dirname, "..", file), "utf8");
-      for (const text of CUSTOMER_TEXTS) {
-        expect(source).not.toContain(text);
+      for (const literal of literalsOf(await readFile(file, "utf8"))) {
+        for (const text of CUSTOMER_TEXTS) {
+          if (isPhrase(text)) expect(literal).not.toContain(text);
+          else expect(literal).not.toBe(text);
+        }
       }
     }
+  });
+});
+
+// ===========================================================================
+// ب-2 · menu_map وذيل الأوامر
+//
+// الخطأ الصامت #2 ببريف السلّة: الترقيم بينحسب حيّا بدل ما ينخزن. المطعم
+// بيخفي صنفا وسط المحادثة، فرقم `4` عند الزبون بيشير لصنف تاني — والطلب
+// بيوصل المطبخ غلط **بلا ولا رسالة خطأ**. ولا اختبار قائم بيسقط لو انشال
+// التخزين، ولهيك هدول مكتوبين.
+// ===========================================================================
+describe("ب-2 · menu_map وذيل الأوامر", () => {
+  /** بتفتح جلسة وبترجّع معرّفها ونص الرد. */
+  async function greet(
+    restaurantId: string,
+    pid: string,
+  ): Promise<{ sessionId: string; body: string }> {
+    const from = nextCustomer();
+    await db.runInTenant(restaurantId, (tx) =>
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
+    );
+    const sessions = await sessionsOf(restaurantId);
+    const sessionId = sessions[0]?.id;
+    if (sessionId === undefined) throw new Error("ما انفتحت جلسة");
+    return {
+      sessionId,
+      body: replies.forRestaurant(restaurantId)[0]?.body ?? "",
+    };
+  }
+
+  it("🔴 جلسة جديدة: menu_map مكتوبة، وعدد مفاتيحها = عدد صفوف القائمة", async () => {
+    const pid = phoneId("map-keys");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [
+      { name: "حمص", price: "2.50" },
+      { name: "متبل", price: "2.50" },
+    ]);
+    await addCategory(restaurantId, "مشاوي", [
+      { name: "شاورما عربي", price: "6.00" },
+    ]);
+
+    const { sessionId } = await greet(restaurantId, pid);
+    const menuMap = (await contextOf(sessionId))["menu_map"] as Record<
+      string,
+      string
+    >;
+
+    expect(Object.keys(menuMap).sort()).toEqual(["1", "2", "3"]);
+  });
+
+  it("🔴 المفاتيح بتشير للأصناف الصح بترتيب القائمة المعروضة", async () => {
+    const pid = phoneId("map-ids");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [
+      { name: "حمص", price: "2.50" },
+      { name: "متبل", price: "3.00" },
+    ]);
+
+    const { sessionId } = await greet(restaurantId, pid);
+    const menuMap = (await contextOf(sessionId))["menu_map"] as Record<
+      string,
+      string
+    >;
+
+    // الحقيقة بتنقرأ من القاعدة فوق RLS، مش من نفس الكود اللي كتب الخريطة.
+    const { rows } = await audit.query<{ id: string; name: string }>(
+      `SELECT id, name FROM menu_items WHERE restaurant_id = $1`,
+      [restaurantId],
+    );
+    const idOf = new Map(rows.map((r) => [r.name, r.id]));
+
+    expect(menuMap["1"]).toBe(idOf.get("حمص"));
+    expect(menuMap["2"]).toBe(idOf.get("متبل"));
+  });
+
+  it("🔴 صنف غير متاح ما بيدخل الخريطة ولا بياخد رقما", async () => {
+    // هاد بالضبط سيناريو الخطأ الصامت #2: القائمة المعروضة هي الحقيقة.
+    const pid = phoneId("map-hidden");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [
+      { name: "حمص", price: "2.50" },
+      { name: "متبل", price: "3.00" },
+    ]);
+    await audit.query(
+      `UPDATE menu_items SET is_available = false
+        WHERE restaurant_id = $1 AND name = 'حمص'`,
+      [restaurantId],
+    );
+
+    const { sessionId, body } = await greet(restaurantId, pid);
+    const menuMap = (await contextOf(sessionId))["menu_map"] as Record<
+      string,
+      string
+    >;
+
+    expect(Object.keys(menuMap)).toEqual(["1"]);
+    expect(body).toContain("متبل");
+    expect(body).not.toContain("حمص");
+  });
+
+  it("عدد مفاتيح الخريطة = عدد أسطر القائمة بالنص المبعوت", async () => {
+    const pid = phoneId("map-vs-text");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [
+      { name: "حمص", price: "2.50" },
+      { name: "متبل", price: "3.00" },
+      { name: "فتوش", price: "3.50" },
+    ]);
+
+    const { sessionId, body } = await greet(restaurantId, pid);
+    const menuMap = (await contextOf(sessionId))["menu_map"] as Record<
+      string,
+      string
+    >;
+
+    const numbered = body
+      .split("\n")
+      .filter((line) => /^[0-9]+\. /.test(line)).length;
+    expect(numbered).toBe(Object.keys(menuMap).length);
+  });
+
+  it("🔴 ذيل الأوامر بيظهر **مرة وحدة** بالرسالة", async () => {
+    const pid = phoneId("tail-once");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+
+    const { body } = await greet(restaurantId, pid);
+    expect(body.split(MENU_COMMANDS_TAIL_AR)).toHaveLength(2);
+  });
+
+  it("الذيل بيعلّم أربعة أوامر، و«شيل» مش منهم — §12.3-أ", () => {
+    for (const command of ["منيو", "سلة", "تم"]) {
+      expect(MENU_COMMANDS_TAIL_AR).toContain(command);
+    }
+    expect(MENU_COMMANDS_TAIL_AR).not.toContain("شيل");
+  });
+
+  it("الذيل بآخر الرسالة — حيث عين الزبون قبل ما يرد", async () => {
+    const pid = phoneId("tail-last");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+
+    const { body } = await greet(restaurantId, pid);
+    expect(body.trimEnd().endsWith(MENU_COMMANDS_TAIL_AR)).toBe(true);
+  });
+
+  it("outbound_count بيعدّ الرسالة الصادرة — فجوة قياس §4", async () => {
+    const pid = phoneId("outbound");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+
+    const { sessionId } = await greet(restaurantId, pid);
+    expect((await contextOf(sessionId))["outbound_count"]).toBe(1);
+  });
+
+  it("menu_sent_at بينكتب مع الخريطة", async () => {
+    const pid = phoneId("sent-at");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
+
+    const { sessionId } = await greet(restaurantId, pid);
+    const sentAt = (await contextOf(sessionId))["menu_sent_at"];
+    expect(typeof sentAt).toBe("string");
+    expect(Number.isNaN(Date.parse(String(sentAt)))).toBe(false);
+  });
+
+  it("🔴 قائمة أطول من السقف: ولا جلسة، فولا خريطة", async () => {
+    const pid = phoneId("too-long-map");
+    const restaurantId = await createRestaurant({ phoneNumberId: pid });
+    await addCategory(
+      restaurantId,
+      "مقبلات",
+      Array.from({ length: 400 }, (_, i) => ({
+        name: `صنف طويل الاسم عشان يتجاوز السقف رقم ${i}`,
+        price: "2.50",
+      })),
+    );
+
+    const from = nextCustomer();
+    const outcome = await db.runInTenant(restaurantId, (tx) =>
+      conversation.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+      }),
+    );
+
+    expect(outcome).toBe("reply_too_long");
+    expect(await sessionsOf(restaurantId)).toHaveLength(0);
+    expect(replies.forRestaurant(restaurantId)).toHaveLength(0);
+  });
+
+  it("🔴 ولا ملف تاني بيبعت قائمة: menu.js مستورد من menu-delivery وبس", async () => {
+    // الضابط البنيوي ورا «الإرسال والخريطة فعل واحد». مسار بيستورد buildMenu
+    // مباشرة بيقدر يبعت نصا مرقّما بلا ما يكتب الخريطة — وهاد الخطأ الصامت #2
+    // بحاله، وما بيسقّط ولا اختبار سلوكي.
+    const { readFile, readdir } = await import("node:fs/promises");
+    const { resolve, join, relative } = await import("node:path");
+
+    const srcRoot = resolve(__dirname, "..", "src");
+    const walk = async (dir: string): Promise<string[]> => {
+      const found: string[] = [];
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) found.push(...(await walk(full)));
+        else if (full.endsWith(".ts")) found.push(full);
+      }
+      return found;
+    };
+
+    const importers: string[] = [];
+    for (const file of await walk(srcRoot)) {
+      const source = await readFile(file, "utf8");
+      if (/from "\.[^"]*restaurant\/menu\.js"/.test(source)) {
+        importers.push(relative(srcRoot, file));
+      }
+    }
+
+    expect(importers).toEqual(["conversation/menu-delivery.ts"]);
   });
 });

@@ -1,5 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
-import { menuCategories, menuItems, MENU_HEADER_AR } from "@sufria/shared";
+import {
+  menuCategories,
+  menuItems,
+  MENU_COMMANDS_TAIL_AR,
+  MENU_HEADER_AR,
+} from "@sufria/shared";
 
 import type { TenantTx } from "../db/types.js";
 
@@ -95,6 +100,10 @@ export function renderMenuText(rows: readonly MenuRow[]): string {
     }
     parts.push(`${row.number}. ${row.name} — ${row.price}`);
   }
+
+  // 🔴 الذيل بينضاف هون، بمكان واحد، فبيطلع **مرة وحدة** بكل رسالة قائمة.
+  //    إضافته بمكان النداء بتخلّيه يتكرّر أو ينُسى حسب مين بيبعت.
+  parts.push("", MENU_COMMANDS_TAIL_AR);
 
   return parts.join("\n");
 }

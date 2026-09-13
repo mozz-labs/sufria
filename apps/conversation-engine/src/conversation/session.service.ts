@@ -14,12 +14,8 @@ import {
   decideHours,
   legacyTimezoneKey,
 } from "../restaurant/business-hours.js";
-import { buildMenu } from "../restaurant/menu.js";
-import {
-  OutboundTextTooLongError,
-  assertWithinTextLimit,
-  type WhatsAppSender,
-} from "../whatsapp/sender.js";
+import type { WhatsAppSender } from "../whatsapp/sender.js";
+import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 
 /**
  * الشريحة الأولى من المحادثة: بوابة ساعات الدوام، فتح الجلسة، وأول رد.
@@ -139,23 +135,19 @@ export class ConversationService {
     //        ويرجّعها لطابور ميتا اللي بيعيدها سبعة أيام على عطل إعادة
     //        المحاولة ما بتصلّحه.
     // ---------------------------------------------------------------------
-    const menu = await buildMenu(tx);
-    const body = `${welcomeMessageAr(restaurant.name)}\n${menu.text}`;
-    try {
-      assertWithinTextLimit(body);
-    } catch (error) {
-      if (!(error instanceof OutboundTextTooLongError)) throw error;
+    const prepared = await prepareMenu(tx, welcomeMessageAr(restaurant.name));
+    if (!prepared.ok) {
       logger.error(
         {
           restaurantId: ctx.restaurantId,
-          chars: error.length,
-          limit: error.limit,
-          items: menu.lines.length,
+          chars: prepared.error.length,
+          limit: prepared.error.limit,
         },
         "🔴 القائمة أطول من سقف واتساب — ما انبعثت وما انقطعت. قصّر القائمة",
       );
       return "reply_too_long";
     }
+    const menu = prepared.menu;
 
     const customerId = await this.upsertCustomer(
       tx,
@@ -184,11 +176,15 @@ export class ConversationService {
       return "duplicate_ignored";
     }
 
-    await this.sender.sendText({
+    // 🔴 كتابة `menu_map` والإرسال فعل واحد — `deliverMenu` بتعملهم بالترتيب
+    //    الصح. ممنوع نداء `sendText` بنص قائمة من هون أو من أي مكان تاني.
+    await deliverMenu(tx, this.sender, {
+      sessionId,
       restaurantId: ctx.restaurantId,
       phoneNumberId: ctx.phoneNumberId,
       to: ctx.from,
-      body,
+      menu,
+      now: this.now(),
     });
 
     logger.info(
