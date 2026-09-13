@@ -6,10 +6,11 @@ Guidance for Claude Code when working in this repository.
 
 Sufria — a WhatsApp-first direct-ordering platform for restaurants. WhatsApp is the
 first channel, not the product.
-ا
 - Working folder: `sufria`
 - Repository: `mozz-labs/sufria` (`git@github.com:mozz-labs/sufria.git`)
-- Human-facing docs are in Arabic. Code, comments, and CI step names are English.
+- Human-facing docs (`docs/*`) are in Arabic. Code, comments, commit messages, and
+  CI step names are English. `CLAUDE.md` is bilingual by design: repo facts in
+  English, working agreements in Arabic.
 
 ## Layout
 
@@ -104,7 +105,7 @@ ts-jest compiles with `tsc` itself, so the metadata survives.
 `emitDecoratorMetadata` explicitly rather than inheriting them, and one test
 asserts that injection actually resolved.
 
-Both suites need a live, seeded database (`pnpm db:migrate && pnpm db:seed`) —
+Both Jest suites need a live, seeded database (`pnpm db:migrate && pnpm db:seed`) —
 they drive real HTTP requests through the real code and read the tenant context
 back out of Postgres. Both run `--runInBand` with `PG_POOL_MAX=1` so the
 connection-leak assertion is deterministic. Fixture ids come from
@@ -141,7 +142,6 @@ RLS.
 
 ## Known gaps
 
-
 - **`pnpm db:reset` assumes Docker and does nothing useful on a native
   PostgreSQL install.** It runs `docker compose down -v && pnpm db:up`, so
   against a native server on 5432 it tears down a volume nothing uses and then
@@ -152,7 +152,6 @@ RLS.
   `docs/02-تجهيز-البيئة.md` but is not automated anywhere. Since migrations only
   ever run against a clean database, this friction repeats on **every** new
   migration. A `db:reset:native` script would remove it.
-
 - **Every mirror lives in `packages/shared`, and `pnpm test:db` now enforces
   that.** It used to iterate the TS schema only, so a SQL table mirrored
   somewhere else was invisible to it — `inbound_messages` sat in
@@ -224,8 +223,6 @@ RLS.
 🔴 **النصوص العربية الظاهرة للمستخدم لا تُخترع ولا يُعاد صياغتها.** تُطلب من
 محمد حرفيا، وتُنسخ كما هي.
 
-
-
 ## ملكية الموارد — يحدّدها كل بريف صراحة
 
 `pnpm-lock.yaml` · `package.json` · `packages/shared` · رقم الهجرة التالي.
@@ -277,14 +274,20 @@ RLS.
 - **`/health` يلمس قاعدة البيانات.** بدونه تبقى عملية بقاعدة واقعة "سليمة"
   وتبلع كل الرسائل وترد `200`.
 - **مسار المستقبِل `/webhooks/whatsapp`** — لا `/webhook`.
+- **المنيو واختيار الأصناف: نص مرقّم، لا قائمة تفاعلية (Interactive List).**
+  حدّان صلبان من ميتا: 10 صفوف إجمالا و24 حرفا لعنوان الصف — أي منيو حقيقي يكسرهما.
+  والأهم منتجيا: النص الحر يسمح بـ«2 و5» و«شاورما ×2 بدون بصل» — وهو ما لا تستطيع
+  القائمة التفاعلية التعبير عنه إطلاقا. هذا ما يجعل السلّة ممكنة أصلا.
+  **غير مشمول:** الاختيارات القصيرة (أكّد/عدّل/ألغِ · توصيل أم استلام · طريقة الدفع)
+  — قرار منفصل لم يُتخذ بعد، وReply Buttons (3 كحد أقصى) مرشّح واقعي هناك.
+  **ما يعيد فتحه:** أن يفشل زبائن البايلوت فعليا في الرد برقم.
 
 ## مصائد ممنوع فتحها
 
 - **إعادة توليد مخططات `.png`** — `mmdc` يجرّ Puppeteer/Chromium ويفشل على WSL. مصيدة وقت مسجّلة.
 
-🔴 **سكربت اختبار الكسر يسترجع الملف المكسور وحده — ممنوع `git checkout -- .`**
-
-(مسح تعديلات غير مكوَّمة فعلا.)
+🔴 **سكربت اختبار الكسر يسترجع الملف المكسور وحده — ممنوع `git checkout -- .` وممنوع `git checkout HEAD -- .`**
+مسح تعديلات غير مكوَّمة فعلا. وتكرّر اليوم: وكيل استعمل `HEAD -- .` لأن القاعدة لم تكن مكوَّمة، فلم يرها الـworktree تبعه.
 
 ## أسلوب العمل
 
