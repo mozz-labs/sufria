@@ -7,3 +7,4 @@
  */
 export * from "./schema.js";
 export * from "./domain.js";
+export * from "./normalize.js";
