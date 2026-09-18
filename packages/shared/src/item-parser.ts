@@ -19,16 +19,21 @@ import {
  */
 
 /**
- * سقف الكمية **للرمز الواحد** — حماية من `2 ×9999`، لا حدّ لحجم الطلب.
+ * سقف الكمية **للصنف الواحد بعد التجميع** — حماية من `2 ×9999`.
  *
- * 🔴 السقف على الكمية المكتوبة، لا على المجموع. «2 ×15 و2 ×10» = 25 قطعة
- *    بتمرق: طلب مناسبة من 25 قطعة هو أحسن طلب باليوم، ورفضه بيخسّر المطعم
- *    أكبر فاتورة. وظيفة السقف إنه يمسك غلطة إصبع، مش إنه يحدّد قدّيش بيطلب
- *    الزبون.
+ * 🔴 السقف على مجموع الصنف، لا على الرمز المكتوب. سقف على الرمز بينلتف عليه
+ *    بـ«2 ×15 و2 ×10» — يعني مش قاعدة، هو فلتر مكتوب فوقه نص بيدّعي قاعدة.
+ *    والتجميع هو اللي بيخلّي النص صادق: «الأقصى 50 للصنف الواحد» بيعني 50
+ *    للصنف الواحد، مهما تقسّمت الكمية.
  *
- * ⚠️ نصه («الأقصى 20 للصنف الواحد») بيكتب الرقم حرفيا — اختبار بيربطه بهالثابت.
+ * 🔴 و50 لا 20: 50 فوق أي طلب واقعي لصنف واحد، فالقاعدة حقيقية وما بتعضّ
+ *    حدا. حجم الطلب نفسه **بلا سقف** — «1 ×50 و2 ×50» بيمرق.
+ *
+ * السقف انتقل مرتين قبل ما يستقر هون، والسبب مسجّل ببريف السلّة §13.1.
+ *
+ * ⚠️ نصه بيكتب الرقم حرفيا — اختبار بيربطه بهالثابت.
  */
-export const MAX_QTY_PER_ITEM = 20;
+export const MAX_QTY_PER_ITEM = 50;
 
 /** علامات الكمية الصريحة. `X` الكبيرة نفس `x` — حرف واحد بحالتين، لا علامة جديدة. */
 const QTY_MARKERS = "×x*";
@@ -46,8 +51,9 @@ export interface ParseProblems {
   /** أجزاء نصية ما انفهمت. بتترجع للزبون نصا — لا ملاحظة ولا حذف صامت. */
   readonly unclearParts: readonly string[];
   /**
-   * كميات تجاوزت السقف. الرقم **متعرَّف عليه** — بس الكمية مرفوضة.
-   * نصها `qtyOverCapMessageAr` بـ`domain.ts`.
+   * أصناف مجموع كميتها بعد التجميع تجاوز السقف. الصنف **متعرَّف عليه** —
+   * بس الكمية مرفوضة، والصنف كله بينرفض لا جزء منه.
+   * `requestedQty` = المجموع. نصها `qtyOverCapMessageAr` بـ`domain.ts`.
    */
   readonly overCapItems: readonly {
     readonly number: number;
@@ -143,7 +149,7 @@ const MARKER_ONLY = new RegExp(`^[${QTY_MARKERS}]$`, "iu");
  *   - `2 ×3`  → صنف 2 كمية 3
  *   - `2 و2`  → صنف 2 ×2 (الرقم المكرر بتتجمّع كميته)
  *   - `×3 و2` → الصنف 2 وبس. **علامة الكمية لازم يسبقها رقم صنف**
- *   - كمية فوق السقف بتنرفض لحالها، والمجموع ما إله سقف
+ *   - الصنف اللي مجموعه فوق السقف بينرفض كله؛ حجم الطلب ما إله سقف
  *   - رقم برّا الخريطة بيتسمّى وما بيسقّط الصحيح
  *   - نص غير رقمي بيرجع للزبون
  */
@@ -176,7 +182,7 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
    */
   let lastContribution = 0;
   /**
-   * الرقم السابق انرفض (برّا الخريطة أو كميته فوق السقف) وانسمّى أصلا:
+   * الرقم السابق انرفض (برّا الخريطة) وانسمّى أصلا:
    * كمية منفصلة بعده بتنبلع بدل ما تنرجع «غير واضحة» فوق التسمية.
    */
   let swallowNextQty = false;
@@ -201,13 +207,6 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
       forgetLast(false); // كانت مبلوعة — الرقم انسمّى
       return;
     }
-    if (qty > MAX_QTY_PER_ITEM) {
-      // الرمز السابق أضاف مساهمته، والكمية الصح هي المرفوضة — بتنشال.
-      addQty(lastNumber, -lastContribution);
-      overCapItems.push({ number: lastNumber, requestedQty: qty });
-      forgetLast(true);
-      return;
-    }
     addQty(lastNumber, qty - lastContribution);
     lastContribution = qty;
   };
@@ -216,11 +215,6 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
     flushUnclear();
     if (menuMap[String(number)] === undefined) {
       unknownNumbers.push(number);
-      forgetLast(true);
-      return;
-    }
-    if (qty > MAX_QTY_PER_ITEM) {
-      overCapItems.push({ number, requestedQty: qty });
       forgetLast(true);
       return;
     }
@@ -289,10 +283,18 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
   }
   flushUnclear();
 
+  // 🔴 السقف **بعد** التجميع: «2 ×30 و2 ×30» = 60 للصنف 2، فبينرفض كله.
+  //    فحص كل رمز لحاله بيمرّقها — وهاد بالضبط الالتفاف اللي خلّى السقف
+  //    ينرجع للتجميع. §13.1
   const items: ParsedItem[] = [];
   for (const [number, qty] of quantities) {
     const itemId = menuMap[String(number)];
-    if (itemId !== undefined && qty > 0) items.push({ number, itemId, qty });
+    if (itemId === undefined || qty <= 0) continue;
+    if (qty > MAX_QTY_PER_ITEM) {
+      overCapItems.push({ number, requestedQty: qty });
+      continue;
+    }
+    items.push({ number, itemId, qty });
   }
 
   const problems: ParseProblems = {

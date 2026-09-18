@@ -98,36 +98,45 @@ test("«2 و2» صنف 2 ×2 — الرقم المكرر بتتجمّع كميت
   assert.deepEqual(pairs("2 ×3 و2 ×2"), [[2, 5]]);
 });
 
-test(`سقف الكمية ${MAX_QTY_PER_ITEM} للرمز — حماية من «2 ×9999»`, () => {
+test(`سقف ${MAX_QTY_PER_ITEM} للصنف — حماية من «2 ×9999»`, () => {
   const atCap = parseItems(`2 ×${MAX_QTY_PER_ITEM}`, MENU);
   assert.deepEqual(
     atCap.items.map((i) => [i.number, i.qty]),
     [[2, MAX_QTY_PER_ITEM]],
   );
 
-  for (const raw of ["2 ×9999", "2×21", "2 ×21", "2 × 21"]) {
-    const over = parseItems(raw, MENU);
-    assert.deepEqual(over.items, [], `«${raw}»`);
-    assert.equal(over.problems.overCapItems.length, 1, `«${raw}»`);
+  const over = MAX_QTY_PER_ITEM + 1;
+  for (const raw of ["2 ×9999", `2×${over}`, `2 ×${over}`, `2 × ${over}`]) {
+    const result = parseItems(raw, MENU);
+    assert.deepEqual(result.items, [], `«${raw}»`);
+    assert.equal(result.problems.overCapItems.length, 1, `«${raw}»`);
   }
   assert.deepEqual(parseItems("2 ×9999", MENU).problems.overCapItems, [
     { number: 2, requestedQty: 9999 },
   ]);
 });
 
-test("🔴 السقف للصنف الواحد لا للمجموع — طلب 25 قطعة بيمرق", () => {
-  // طلب مناسبة من 25 قطعة هو أحسن طلب باليوم. السقف بيمسك ×9999، ما
-  // بيحدّد حجم الطلب.
-  assert.deepEqual(pairs("2 ×15 و2 ×10"), [[2, 25]]);
-  assert.deepEqual(pairs("1 ×20 و2 ×20 و3 ×20"), [
-    [1, 20],
-    [2, 20],
-    [3, 20],
+test("🔴 «2 ×30 و2 ×30» تُرفض — السقف على الصنف بعد التجميع", () => {
+  // سقف على الرمز المكتوب بينلتف عليه بتقسيم الكمية، فبيصير فلترا مكتوبا
+  // فوقه نص بيدّعي قاعدة. التجميع هو اللي بيخلّي «الأقصى 50 للصنف الواحد»
+  // صادقة. §13.1
+  const result = parseItems("2 ×30 و2 ×30", MENU);
+  assert.deepEqual(result.items, []);
+  assert.deepEqual(result.problems.overCapItems, [
+    { number: 2, requestedQty: 60 },
   ]);
 });
 
-test("الكمية المرفوضة بتنشال لحالها، والمقبول قبلها بيضل", () => {
-  const result = parseItems("2 و1 ×25 و3", MENU);
+test("حجم الطلب نفسه بلا سقف — السقف للصنف الواحد", () => {
+  assert.deepEqual(pairs("2 ×15 و2 ×10"), [[2, 25]]);
+  assert.deepEqual(pairs(`1 ×${MAX_QTY_PER_ITEM} و2 ×${MAX_QTY_PER_ITEM}`), [
+    [1, MAX_QTY_PER_ITEM],
+    [2, MAX_QTY_PER_ITEM],
+  ]);
+});
+
+test("الصنف المتجاوز بينرفض كله، والأصناف التانية بتضل", () => {
+  const result = parseItems("2 و1 و1 ×60 و3", MENU);
   assert.deepEqual(
     result.items.map((i) => [i.number, i.qty]),
     [
@@ -135,29 +144,37 @@ test("الكمية المرفوضة بتنشال لحالها، والمقبول
       [3, 1],
     ],
   );
+  // `requestedQty` = مجموع الصنف (1 + 60)، مش آخر رقم كتبه الزبون.
   assert.deepEqual(result.problems.overCapItems, [
-    { number: 1, requestedQty: 25 },
+    { number: 1, requestedQty: 61 },
   ]);
 });
 
 test("🔴 الصنف المتجاوز للسقف لا يرفع العدّاد", () => {
-  // العدّاد (قيد 2ج) بيرتفع بس لما ما نتعرّف على رقم صنف ولا على أمر.
+  // العدّاد (قيد 2ج) بيرتفع بس لما ما نتعرّف على ولا صنف حقيقي بالرسالة.
   // «2 ×9999» تعرّفنا فيها على الصنف 2 ورفضنا الكمية بسبب مسمّى — الزبون
-  // مفهوم، وما لازم يتقدّم نحو رسالة الاستسلام.
+  // مفهوم، وما لازم يتقدّم نحو رسالة الاستسلام. §13.3
   const result = parseItems("2 ×9999", MENU);
   assert.notEqual(result.outcome, "unparsed");
   assert.equal(result.outcome, "partial");
 
-  // والضابط المقابل: رقم مش بالخريطة **مش** تعرّف — هاد بيرفع العدّاد.
+  // والضابط المقابل: رقم مش بالخريطة **مش** صنف حقيقي — هاد بيرفع العدّاد.
   assert.equal(parseItems("15", MENU).outcome, "unparsed");
+});
+
+test("🔴 partial = «تعرّفنا على شي»، لا «أضفنا شي» — §13.2", () => {
+  // ب-4 ما بتفترض إن partial معناها صنف انضاف: هون partial بلا ولا صنف.
+  const result = parseItems("2 ×9999", MENU);
+  assert.equal(result.outcome, "partial");
+  assert.equal(result.items.length, 0);
 });
 
 test("نص السقف حرفي، وبيحكي نفس الرقم اللي بينفَّذ", () => {
   assert.equal(
-    qtyOverCapMessageAr(25),
-    "الكمية 25 أكثر من الحد. الأقصى 20 للصنف الواحد.",
+    qtyOverCapMessageAr(60),
+    "الكمية 60 أكثر من الحد. الأقصى 50 للصنف الواحد.",
   );
-  // الـ20 مكتوبة بالنص حرفيا. لو تغيّر الثابت وما تغيّر النص، الزبون
+  // الـ50 مكتوبة بالنص حرفيا. لو تغيّر الثابت وما تغيّر النص، الزبون
   // بينقال له حد غير اللي بينطبق عليه.
   assert.ok(QTY_OVER_CAP_AR.includes(`الأقصى ${MAX_QTY_PER_ITEM} `));
 });
