@@ -18,7 +18,16 @@ import {
  *    المطعم صنفا — وهاد الخطأ الصامت #2 عائدا من باب المحلّل.
  */
 
-/** سقف الكمية للصنف الواحد — حماية من `2 ×9999`. */
+/**
+ * سقف الكمية **للرمز الواحد** — حماية من `2 ×9999`، لا حدّ لحجم الطلب.
+ *
+ * 🔴 السقف على الكمية المكتوبة، لا على المجموع. «2 ×15 و2 ×10» = 25 قطعة
+ *    بتمرق: طلب مناسبة من 25 قطعة هو أحسن طلب باليوم، ورفضه بيخسّر المطعم
+ *    أكبر فاتورة. وظيفة السقف إنه يمسك غلطة إصبع، مش إنه يحدّد قدّيش بيطلب
+ *    الزبون.
+ *
+ * ⚠️ نصه («الأقصى 20 للصنف الواحد») بيكتب الرقم حرفيا — اختبار بيربطه بهالثابت.
+ */
 export const MAX_QTY_PER_ITEM = 20;
 
 /** علامات الكمية الصريحة. `X` الكبيرة نفس `x` — حرف واحد بحالتين، لا علامة جديدة. */
@@ -36,7 +45,10 @@ export interface ParseProblems {
   readonly unknownNumbers: readonly number[];
   /** أجزاء نصية ما انفهمت. بتترجع للزبون نصا — لا ملاحظة ولا حذف صامت. */
   readonly unclearParts: readonly string[];
-  /** أصناف كميتها تجاوزت السقف. ⚠️ بلا نص معتمد — انظر التعليق تحت. */
+  /**
+   * كميات تجاوزت السقف. الرقم **متعرَّف عليه** — بس الكمية مرفوضة.
+   * نصها `qtyOverCapMessageAr` بـ`domain.ts`.
+   */
   readonly overCapItems: readonly {
     readonly number: number;
     readonly requestedQty: number;
@@ -44,19 +56,23 @@ export interface ParseProblems {
 }
 
 /**
- * ثلاث حالات لا اثنتان.
+ * ثلاث حالات لا اثنتان — والفاصل هو: **هل تعرّفنا على أي رقم صنف؟**
  *
- * 🔴 بدون التفريق بين `partial` و`unparsed` ما بينفّذ قيد 2ج: العدّاد بيحسب
- *    الرسائل اللي **ما انفهم منها شي إطلاقا**، و**رسالة نجح نصها مش رسالة
- *    غير مفهومة**. دمج الاتنتين بيخلّي زبونا بيضيف صنفا ويكتب «بدون بصل»
- *    يتقدّم نحو رسالة الاستسلام وهو عم يطلب بنجاح.
+ * 🔴 العدّاد (قيد 2ج) بيرتفع **بس** لما ما نتعرّف على رقم صنف ولا على أمر.
+ *    - «2 بدون بصل» — صنف انضاف. رسالة نجح نصها مش رسالة غير مفهومة.
+ *    - «2 ×9999» — ولا صنف انضاف، **بس الصنف 2 متعرَّف عليه** والكمية
+ *      انرفضت بسبب مسمّى. الزبون فهمناه، وما بيتقدّم نحو رسالة الاستسلام.
+ *    - «15» على قائمة من 5 — رقم **مش** صنف. ما تعرّفنا على شي.
  */
 export type ParseOutcome =
-  /** صنف واحد على الأقل، وولا مشكلة. */
+  /** صنف واحد على الأقل انضاف، وولا مشكلة. */
   | "parsed"
-  /** صنف واحد على الأقل، ومعه رقم غلط أو نص غير واضح. */
+  /**
+   * تعرّفنا على رقم صنف واحد على الأقل، ومعه مشكلة: رقم غلط، نص غير واضح،
+   * أو كمية فوق السقف. ⚠️ ممكن `items` تكون فاضية هون — «2 ×9999» لحالها.
+   */
   | "partial"
-  /** ولا صنف. */
+  /** ولا رقم صنف متعرَّف عليه. العدّاد بيرتفع على هاي وبس. */
   | "unparsed";
 
 export interface ParseResult {
@@ -74,18 +90,34 @@ export type MenuMap = Readonly<Record<string, string>>;
 // ---------------------------------------------------------------------------
 
 /**
+ * `normalizeArabic` بتقصّ الرموز من طرف الرسالة — و`×` و`*` رموز. فعلامة
+ * بأول الرسالة («×3 و2») كانت بتختفي وبتصير «3» = **صنف 3**. زبون ما طلب
+ * الصنف 3 كان بيلاقيه بسلّته.
+ *
+ * الإصلاح هون لا بالتطبيع: `normalizeArabic` بتخدم مطابقة الأوامر كمان، وقصّ
+ * الطرفين هو اللي بيخلّي «تم 👍» = «تم». بنرجّع العلامة المقصوصة بس.
+ * (`x` حرف، فالتطبيع ما بيقصّها أصلا.)
+ */
+function restoreLeadingMarker(raw: string, normalized: string): string {
+  const lead = /^[^\p{L}\p{N}]*/u.exec(raw)?.[0] ?? "";
+  const at = Math.max(lead.lastIndexOf("×"), lead.lastIndexOf("*"));
+  if (at === -1) return normalized;
+  const marker = lead[at];
+  // ملزوقة بالرقم («×3») بتضل ملزوقة؛ غير هيك بتصير رمزا لحالها («× 3»).
+  return at === lead.length - 1
+    ? `${marker}${normalized}`
+    : `${marker} ${normalized}`;
+}
+
+/**
  * الفواصل: مسافة · `و` · `,` · `،` · `+` · سطر جديد.
  *
  * 🔴 `و` فاصل **بس لما تكون منفصلة أو ملزوقة برقم**. شطبها من أول كل كلمة
  *    بيحوّل «واحد» لـ«احد» — والنص غير المفهوم بيرجع للزبون حرفيا، فتشويهه
  *    بيخلّيه يقرأ كلمة ما كتبها.
- *
- * ⚠️ حالة معروفة: علامة كمية بأول الرسالة (`×3 و2`) بيقصّها التطبيع من الطرف،
- *    فبتنقرأ «صنف 3». مدخل بلا معنى أصلا (ما في صنف قبلها)، وتصحيحه بيتطلب
- *    تعديل `normalizeArabic` المشتركة — وهي بتخدم المطابقة كمان.
  */
 function tokenize(raw: string): string[] {
-  return normalizeArabic(raw)
+  return restoreLeadingMarker(raw, normalizeArabic(raw))
     .replace(/[,،+]/gu, " ")
     .replace(/(?<=[0-9])و(?=[0-9])/gu, " ") // 2و3
     .replace(/(^|\s)و(?=[0-9])/gu, "$1 ") // 2 و3
@@ -110,6 +142,8 @@ const MARKER_ONLY = new RegExp(`^[${QTY_MARKERS}]$`, "iu");
  *   - `2 5`   → صنفان. **لا «صنف 2 كمية 5»**
  *   - `2 ×3`  → صنف 2 كمية 3
  *   - `2 و2`  → صنف 2 ×2 (الرقم المكرر بتتجمّع كميته)
+ *   - `×3 و2` → الصنف 2 وبس. **علامة الكمية لازم يسبقها رقم صنف**
+ *   - كمية فوق السقف بتنرفض لحالها، والمجموع ما إله سقف
  *   - رقم برّا الخريطة بيتسمّى وما بيسقّط الصحيح
  *   - نص غير رقمي بيرجع للزبون
  */
@@ -141,18 +175,39 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
    *    الزيادة المباشرة بتعطي 4.
    */
   let lastContribution = 0;
-  /** الرقم السابق كان برّا الخريطة: كميته بتنبلع، لأن الرقم انتسمّى أصلا. */
-  let lastNumberWasUnknown = false;
+  /**
+   * الرقم السابق انرفض (برّا الخريطة أو كميته فوق السقف) وانسمّى أصلا:
+   * كمية منفصلة بعده بتنبلع بدل ما تنرجع «غير واضحة» فوق التسمية.
+   */
+  let swallowNextQty = false;
   /** علامة منفصلة تنتظر كميتها (`2 × 3`). */
   let pendingMarker = false;
+  /** علامة **بلا رقم قبلها** («× 3»): الرقم اللي بعدها كمية لولا شي، مش صنف. */
+  let orphanMarker = false;
 
   const addQty = (number: number, qty: number): void => {
     quantities.set(number, (quantities.get(number) ?? 0) + qty);
   };
 
+  const forgetLast = (swallow: boolean): void => {
+    lastNumber = null;
+    lastContribution = 0;
+    swallowNextQty = swallow;
+  };
+
   /** كمية وصلت بعلامة منفصلة: بتستبدل مساهمة الرمز السابق. */
   const applySeparatedQty = (qty: number): void => {
-    if (lastNumber === null) return;
+    if (lastNumber === null) {
+      forgetLast(false); // كانت مبلوعة — الرقم انسمّى
+      return;
+    }
+    if (qty > MAX_QTY_PER_ITEM) {
+      // الرمز السابق أضاف مساهمته، والكمية الصح هي المرفوضة — بتنشال.
+      addQty(lastNumber, -lastContribution);
+      overCapItems.push({ number: lastNumber, requestedQty: qty });
+      forgetLast(true);
+      return;
+    }
     addQty(lastNumber, qty - lastContribution);
     lastContribution = qty;
   };
@@ -161,35 +216,48 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
     flushUnclear();
     if (menuMap[String(number)] === undefined) {
       unknownNumbers.push(number);
-      lastNumber = null;
-      lastContribution = 0;
-      lastNumberWasUnknown = true;
+      forgetLast(true);
+      return;
+    }
+    if (qty > MAX_QTY_PER_ITEM) {
+      overCapItems.push({ number, requestedQty: qty });
+      forgetLast(true);
       return;
     }
     addQty(number, qty);
     lastNumber = number;
     lastContribution = qty;
-    lastNumberWasUnknown = false;
+    swallowNextQty = false;
   };
+
+  const hasAnchor = (): boolean => lastNumber !== null || swallowNextQty;
 
   for (const token of tokenize(raw)) {
     // 🔴 كمية بعد علامة منفصلة: الرقم **مش مجرّد**، قبله علامة صريحة كتبها
     //    الزبون. قاعدة «رقم مجرّد = صنف» بتنطبق على المجرّد وبس.
     if (pendingMarker && BARE_NUMBER.test(token)) {
       pendingMarker = false;
-      if (lastNumber !== null || lastNumberWasUnknown) {
-        applySeparatedQty(Number(token));
-        continue;
-      }
+      applySeparatedQty(Number(token));
+      continue;
     }
     pendingMarker = false;
 
+    // 🔴 «× 3» بلا صنف قبلها: الـ3 كمية لولا شي، **مش الصنف 3**. بتنضم للجزء
+    //    غير المفهوم وبترجع للزبون مع علامتها.
+    if (orphanMarker && BARE_NUMBER.test(token)) {
+      orphanMarker = false;
+      unclearRun.push(token);
+      continue;
+    }
+    orphanMarker = false;
+
     if (MARKER_ONLY.test(token)) {
-      if (lastNumber !== null || lastNumberWasUnknown) {
+      if (hasAnchor()) {
         pendingMarker = true;
         continue;
       }
       unclearRun.push(token);
+      orphanMarker = true;
       continue;
     }
 
@@ -201,8 +269,8 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
 
     const qtyOnly = QTY_ONLY.exec(token);
     if (qtyOnly !== null) {
-      // `×3` لحالها بتلزق بالصنف اللي قبلها. بلا صنف قبلها ما إلها معنى.
-      if (lastNumber !== null || lastNumberWasUnknown) {
+      // `×3` لحالها بتلزق بالصنف اللي قبلها. بلا صنف قبلها: غير مفهومة.
+      if (hasAnchor()) {
         flushUnclear();
         applySeparatedQty(Number(qtyOnly[1]));
         continue;
@@ -217,23 +285,14 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
     }
 
     unclearRun.push(token);
-    lastNumber = null;
-    lastContribution = 0;
-    lastNumberWasUnknown = false;
+    forgetLast(false);
   }
   flushUnclear();
 
-  // 🔴 السقف بينطبق على **المجموع بعد التجميع**، مش على كل علامة لحالها:
-  //    «2 ×15 و2 ×10» مجموعها 25، وفحص كل علامة لحالها بيمرّقها.
   const items: ParsedItem[] = [];
   for (const [number, qty] of quantities) {
     const itemId = menuMap[String(number)];
-    if (itemId === undefined) continue;
-    if (qty > MAX_QTY_PER_ITEM) {
-      overCapItems.push({ number, requestedQty: qty });
-      continue;
-    }
-    if (qty > 0) items.push({ number, itemId, qty });
+    if (itemId !== undefined && qty > 0) items.push({ number, itemId, qty });
   }
 
   const problems: ParseProblems = {
@@ -246,8 +305,14 @@ export function parseItems(raw: string, menuMap: MenuMap): ParseResult {
     unclearParts.length > 0 ||
     overCapItems.length > 0;
 
-  const outcome: ParseOutcome =
-    items.length === 0 ? "unparsed" : hasProblem ? "partial" : "parsed";
+  // المتجاوز للسقف **متعرَّف عليه** — بيعدّ هون مع الأصناف المضافة.
+  const recognized = items.length > 0 || overCapItems.length > 0;
+
+  const outcome: ParseOutcome = !recognized
+    ? "unparsed"
+    : hasProblem
+      ? "partial"
+      : "parsed";
 
   return { outcome, items, problems, menuSize };
 }

@@ -32,6 +32,7 @@ import {
   CLOSED_WITH_HOURS_AR,
   MENU_COMMANDS_TAIL_AR,
   MENU_HEADER_AR,
+  QTY_OVER_CAP_AR,
   WELCOME_AR,
   closedMessageAr,
   conversationSessions,
@@ -1069,6 +1070,7 @@ describe("قيود النصوص اللي بتوصل الزبون", () => {
     WELCOME_AR,
     MENU_HEADER_AR,
     MENU_COMMANDS_TAIL_AR,
+    QTY_OVER_CAP_AR,
   ];
 
   it("أرقام غربية فقط — ولا رقم عربي-هندي بأي نص", () => {

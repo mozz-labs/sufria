@@ -209,3 +209,24 @@ export function closedMessageAr(
 export function welcomeMessageAr(restaurantName: string): string {
   return WELCOME_AR.replace(RESTAURANT_NAME_SLOT, restaurantName);
 }
+
+// ---------------------------------------------------------------------------
+// نصوص السلّة — بريف السلّة §5، وما أُضيف عليه بعده.
+// ---------------------------------------------------------------------------
+
+/** خانة الكمية المرفوضة. مصدّرة عشان ما حدا يكتب النص الحرفي. */
+export const QUANTITY_SLOT = "[الكمية]";
+
+/**
+ * كمية فوق سقف الصنف الواحد (`MAX_QTY_PER_ITEM`).
+ *
+ * النص من محمد حرفيا (18 سبتمبر). **الـ20 مكتوبة بالنص نفسه**، مش مولَّدة من
+ * الثابت — النص بيُنسخ كما هو. اختبار بـ`item-parser.test.mts` بيربطهم: لو
+ * تغيّر السقف وما تغيّر النص، الزبون بينقال له حد غلط.
+ */
+export const QTY_OVER_CAP_AR = `الكمية ${QUANTITY_SLOT} أكثر من الحد. الأقصى 20 للصنف الواحد.`;
+
+/** `QTY_OVER_CAP_AR` بالكمية اللي كتبها الزبون. `String` بتعطي أرقاما غربية. */
+export function qtyOverCapMessageAr(requestedQty: number): string {
+  return QTY_OVER_CAP_AR.replace(QUANTITY_SLOT, String(requestedQty));
+}

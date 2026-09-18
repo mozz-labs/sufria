@@ -11,8 +11,10 @@ import assert from "node:assert/strict";
 
 import {
   MAX_QTY_PER_ITEM,
+  QTY_OVER_CAP_AR,
   interpretMessage,
   parseItems,
+  qtyOverCapMessageAr,
   type MenuMap,
 } from "@sufria/shared";
 
@@ -96,27 +98,97 @@ test("«2 و2» صنف 2 ×2 — الرقم المكرر بتتجمّع كميت
   assert.deepEqual(pairs("2 ×3 و2 ×2"), [[2, 5]]);
 });
 
-test(`سقف الكمية ${MAX_QTY_PER_ITEM} للصنف — حماية من «2 ×9999»`, () => {
+test(`سقف الكمية ${MAX_QTY_PER_ITEM} للرمز — حماية من «2 ×9999»`, () => {
   const atCap = parseItems(`2 ×${MAX_QTY_PER_ITEM}`, MENU);
   assert.deepEqual(
     atCap.items.map((i) => [i.number, i.qty]),
     [[2, MAX_QTY_PER_ITEM]],
   );
 
-  const over = parseItems("2 ×9999", MENU);
-  assert.deepEqual(over.items, []);
-  assert.deepEqual(over.problems.overCapItems, [
+  for (const raw of ["2 ×9999", "2×21", "2 ×21", "2 × 21"]) {
+    const over = parseItems(raw, MENU);
+    assert.deepEqual(over.items, [], `«${raw}»`);
+    assert.equal(over.problems.overCapItems.length, 1, `«${raw}»`);
+  }
+  assert.deepEqual(parseItems("2 ×9999", MENU).problems.overCapItems, [
     { number: 2, requestedQty: 9999 },
   ]);
 });
 
-test("🔴 السقف على المجموع بعد التجميع، لا على كل علامة لحالها", () => {
-  // «2 ×15 و2 ×10» = 25. فحص كل علامة لحالها بيمرّقها وبيهزم الحماية.
-  const result = parseItems("2 ×15 و2 ×10", MENU);
-  assert.deepEqual(result.items, []);
-  assert.deepEqual(result.problems.overCapItems, [
-    { number: 2, requestedQty: 25 },
+test("🔴 السقف للصنف الواحد لا للمجموع — طلب 25 قطعة بيمرق", () => {
+  // طلب مناسبة من 25 قطعة هو أحسن طلب باليوم. السقف بيمسك ×9999، ما
+  // بيحدّد حجم الطلب.
+  assert.deepEqual(pairs("2 ×15 و2 ×10"), [[2, 25]]);
+  assert.deepEqual(pairs("1 ×20 و2 ×20 و3 ×20"), [
+    [1, 20],
+    [2, 20],
+    [3, 20],
   ]);
+});
+
+test("الكمية المرفوضة بتنشال لحالها، والمقبول قبلها بيضل", () => {
+  const result = parseItems("2 و1 ×25 و3", MENU);
+  assert.deepEqual(
+    result.items.map((i) => [i.number, i.qty]),
+    [
+      [2, 1],
+      [3, 1],
+    ],
+  );
+  assert.deepEqual(result.problems.overCapItems, [
+    { number: 1, requestedQty: 25 },
+  ]);
+});
+
+test("🔴 الصنف المتجاوز للسقف لا يرفع العدّاد", () => {
+  // العدّاد (قيد 2ج) بيرتفع بس لما ما نتعرّف على رقم صنف ولا على أمر.
+  // «2 ×9999» تعرّفنا فيها على الصنف 2 ورفضنا الكمية بسبب مسمّى — الزبون
+  // مفهوم، وما لازم يتقدّم نحو رسالة الاستسلام.
+  const result = parseItems("2 ×9999", MENU);
+  assert.notEqual(result.outcome, "unparsed");
+  assert.equal(result.outcome, "partial");
+
+  // والضابط المقابل: رقم مش بالخريطة **مش** تعرّف — هاد بيرفع العدّاد.
+  assert.equal(parseItems("15", MENU).outcome, "unparsed");
+});
+
+test("نص السقف حرفي، وبيحكي نفس الرقم اللي بينفَّذ", () => {
+  assert.equal(
+    qtyOverCapMessageAr(25),
+    "الكمية 25 أكثر من الحد. الأقصى 20 للصنف الواحد.",
+  );
+  // الـ20 مكتوبة بالنص حرفيا. لو تغيّر الثابت وما تغيّر النص، الزبون
+  // بينقال له حد غير اللي بينطبق عليه.
+  assert.ok(QTY_OVER_CAP_AR.includes(`الأقصى ${MAX_QTY_PER_ITEM} `));
+});
+
+test("🔴 سالب: «×3 و2» لا تضيف الصنف 3", () => {
+  // علامة الكمية لازم يسبقها رقم صنف. التطبيع كان يقصّ «×» من طرف الرسالة
+  // فتصير «3» = الصنف 3 — صنف ما طلبه الزبون بيوصل سلّته.
+  const result = parseItems("×3 و2", MENU);
+  assert.deepEqual(
+    result.items.map((i) => i.number),
+    [2],
+  );
+  assert.deepEqual(result.problems.unclearParts, ["×3"]);
+});
+
+test("علامة بلا رقم قبلها، بأشكالها كلها: جزء غير مفهوم ولا تضيف شي", () => {
+  for (const [raw, unclear] of [
+    ["*3 و2", "*3"],
+    ["× 3 و2", "× 3"],
+    // «»» الداخلية ما بيقصّها التطبيع (طرفا الرسالة بس)، فبترجع كما انكتبت.
+    ["«×3» و2", "×3»"],
+    ["بدون ×3 و2", "بدون ×3"],
+  ] as const) {
+    const result = parseItems(raw, MENU);
+    assert.deepEqual(
+      result.items.map((i) => i.number),
+      [2],
+      `«${raw}»`,
+    );
+    assert.deepEqual(result.problems.unclearParts, [unclear], `«${raw}»`);
+  }
 });
 
 test("🔴 رقم برّا menu_map بيتسمّى، وما بيسقّط الأصناف الصحيحة", () => {
