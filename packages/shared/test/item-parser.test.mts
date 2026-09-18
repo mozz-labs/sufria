@@ -10,9 +10,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  HANDOFF_STREAK,
   MAX_QTY_PER_ITEM,
   QTY_OVER_CAP_AR,
   interpretMessage,
+  nextUnparsedStreak,
   parseItems,
   qtyOverCapMessageAr,
   type MenuMap,
@@ -120,11 +122,23 @@ test("🔴 «2 ×30 و2 ×30» تُرفض — السقف على الصنف بع�
   // سقف على الرمز المكتوب بينلتف عليه بتقسيم الكمية، فبيصير فلترا مكتوبا
   // فوقه نص بيدّعي قاعدة. التجميع هو اللي بيخلّي «الأقصى 50 للصنف الواحد»
   // صادقة. §13.1
-  const result = parseItems("2 ×30 و2 ×30", MENU);
-  assert.deepEqual(result.items, []);
-  assert.deepEqual(result.problems.overCapItems, [
-    { number: 2, requestedQty: 60 },
-  ]);
+  //
+  // بكل أشكال العلامة، ملزوقة ومنفصلة: الكمية المنفصلة بتمرق من مسار تاني
+  // بالمحلّل (applySeparatedQty)، فالتجميع لازم يتغطّى من المسارين.
+  for (const raw of [
+    "2 ×30 و2 ×30",
+    "2×30 و2×30",
+    "2 × 30 و2 × 30",
+    "2×30 و2 × 30",
+  ]) {
+    const result = parseItems(raw, MENU);
+    assert.deepEqual(result.items, [], `«${raw}»`);
+    assert.deepEqual(
+      result.problems.overCapItems,
+      [{ number: 2, requestedQty: 60 }],
+      `«${raw}»`,
+    );
+  }
 });
 
 test("حجم الطلب نفسه بلا سقف — السقف للصنف الواحد", () => {
@@ -272,6 +286,42 @@ test("رسالة فاضية أو نص محض = unparsed بلا أصناف", () =
     assert.equal(result.outcome, "unparsed", `«${raw}»`);
     assert.deepEqual(result.items, []);
   }
+});
+
+// ---------------------------------------------------------------------------
+// العدّاد — سلسلة لا مجموع · §13.3
+// ---------------------------------------------------------------------------
+
+/** بيمرّر الرسائل على المحلّل والعدّاد بالترتيب، وبيرجّع العدّاد بالآخر. */
+function streakAfter(messages: readonly string[]): number {
+  return messages.reduce(
+    (streak, raw) => nextUnparsedStreak(streak, parseItems(raw, MENU).outcome),
+    0,
+  );
+}
+
+test("🔴 unparsed · unparsed · «2 ×9999» · unparsed = لا رسالة استسلام — العدّاد 1 لا 3", () => {
+  // «2 ×9999» تعرّفنا فيها على الصنف 2، فكسرت السلسلة. القراءة المشتقّة
+  // «لا يرفع ولا يصفّر» كانت بتوصّل هالزبون المفهوم لرسالة الاستسلام.
+  const streak = streakAfter(["مرحبا", "15", "2 ×9999", "كيفك"]);
+  assert.equal(streak, 1);
+  assert.ok(streak < HANDOFF_STREAK);
+});
+
+test("والضابط المقابل: ثلاث unparsed متتالية بتوصل لرسالة الاستسلام", () => {
+  // بلاه، الاختبار اللي فوقه بيمر حتى لو العدّاد ما بيرتفع أبدا.
+  assert.equal(streakAfter(["مرحبا", "15", "كيفك"]), HANDOFF_STREAK);
+});
+
+test("🔴 إضافة ناجحة بعد رسالتين غير مفهومتين بتصفّر العدّاد — قيد 2ج", () => {
+  assert.equal(streakAfter(["مرحبا", "15", "2"]), 0);
+  assert.equal(streakAfter(["مرحبا", "15", "2 بدون بصل"]), 0);
+});
+
+test("ثلاث نتائج وقاعدتان: unparsed بترفع، parsed وpartial بتصفّر", () => {
+  assert.equal(nextUnparsedStreak(2, "unparsed"), 3);
+  assert.equal(nextUnparsedStreak(2, "parsed"), 0);
+  assert.equal(nextUnparsedStreak(2, "partial"), 0);
 });
 
 // ---------------------------------------------------------------------------
