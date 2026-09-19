@@ -21,6 +21,8 @@ import type { Server } from "node:http";
 import { Pool } from "pg";
 import {
   CART_EMPTY_AR,
+  CART_EMPTY_ON_FINISH_AR,
+  CART_REMOVE_HINT_AR,
   FINISH_HINT_AR,
   MENU_HEADER_AR,
   MENU_COMMANDS_TAIL_AR,
@@ -152,6 +154,16 @@ async function shop(opts: {
     },
   };
 }
+
+const stateOf = async (s: Shop): Promise<string> => {
+  const { rows } = await audit.query<{ state: string }>(
+    `SELECT s.state::text AS state FROM conversation_sessions s
+       JOIN customers c ON c.id = s.customer_id
+      WHERE s.restaurant_id = $1 AND c.phone_number = $2`,
+    [s.restaurantId, s.from],
+  );
+  return rows[0]?.state ?? "";
+};
 
 type CartRow = {
   item_id: string;
@@ -490,11 +502,10 @@ describe("«منيو» و«تم»", () => {
     expect(after).toEqual({ "1": s.ids["متبل"] });
   });
 
-  it("«تم» بـب-4: لا رد، والعدّاد يصفّر، والحالة تضل browsing", async () => {
-    const s = await shop({ label: "finish-b4", items: TWO });
+  it("«تم» بتصفّر العدّاد زي أي أمر معروف", async () => {
+    const s = await shop({ label: "finish-resets", items: TWO });
     await s.say("كلام");
     expect(await s.say("تم")).toBe("browsing");
-    expect(s.last()).toBe(nothingUnderstoodAr(2));
     expect((await s.context())["unparsed_streak"]).toBe(0);
   });
 
@@ -509,9 +520,9 @@ describe("«منيو» و«تم»", () => {
     const s = await shop({ label: "outbound", items: TWO });
     // الترحيب = 1.
     await s.say("1"); // 2
-    await s.say("تم"); // صمت
-    await s.say("سلة"); // 3
-    expect((await s.context())["outbound_count"]).toBe(3);
+    await s.say("كلام"); // 3 — «الأرقام من 1 إلى N»
+    await s.say("سلة"); // 4
+    expect((await s.context())["outbound_count"]).toBe(4);
   });
 });
 
@@ -643,5 +654,96 @@ describe("🔴 رسالتان متطابقتان ليستا تكرارا — §1
       expect(res.status).toBe(200);
     }
     expect((await cartOf(s)).map((l) => l.qty)).toEqual([1]);
+  });
+});
+
+// ===========================================================================
+describe("ب-5 · «تم» → cart_review", () => {
+  it("🔴 محادثة كاملة: منيو → إضافتان → «تم» → cart_review وسلّة كاملة", async () => {
+    const s = await shop({ label: "finish-full", items: TWO });
+    await s.say("1");
+    await s.say("2 ×2");
+    expect(await s.say("تم")).toBe("browsing");
+
+    expect(await stateOf(s)).toBe("cart_review");
+    expect(s.last()).toBe(
+      [
+        "سلّتك:",
+        "1 · حمص ×1 — 2.50 د.أ",
+        "2 · متبل ×2 — 12.60 د.أ",
+        "المجموع 15.10 د.أ",
+      ].join("\n"),
+    );
+  });
+
+  it("🔴 رسالة cart_review بلا ذيل «شيل» — الأمر ما بيشتغل بعد الانتقال", async () => {
+    const s = await shop({ label: "finish-no-hint", items: TWO });
+    await s.say("1");
+    await s.say("سلة");
+    expect(s.last()).toContain(CART_REMOVE_HINT_AR);
+    await s.say("تم");
+    expect(s.last()).not.toContain(CART_REMOVE_HINT_AR);
+  });
+
+  it("🔴 «تم» على سلّة فارغة: لا انتقال ولا CAS، رسالة وبس", async () => {
+    const s = await shop({ label: "finish-empty", items: TWO });
+    expect(await s.say("تم")).toBe("browsing");
+    expect(s.last()).toBe(CART_EMPTY_ON_FINISH_AR);
+    expect(await stateOf(s)).toBe("browsing");
+  });
+
+  it("«تم» بعد الانتقال: الرسالة التانية ما بتمرق من معالج التصفّح", async () => {
+    const s = await shop({ label: "finish-again", items: TWO });
+    await s.say("1");
+    await s.say("تم");
+    const before = replies.forRestaurant(s.restaurantId).length;
+
+    expect(await s.say("تم")).toBe("active_session");
+    expect(replies.forRestaurant(s.restaurantId)).toHaveLength(before);
+    expect(await stateOf(s)).toBe("cart_review");
+  });
+
+  it("🔴 «تم» مرتين بنفس اللحظة: انتقال واحد ورسالة واحدة — الـCAS", async () => {
+    // مُرتَّب مش سباق: الفائز بيمسك معاملته مفتوحة، فالخاسر بينحبس على
+    // `FOR UPDATE`، وبعد ما يفوت بيلاقي الحالة صارت cart_review فالـCAS
+    // بترجّع صفر — تجاهل صامت، بلا رسالة تانية.
+    const s = await shop({ label: "finish-race", items: TWO });
+    await s.say("1");
+    replies.reset();
+
+    const ctx = {
+      restaurantId: s.restaurantId,
+      phoneNumberId: s.pid,
+      from: s.from,
+      body: "تم",
+    };
+    const winnerDb = new TenantDb();
+    let releaseWinner = (): void => {};
+    const winnerHeld = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+
+    try {
+      const winner = winnerDb.runInTenant(s.restaurantId, async (tx) => {
+        await conversation.handleInbound(tx, ctx);
+        await winnerHeld;
+      });
+      await settle();
+      const loser = db.runInTenant(s.restaurantId, (tx) =>
+        conversation.handleInbound(tx, ctx),
+      );
+      await settle();
+      releaseWinner();
+      await winner;
+      await loser;
+    } finally {
+      releaseWinner();
+      await winnerDb.stop();
+    }
+
+    expect(replies.forRestaurant(s.restaurantId)).toHaveLength(1);
+    expect(await stateOf(s)).toBe("cart_review");
+    // ولا عدّ رسالة ما انبعثت: الترحيب + سطر الإضافة + عرض السلّة = 3.
+    expect((await s.context())["outbound_count"]).toBe(3);
   });
 });

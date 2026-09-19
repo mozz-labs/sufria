@@ -301,6 +301,13 @@ export const CART_LINE_UNNUMBERED_AR = `${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} —
 /** ذيل عرض السلّة — المكان الوحيد اللي بيعلّم «شيل» (§12.3-أ). */
 export const CART_REMOVE_HINT_AR = "لحذف صنف: «شيل» ورقمه";
 export const CART_EMPTY_AR = "سلّتك فارغة. اكتب رقم الصنف من المنيو.";
+/**
+ * «تم» والسلّة فارغة (§5) — نص تاني غير نص «سلة» الفارغة، وهاد مقصود بالبريف:
+ * هون الزبون حاول **ينهي** طلبا ما بلّشه، فالجملة بتدلّه على البداية.
+ * **ولا انتقال ولا CAS** — الجلسة بتضل `browsing` (ب-5).
+ */
+export const CART_EMPTY_ON_FINISH_AR =
+  "سلّتك فارغة — اكتب رقم الصنف من المنيو لتبدأ.";
 
 /**
  * رسالة الاستسلام — مرة واحدة بالجلسة. `contact_phone` = NULL يعني **ولا
@@ -332,6 +339,7 @@ export const CART_TEXT_TEMPLATES_AR: readonly string[] = [
   CART_LINE_UNNUMBERED_AR,
   CART_REMOVE_HINT_AR,
   CART_EMPTY_AR,
+  CART_EMPTY_ON_FINISH_AR,
   HANDOFF_AR,
 ];
 
@@ -447,10 +455,17 @@ export interface CartDisplayLine {
   readonly lineTotalMinor: number;
 }
 
-/** عرض السلّة كاملة، أو نص السلّة الفارغة. */
+/**
+ * عرض السلّة كاملة، أو نص السلّة الفارغة.
+ *
+ * `removeHint: false` عند `cart_review`: «شيل» بتشتغل بالتصفّح وبس، وتعليم
+ * أمر ما عاد يشتغل أسوأ من عدم تعليمه — والتعديل عند `cart_review` مرفوض
+ * (§12.2)، فما في بديل نعلّمه هون.
+ */
 export function cartMessageAr(
   lines: readonly CartDisplayLine[],
   cartTotalMinor: number,
+  options: { readonly removeHint?: boolean } = {},
 ): string {
   if (lines.length === 0) return CART_EMPTY_AR;
   return [
@@ -469,7 +484,7 @@ export function cartMessageAr(
     fillSlots(CART_TOTAL_LINE_AR, {
       [TOTAL_SLOT]: formatMinor(cartTotalMinor),
     }),
-    CART_REMOVE_HINT_AR,
+    ...(options.removeHint === false ? [] : [CART_REMOVE_HINT_AR]),
   ].join("\n");
 }
 

@@ -1,4 +1,5 @@
 import {
+  CART_EMPTY_ON_FINISH_AR,
   FINISH_HINT_AR,
   HANDOFF_STREAK,
   MAX_QTY_PER_ITEM,
@@ -20,6 +21,7 @@ import type { TenantTx } from "../db/types.js";
 import { logger } from "../logger.js";
 import { readCatalog, type Catalog } from "../restaurant/catalog.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
+import { advanceSessionState } from "../db/critical-primitives.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 import {
   readSessionData,
@@ -47,6 +49,11 @@ export interface BrowsingDecision {
   readonly reply: string | null;
   /** «منيو»: القشرة بتعيد إرسال القائمة عبر `deliverMenu` — والخريطة معها. */
   readonly resendMenu: boolean;
+  /**
+   * «تم» وسلّة فيها أصناف: القشرة بتعمل CAS من `browsing` لـ`cart_review`
+   * **قبل** ما تكتب وتبعت. خسارة الـCAS = تجاهل صامت (ب-5).
+   */
+  readonly finish: boolean;
 }
 
 export interface BrowsingInput {
@@ -59,13 +66,18 @@ export interface BrowsingInput {
 }
 
 /** كل رد صادر بينعدّ — فجوة القياس بـ§4. الصمت ما بينعدّ. */
-function withReply(next: SessionData, reply: string | null): BrowsingDecision {
+function withReply(
+  next: SessionData,
+  reply: string | null,
+  finish = false,
+): BrowsingDecision {
   return reply === null
-    ? { next, reply: null, resendMenu: false }
+    ? { next, reply: null, resendMenu: false, finish }
     : {
         next: { ...next, outbound_count: next.outbound_count + 1 },
         reply,
         resendMenu: false,
+        finish,
       };
 }
 
@@ -75,7 +87,7 @@ export function cartTotalMinor(cart: readonly CartLine[]): number {
 }
 
 /** عرض السلّة **برقم الخريطة الحالية** — مصدر ترقيم واحد (§12.1). */
-function renderCart(data: SessionData): string {
+function renderCart(data: SessionData, removeHint = true): string {
   const numberOf = new Map<string, number>(
     Object.entries(data.menu_map).map(([n, id]) => [id, Number(n)]),
   );
@@ -87,6 +99,7 @@ function renderCart(data: SessionData): string {
       lineTotalMinor: l.unit_price_minor * l.qty,
     })),
     cartTotalMinor(data.cart),
+    { removeHint },
   );
 }
 
@@ -103,12 +116,19 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
       const next = { ...data, unparsed_streak: 0 };
       switch (intent.command) {
         case "menu":
-          return { next, reply: null, resendMenu: true };
+          return { next, reply: null, resendMenu: true, finish: false };
         case "cart":
           return withReply(next, renderCart(next));
-        case "finish":
-          // ب-5. هون: تصفير وبس، بلا رد (§14.7).
-          return { next, reply: null, resendMenu: false };
+        case "finish": {
+          // 🔴 سلّة فارغة: **ولا انتقال ولا CAS**، رسالة وبس، والجلسة بتضل
+          //    `browsing` — فالزبون بيقدر يبلّش طلبه من نفس المكان (ب-5).
+          if (next.cart.length === 0) {
+            return withReply(next, CART_EMPTY_ON_FINISH_AR);
+          }
+          // 🔴 الرسالة بتنتهي عند عرض السلّة. سؤال التوصيل/الاستلام مهمة
+          //    تالية — ما بينخترع نصه هون.
+          return withReply(next, renderCart(next, false), true);
+        }
         default: {
           const unhandled: never = intent.command;
           return unhandled;
@@ -158,7 +178,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
         const next = { ...data, unparsed_streak: streak };
         // 🔴 بعد الاستسلام: صمت على غير المفهوم **وحده** (§14.7). رقم صحيح
         //    بعدها بيمرق من فرع الأصناف تحت ويتخدم عاديا.
-        if (data.handoff_sent) return { next, reply: null, resendMenu: false };
+        if (data.handoff_sent) return withReply(next, null);
         if (streak >= HANDOFF_STREAK) {
           // مرة وحدة بالجلسة. والرقم NULL = صمت تام، لا نص بديل (§11.3).
           const handedOff = { ...next, handoff_sent: true };
@@ -305,6 +325,26 @@ export async function handleBrowsingMessage(
     catalog,
     contactPhone: message.contactPhone,
   });
+
+  if (decision.finish) {
+    // 🔴 CAS ذري `browsing → cart_review`. `rowcount = 0` = حدا تاني سبقنا
+    //    («تم» مرتين بنفس اللحظة) → **تجاهل بصمت، لا استثناء**، وبلا كتابة
+    //    وبلا إرسال: ولا انتقال تاني، ولا عدّ رسالة صادرة ما انبعثت.
+    if (
+      !(await advanceSessionState(
+        tx,
+        message.sessionId,
+        "browsing",
+        "cart_review",
+      ))
+    ) {
+      logger.debug(
+        { restaurantId: message.restaurantId, sessionId: message.sessionId },
+        "CAS خسر — «تم» انعالجت مرة قبل هيك. تجاهل صامت",
+      );
+      return;
+    }
+  }
 
   await writeSessionData(tx, message.sessionId, decision.next, message.now);
 
