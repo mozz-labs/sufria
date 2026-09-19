@@ -22,7 +22,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session + first reply (order state machine not built yet) |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session + first reply, browsing cart (B-4) — no order creation yet |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -160,11 +160,12 @@ RLS.
   moved into `packages/shared`, and the drift check now also walks the
   database's own table list, so a table mirrored nowhere is a failure rather
   than a silent gap. Put new mirrors in `packages/shared`; anywhere else fails.
-- `@sufria/conversation-engine` now dedupes, routes, stores, applies the
-  business-hours gate, opens a conversation session and sends the first reply.
-  There is still **no order state machine**: a message from a customer who
-  already has an active session only refreshes `last_message_at`. No cart, no
-  address, no payment, no order creation.
+- `@sufria/conversation-engine` dedupes, routes, stores, applies the
+  business-hours gate, opens a session, sends the first reply, and handles the
+  `browsing` state: add, show, remove (`شيل`), menu resend, the unparsed counter
+  and the handoff (`conversation/browsing.ts`, cart brief §14). «تم» and the
+  move to `cart_review` are B-5. Sessions in any later state still only refresh
+  `last_message_at`. No address, no payment, no order creation.
 - **`business_hours` has no schema in the database — its contract is
   `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
   nothing ever wrote a shape into it; the shape is still defined by
