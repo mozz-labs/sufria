@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 import {
   normalizeArabic,
@@ -217,17 +218,70 @@ test("🔴 ولا نسخة ثانية من التطبيع بأي مكان", () =
   }
 });
 
+/**
+ * استعمالات `toLocaleString` و`Intl.NumberFormat` **بالكود**، بمحلّل TypeScript.
+ *
+ * 🔴 مش بحث نصّي خام: الخام كان يوقع على **تعليق** بيشرح إن الاتنين ممنوعين —
+ *    وحارس بيصرخ كذبا بينتهي بحدا يشطبه. نفس إصلاح حارس النص inline بـب-2.
+ */
+function localeFormattingIn(source: string): string[] {
+  const file = ts.createSourceFile(
+    "scan.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(node)) {
+      const name = node.name.text;
+      if (name === "toLocaleString") found.push("toLocaleString");
+      if (
+        name === "NumberFormat" &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "Intl"
+      ) {
+        found.push("Intl.NumberFormat");
+      }
+    }
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteral(node.argumentExpression) &&
+      node.argumentExpression.text === "toLocaleString"
+    ) {
+      found.push("toLocaleString");
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return found;
+}
+
+test("دليل الحارس: بيمسك الاستعمال، وما بيوقع على تعليق بيذكره", () => {
+  assert.deepEqual(localeFormattingIn('const s = n.toLocaleString("ar-JO");'), [
+    "toLocaleString",
+  ]);
+  assert.deepEqual(
+    localeFormattingIn('new Intl.NumberFormat("ar").format(n);'),
+    ["Intl.NumberFormat"],
+  );
+  assert.deepEqual(localeFormattingIn('n["toLocaleString"]();'), [
+    "toLocaleString",
+  ]);
+  assert.deepEqual(
+    localeFormattingIn(
+      "// لا toLocaleString ولا Intl.NumberFormat هون\nconst x = 1;",
+    ),
+    [],
+  );
+});
+
 test("🔴 ممنوع toLocaleString و Intl.NumberFormat — §11.5", () => {
   // `check:numerals` **بوابة غير مكتوبة** (§11.5). هالقاعدة بديلها القابل
-  // للفحص: كل رقم بينصاغ بـtoFixed أو قالب نصي. الاثنتان تحت بتطلّعا أرقاما
+  // للفحص: كل رقم بينصاغ بـtoFixed أو قالب نصي. الاثنتان بتطلّعا أرقاما
   // عربية-هندية حسب locale المضيف، وبتكسرا «الأرقام غربية فقط» بصمت تام.
   for (const file of sourceFiles()) {
-    const source = readFileSync(file, "utf8");
     const rel = relative(REPO_ROOT, file);
-    assert.ok(!source.includes("toLocaleString"), `${rel}: toLocaleString`);
-    assert.ok(
-      !source.includes("Intl.NumberFormat"),
-      `${rel}: Intl.NumberFormat`,
-    );
+    assert.deepEqual(localeFormattingIn(readFileSync(file, "utf8")), [], rel);
   }
 });

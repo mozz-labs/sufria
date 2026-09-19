@@ -28,14 +28,17 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { Pool } from "pg";
 import {
+  CART_TEXT_TEMPLATES_AR,
   CLOSED_AR,
   CLOSED_WITH_HOURS_AR,
   MENU_COMMANDS_TAIL_AR,
   MENU_HEADER_AR,
   QTY_OVER_CAP_AR,
+  RESTAURANT_NAME_SLOT,
   WELCOME_AR,
   closedMessageAr,
   conversationSessions,
+  nothingUnderstoodAr,
   welcomeMessageAr,
 } from "@sufria/shared";
 
@@ -56,6 +59,12 @@ import {
 import { WebhookService } from "../src/whatsapp/webhook.service.js";
 
 const RUN = randomUUID();
+/**
+ * نص رسالة التحية — نفس افتراضي `metaPayload`. الأولى بتفتح الجلسة، والنص ما
+ * بيفرق فيها. التانية لجلسة `browsing` بتمرق من المحلّل: «مرحبا» ما فيها رقم
+ * صنف، فهي `unparsed` وبتاخد سطر «الأرقام من 1 إلى N».
+ */
+const GREETING = "مرحبا";
 const wamid = (label: string): string => `wamid.SESSION.${RUN}.${label}`;
 const phoneId = (label: string): string => `PHONE.SESSION.${RUN}.${label}`;
 
@@ -254,6 +263,21 @@ async function buildMenuForTest(
   return (await buildMenu(tx)).text;
 }
 
+/**
+ * الردود اللي فيها ترحيب. من ب-4 رسالة تانية لجلسة `browsing` بتاخد ردا
+ * (سطر «الأرقام من 1 إلى N»)، فعدّ **كل** الردود صار بيقيس شي تاني. الثابت
+ * اللي هالاختبارات موجودة عشانه هو «ترحيب واحد» — وهاد اللي بينعدّ هون.
+ */
+const WELCOME_PREFIX = WELCOME_AR.slice(
+  0,
+  WELCOME_AR.indexOf(RESTAURANT_NAME_SLOT),
+);
+function welcomesFor(restaurantId: string): number {
+  return replies
+    .forRestaurant(restaurantId)
+    .filter((m) => m.body.startsWith(WELCOME_PREFIX)).length;
+}
+
 /** بتسيب حلقة الأحداث تمشي كفاية لمعاملة تانية توصل لمكانها وتنحبس. */
 function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 150));
@@ -355,7 +379,12 @@ describe("بوابة ساعات الدوام — FR-22", () => {
     const scoped = new ConversationService(replies, () => sundayMorning);
 
     const outcome = await db.runInTenant(restaurantId, (tx) =>
-      scoped.handleInbound(tx, { restaurantId, phoneNumberId: pid, from }),
+      scoped.handleInbound(tx, {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+        body: GREETING,
+      }),
     );
 
     // 🔴 الفرع اللي مشى، مش أثر جانبي.
@@ -423,6 +452,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
 
@@ -462,6 +492,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
 
@@ -491,6 +522,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
     const second = await db.runInTenant(restaurantId, (tx) =>
@@ -498,14 +530,19 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
 
     expect(first).toBe("greeted");
-    // 🔴 الفرع نفسه: الرسالة التانية مشت من فرع "جلسة نشطة".
-    expect(second).toBe("active_session");
+    // 🔴 الفرع نفسه: الرسالة التانية مشت من فرع الجلسة النشطة — ومن ب-4 الجلسة
+    //    بحالة browsing بتروح للمعالج وبتاخد ردها، مش ترحيبا تانيا.
+    expect(second).toBe("browsing");
     expect(await sessionsOf(restaurantId)).toHaveLength(1);
-    expect(replies.forRestaurant(restaurantId)).toHaveLength(1);
+    expect(welcomesFor(restaurantId)).toBe(1);
+    const sent = replies.forRestaurant(restaurantId);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.body).toBe(nothingUnderstoodAr(1));
   });
 });
 
@@ -528,7 +565,9 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     expect(res.status).toBe(200);
 
     expect(await sessionsOf(restaurantId)).toHaveLength(1);
-    expect(replies.forRestaurant(restaurantId)).toHaveLength(1);
+    // ترحيب واحد. التانية إما خسرت السباق بصمت، أو وصلت الجلسة وهي browsing
+    // فأخدت رد المحلّل — الاتنين صح، والترحيب التاني هو الغلط الوحيد.
+    expect(welcomesFor(restaurantId)).toBe(1);
   });
 
   it("🔴 فرع التعارض بالضبط: الخاسر بيقرأ صف الفائز وبيتجاهل بصمت", async () => {
@@ -544,7 +583,7 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     const restaurantId = await createRestaurant({ phoneNumberId: pid });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from };
+    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
 
     const { rows } = await audit.query<{ id: string }>(
       `INSERT INTO customers (restaurant_id, phone_number) VALUES ($1, $2) RETURNING id`,
@@ -605,7 +644,7 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     const dbA = new TenantDb();
     const dbB = new TenantDb();
     try {
-      const ctx = { restaurantId, phoneNumberId: pid, from };
+      const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
       const outcomes = await Promise.all([
         dbA.runInTenant(restaurantId, (tx) =>
           conversation.handleInbound(tx, ctx),
@@ -617,9 +656,13 @@ describe("رسالتين بفارق ميلي ثانية", () => {
 
       // ترحيب واحد بالضبط. والتاني إما تعارض أو جلسة نشطة — الاتنين صح.
       expect(outcomes.filter((o) => o === "greeted")).toHaveLength(1);
+      // ومن ب-4: الخاسر اللي وصل الجلسة وهي browsing بيرجع "browsing".
       expect(
         outcomes.filter(
-          (o) => o === "duplicate_ignored" || o === "active_session",
+          (o) =>
+            o === "duplicate_ignored" ||
+            o === "active_session" ||
+            o === "browsing",
         ),
       ).toHaveLength(1);
     } finally {
@@ -628,7 +671,7 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     }
 
     expect(await sessionsOf(restaurantId)).toHaveLength(1);
-    expect(replies.forRestaurant(restaurantId)).toHaveLength(1);
+    expect(welcomesFor(restaurantId)).toBe(1);
   });
 });
 
@@ -646,7 +689,7 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
     const restaurantId = await createRestaurant({ phoneNumberId: pid });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from };
+    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
 
     expect(
       await db.runInTenant(restaurantId, (tx) =>
@@ -765,6 +808,7 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
         restaurantId: ammanId,
         phoneNumberId: ammanPid,
         from: nextCustomer(),
+        body: GREETING,
       }),
     );
     const utcOutcome = await db.runInTenant(utcId, (tx) =>
@@ -772,6 +816,7 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
         restaurantId: utcId,
         phoneNumberId: utcPid,
         from: nextCustomer(),
+        body: GREETING,
       }),
     );
 
@@ -790,7 +835,7 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
     });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from };
+    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
 
     // الاثنين 01:00 بعمّان = الأحد 22:00 UTC. ذيل نافذة الأحد.
     const onePastMidnight = new ConversationService(
@@ -880,6 +925,7 @@ describe("سقف نص واتساب", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
 
@@ -903,7 +949,7 @@ describe("سقف نص واتساب", () => {
       })),
     );
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from };
+    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
 
     expect(
       await db.runInTenant(restaurantId, (tx) =>
@@ -1071,6 +1117,8 @@ describe("قيود النصوص اللي بتوصل الزبون", () => {
     MENU_HEADER_AR,
     MENU_COMMANDS_TAIL_AR,
     QTY_OVER_CAP_AR,
+    // ب-4: كل قوالب السلّة. قالب جديد بيدخل القائمة بـdomain.ts، فبيوصل هون.
+    ...CART_TEXT_TEMPLATES_AR,
   ];
 
   it("أرقام غربية فقط — ولا رقم عربي-هندي بأي نص", () => {
@@ -1195,6 +1243,7 @@ describe("ب-2 · menu_map وذيل الأوامر", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
     const sessions = await sessionsOf(restaurantId);
@@ -1360,6 +1409,7 @@ describe("ب-2 · menu_map وذيل الأوامر", () => {
         restaurantId,
         phoneNumberId: pid,
         from,
+        body: GREETING,
       }),
     );
 

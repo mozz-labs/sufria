@@ -102,15 +102,27 @@ export async function readSessionData(
   return { ...EMPTY_SESSION_DATA };
 }
 
-/** بتكتب الشكل كاملا. ما بتقفل — المفروض `readSessionData` قفلت قبلها. */
+/**
+ * بتكتب الشكل كاملا. ما بتقفل — المفروض `readSessionData` قفلت قبلها.
+ *
+ * `touchedAt` بيحدّث `last_message_at` **بنفس الكتابة**. مسار التصفّح بيمرّره
+ * بدل تحديث منفصل قبل القراءة: أي `UPDATE` على صف الجلسة قبل
+ * `readSessionData` بياخد قفل الصف **بالصدفة**، فبيسلسل الرسائل المتزامنة
+ * بدل `FOR UPDATE` — والاختبار اللي بيشيل `FOR UPDATE` بيضل أخضر لسبب غلط.
+ */
 export async function writeSessionData(
   tx: TenantTx,
   sessionId: string,
   data: SessionData,
+  touchedAt?: Date,
 ): Promise<void> {
   await tx
     .update(conversationSessions)
-    .set({ context: data })
+    .set(
+      touchedAt === undefined
+        ? { context: data }
+        : { context: data, lastMessageAt: touchedAt },
+    )
     .where(eq(conversationSessions.id, sessionId));
 }
 

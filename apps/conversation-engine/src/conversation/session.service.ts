@@ -15,14 +15,17 @@ import {
   legacyTimezoneKey,
 } from "../restaurant/business-hours.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
+import { handleBrowsingMessage } from "./browsing.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 
 /**
- * الشريحة الأولى من المحادثة: بوابة ساعات الدوام، فتح الجلسة، وأول رد.
+ * المحادثة: بوابة ساعات الدوام، فتح الجلسة، أول رد — والتصفّح والسلّة (ب-4).
  *
- * ⛔ حدود الشريحة، وكلها مقصودة: ولا سلة، ولا عنوان، ولا دفع، ولا إنشاء طلب.
- *    رسالة من زبون عنده جلسة نشطة بتنخزّن وبيتحدّث `last_message_at` وبس —
- *    آلة الحالات اللي بتقرا محتوى الرسالة شريحة جاية.
+ * جلسة بحالة `browsing` بتروح لـ`browsing.ts`: إضافة، عرض، حذف، «منيو»،
+ * والعدّاد. باقي الحالات (`cart_review` وما بعدها) لسا بتتحدّث
+ * `last_message_at` وبس — مهام جاية.
+ *
+ * ⛔ ولا عنوان، ولا دفع، ولا إنشاء طلب. و«تم» ب-5.
  */
 
 /** الحالات اللي معناها "الجلسة خلصت". نفس تعريف 0002 و0007 بالضبط. */
@@ -33,7 +36,9 @@ export type ConversationOutcome =
   | "greeted"
   /** المطعم مغلق: رسالة الإغلاق انبعثت، وولا جلسة انفتحت. */
   | "closed"
-  /** جلسة نشطة موجودة أصلا. انخزنت الرسالة وبس — آلة الحالات مش هون. */
+  /** جلسة بحالة `browsing`: الرسالة انعالجت بـ`browsing.ts`. */
+  | "browsing"
+  /** جلسة نشطة بحالة ما إلها معالج بعد. انخزنت الرسالة وبس. */
   | "active_session"
   /** خسرنا سباق CAS: حدا تاني رحّب. تجاهل صامت. */
   | "duplicate_ignored"
@@ -45,6 +50,14 @@ export interface ConversationContext {
   phoneNumberId: string;
   /** رقم الزبون كما وصل من ميتا. */
   from: string;
+  /**
+   * نص الرسالة، أو `null` لصورة/صوت/موقع.
+   *
+   * 🔴 إجباري مش اختياري. حقل اختياري بينساه المستدعي بصمت، فكل رسالة
+   *    تصفّح بتصير «ما انفهم منها شي» — والعدّاد بيوصّل الزبون لرسالة
+   *    الاستسلام وهو عم يكتب أرقاما صحيحة.
+   */
+  body: string | null;
 }
 
 export class ConversationService {
@@ -82,6 +95,20 @@ export class ConversationService {
     // ---------------------------------------------------------------------
     const existing = await this.findActiveSession(tx, ctx.from);
     if (existing !== null) {
+      if (existing.state === "browsing") {
+        // 🔴 ولا `UPDATE` على صف الجلسة قبل هاد النداء — أول قفل عليه لازم
+        //    يكون `FOR UPDATE` جوّا `handleBrowsingMessage`. شوف تعليقها.
+        await handleBrowsingMessage(tx, this.sender, {
+          sessionId: existing.id,
+          restaurantId: ctx.restaurantId,
+          phoneNumberId: ctx.phoneNumberId,
+          to: ctx.from,
+          body: ctx.body,
+          contactPhone: restaurant.contactPhone,
+          now: this.now(),
+        });
+        return "browsing";
+      }
       await tx
         .update(conversationSessions)
         .set({ lastMessageAt: this.now() })
@@ -202,7 +229,12 @@ export class ConversationService {
   private async readRestaurant(
     tx: TenantTx,
     restaurantId: string,
-  ): Promise<{ name: string; businessHours: unknown; timezone: string }> {
+  ): Promise<{
+    name: string;
+    businessHours: unknown;
+    timezone: string;
+    contactPhone: string | null;
+  }> {
     // 🔴 `resolve_restaurant_by_phone_id` بترجّع uuid وبس، فالاسم وساعات الدوام
     //    والمنطقة الزمنية بدهم قراءة. الشرط على المعرّف مش هو اللي بيعزل — سياسة tenant_isolation
     //    بـ0003 بتعزل. موجود عشان الفشل يكون صريح لو السياق ما انضبط.
@@ -211,6 +243,7 @@ export class ConversationService {
         name: restaurants.name,
         businessHours: restaurants.businessHours,
         timezone: restaurants.timezone,
+        contactPhone: restaurants.contactPhone,
       })
       .from(restaurants)
       .where(eq(restaurants.id, restaurantId))

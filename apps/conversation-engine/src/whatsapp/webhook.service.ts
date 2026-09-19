@@ -183,6 +183,7 @@ export class WebhookService {
           restaurantId,
           phoneNumberId: message.phoneNumberId,
           from: message.from,
+          body: message.body,
         });
         logger.debug(
           { restaurantId, waMessageId: message.waMessageId, conversation },
