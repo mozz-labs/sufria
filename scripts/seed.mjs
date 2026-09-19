@@ -24,6 +24,12 @@ if (
   console.error("✗ فشل زرع كلمات سر الموظفين");
   process.exit(1);
 }
+// رقم بشري لرسالة الاستسلام — مطعم أ وحده، عشان الفرعين موجودين بالتطوير.
+// التفاصيل بأول db/seed/dev-contact-phone.sql
+if (psql({ file: "db/seed/dev-contact-phone.sql", quiet: true }).status !== 0) {
+  console.error("✗ فشل زرع رقم التواصل");
+  process.exit(1);
+}
 process.exit(
   r.status === 0
     ? (console.log("✓ بيانات الاختبار + كلمات سر الأدوار انزرعت"), 0)

@@ -116,6 +116,10 @@ export const restaurants = pgTable("restaurants", {
   timezone: text("timezone").notNull().default("Asia/Amman"),
   businessHours: jsonb("business_hours").notNull().default({}),
   whatsappNumber: text("whatsapp_number"),
+  // 0009 — the human number the handoff message gives a stuck customer.
+  // NULL by decision means the handoff sends nothing. Not whatsappNumber:
+  // that is the number the customer is already messaging.
+  contactPhone: text("contact_phone"),
   whatsappPhoneId: text("whatsapp_phone_id").unique(),
   whatsappVerificationStatus: waVerificationStatus(
     "whatsapp_verification_status",
