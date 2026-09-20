@@ -163,9 +163,15 @@ RLS.
 - `@sufria/conversation-engine` dedupes, routes, stores, applies the
   business-hours gate, opens a session, sends the first reply, and handles the
   `browsing` state: add, show, remove (`شيل`), menu resend, the unparsed counter
-  and the handoff (`conversation/browsing.ts`, cart brief §14). «تم» and the
-  move to `cart_review` are B-5. Sessions in any later state still only refresh
-  `last_message_at`. No address, no payment, no order creation.
+  and the handoff (`conversation/browsing.ts`, cart brief §14), plus «تم» and
+  the atomic move to `cart_review` (B-5). Writing a new `menu_map` re-checks
+  every cart line's availability live and drops what is gone, telling the
+  customer in a message of its own after the menu — **the criterion is
+  `is_available`, never absence from `menu_map`**, which is authority over
+  numbering alone (cart brief §16). Sessions in any later state still only
+  refresh `last_message_at`. No address, no payment, no order creation.
+  Order creation must re-check availability again, inside its own transaction
+  (§16.6) — a cart can sit for minutes, and «منيو» may never come twice.
 - **`business_hours` has no schema in the database — its contract is
   `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
   nothing ever wrote a shape into it; the shape is still defined by
