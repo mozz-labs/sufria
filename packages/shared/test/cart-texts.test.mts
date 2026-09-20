@@ -19,6 +19,7 @@ import {
   handoffMessageAr,
   itemNotInCartAr,
   itemsAddedLinesAr,
+  itemsRemovedUnavailableLineAr,
   itemsUnavailableLineAr,
   nothingUnderstoodAr,
   overCapLineAr,
@@ -123,6 +124,23 @@ test("الصنف غير المتوفر: مفرد وجمع حرفيا، وسطر 
   assert.equal(
     itemsUnavailableLineAr(["كبسة لحم", "منسف"]),
     "الأصناف كبسة لحم، منسف غير متوفرة الآن.",
+  );
+});
+
+test("المحذوف من السلّة: مفرد وجمع حرفيا، ومتميّز عن رفض الإضافة", () => {
+  assert.equal(
+    itemsRemovedUnavailableLineAr(["حمص"]),
+    "الصنف حمص لم يعد متوفرا وحُذف من سلّتك.",
+  );
+  assert.equal(
+    itemsRemovedUnavailableLineAr(["حمص", "متبل"]),
+    "الأصناف حمص، متبل لم تعد متوفرة وحُذفت من سلّتك.",
+  );
+  // 🔴 نصّان مختلفان لحدثين مختلفين: ذاك بيرفض إضافة طلبها الزبون،
+  //    وهاد بيخبّر عن حذف صار بلا ما يطلب. توحيدهم بيخفي نقص السلّة.
+  assert.notEqual(
+    itemsRemovedUnavailableLineAr(["حمص"]),
+    itemsUnavailableLineAr(["حمص"]),
   );
 });
 

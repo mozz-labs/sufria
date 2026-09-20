@@ -308,6 +308,17 @@ export const ITEM_UNAVAILABLE_AR = `الصنف ${ITEM_NAME_SLOT} غير متوف
  *    وبدونه كان سطران لصنفين، وهي الفجوة #1 المسجّلة بـ§14.8.
  */
 export const ITEMS_UNAVAILABLE_AR = `الأصناف ${VALUES_SLOT} غير متوفرة الآن.`;
+/**
+ * صنف كان **بالسلّة** وما عاد متوفرا لحظة كتابة خريطة جديدة (§16).
+ *
+ * 🔴 مش `ITEM_UNAVAILABLE_AR`، والفرق مقصود: هاداك **بيرفض إضافة**
+ *    طلبها الزبون هلأ، وهاد **بيخبّر عن حذف صار** بلا ما يطلب الزبون إشي.
+ *    خلطهم بيخلّي الزبون يقرأ «غير متوفر الآن» وما يعرف إن سلّته نقصت.
+ */
+export const ITEM_REMOVED_UNAVAILABLE_AR = `الصنف ${ITEM_NAME_SLOT} لم يعد متوفرا وحُذف من سلّتك.`;
+/** جمعه — **سطر واحد جوّا نفس الرسالة**، لا رسالة لكل صنف. */
+export const ITEMS_REMOVED_UNAVAILABLE_AR = `الأصناف ${VALUES_SLOT} لم تعد متوفرة وحُذفت من سلّتك.`;
+
 /** «شيل» على صنف بالمنيو مش بالسلّة (§14.3). سطر لحاله — السلّة ما تغيّرت. */
 export const ITEM_NOT_IN_CART_AR = `الصنف ${ITEM_NAME_SLOT} غير موجود في سلّتك.`;
 
@@ -358,6 +369,8 @@ export const CART_TEXT_TEMPLATES_AR: readonly string[] = [
   NOTHING_UNDERSTOOD_AR,
   ITEM_UNAVAILABLE_AR,
   ITEMS_UNAVAILABLE_AR,
+  ITEM_REMOVED_UNAVAILABLE_AR,
+  ITEMS_REMOVED_UNAVAILABLE_AR,
   ITEM_NOT_IN_CART_AR,
   CART_HEADER_AR,
   CART_LINE_AR,
@@ -463,6 +476,22 @@ export function itemsUnavailableLineAr(names: readonly string[]): string {
   return names.length === 1
     ? fillSlots(ITEM_UNAVAILABLE_AR, { [ITEM_NAME_SLOT]: names[0]! })
     : fillSlots(ITEMS_UNAVAILABLE_AR, { [VALUES_SLOT]: joinValues(names) });
+}
+
+/**
+ * سطر واحد لكل اللي انحذفوا من السلّة — مفرد أو جمع (§16).
+ *
+ * الأسماء من **snapshot سطر السلّة**، لا من صف الصنف: الصف قد يكون
+ * انمسح كليا، والاسم المحفوظ هو اللي شافه الزبون وقت الإضافة.
+ */
+export function itemsRemovedUnavailableLineAr(
+  names: readonly string[],
+): string {
+  return names.length === 1
+    ? fillSlots(ITEM_REMOVED_UNAVAILABLE_AR, { [ITEM_NAME_SLOT]: names[0]! })
+    : fillSlots(ITEMS_REMOVED_UNAVAILABLE_AR, {
+        [VALUES_SLOT]: joinValues(names),
+      });
 }
 
 export function itemNotInCartAr(name: string): string {

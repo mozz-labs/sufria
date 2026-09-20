@@ -105,6 +105,11 @@ export async function readSessionData(
 /**
  * بتكتب الشكل كاملا. ما بتقفل — المفروض `readSessionData` قفلت قبلها.
  *
+ * 🔴 **اقرأ (مقفولا) · عدّل · اكتب — بمعاملة الرسالة نفسها.** أي مسار
+ *    بيقرأ بلا `readSessionData` أو بيكتب بمعاملة تانية بيفتح سباق «الإضافة
+ *    الأولى بتختفي». القفل بيتحرّر بنهاية المعاملة، فقراءة بمعاملة
+ *    وكتابة بغيرها ما بتحمي ولا إشي.
+ *
  * `touchedAt` بيحدّث `last_message_at` **بنفس الكتابة**. مسار التصفّح بيمرّره
  * بدل تحديث منفصل قبل القراءة: أي `UPDATE` على صف الجلسة قبل
  * `readSessionData` بياخد قفل الصف **بالصدفة**، فبيسلسل الرسائل المتزامنة
@@ -124,20 +129,4 @@ export async function writeSessionData(
         : { context: data, lastMessageAt: touchedAt },
     )
     .where(eq(conversationSessions.id, sessionId));
-}
-
-/**
- * اقرأ (مقفولا) · عدّل · اكتب — **بمعاملة الرسالة نفسها**.
- *
- * 🔴 هاد هو النمط الوحيد لتعديل `context`. ب-4 بترثه كما هو: أي مسار بيقرأ
- *    بلا قفل أو بيكتب بمعاملة تانية بيفتح سباق «الإضافة الأولى بتختفي».
- */
-export async function mutateSessionData(
-  tx: TenantTx,
-  sessionId: string,
-  mutate: (current: SessionData) => SessionData,
-): Promise<SessionData> {
-  const next = mutate(await readSessionData(tx, sessionId));
-  await writeSessionData(tx, sessionId, next);
-  return next;
 }

@@ -36,6 +36,8 @@ import { env } from "../src/config/env.js";
 import { ConversationService } from "../src/conversation/session.service.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
+import { pruneUnavailable } from "../src/conversation/menu-delivery.js";
+import type { Catalog } from "../src/restaurant/catalog.js";
 import { RecordingWhatsAppSender } from "../src/whatsapp/sender.js";
 import { WebhookService } from "../src/whatsapp/webhook.service.js";
 
@@ -424,6 +426,160 @@ describe("التوفّر — حيّ لحظة الإضافة", () => {
     );
     await s.say("2");
     expect(s.last()).toBe("الصنف متبل غير متوفر الآن.");
+  });
+});
+
+// ===========================================================================
+// التوفّر عند كتابة خريطة جديدة — §16
+//
+// 🔴 الحذف بينطلق من **فحص توفّر حيّ**، لا من الغياب عن `menu_map`. الخريطة
+//    سلطة على الترقيم وحده. اليوم الاتنين بيتطابقوا بالصدفة (فلتر القائمة هو
+//    نفس فلتر الكتالوج)، فالتمييز بينهم بينفحص على `pruneUnavailable` الصافية
+//    تحت — الحالة اللي بتفرّقهم ما بتقدر تتكوّن من بيانات اليوم.
+// ===========================================================================
+describe("التوفّر عند كتابة خريطة جديدة", () => {
+  it("🔴 «منيو»: الصنف اللي ما عاد متوفرا بينشال، والسطر برسالة لحالها بعد المنيو", async () => {
+    const s = await shop({ label: "prune-one", items: TWO });
+    await s.say("1");
+    expect((await cartOf(s)).map((l) => l.name)).toEqual(["حمص"]);
+
+    await audit.query(
+      `UPDATE menu_items SET is_available = false WHERE id = $1`,
+      [s.ids["حمص"]],
+    );
+    await s.say("منيو");
+
+    const sent = replies.forRestaurant(s.restaurantId);
+    // رسالتان: المنيو، ثم الإشعار. الترتيب مقصود — الإشعار آخر شي بيشوفه.
+    expect(sent.at(-2)?.body.startsWith(MENU_HEADER_AR)).toBe(true);
+    expect(sent.at(-1)?.body).toBe("الصنف حمص لم يعد متوفرا وحُذف من سلّتك.");
+    expect(await cartOf(s)).toEqual([]);
+
+    // 🔴 **مش نص «غير متوفر الآن»** — هاداك بيرفض إضافة، وهاد بيخبر عن حذف.
+    expect(sent.at(-1)?.body).not.toBe("الصنف حمص غير متوفر الآن.");
+  });
+
+  it("🔴 صنفان انشالوا: سطر واحد بصيغة الجمع، برسالة وحدة", async () => {
+    const s = await shop({ label: "prune-two", items: TWO });
+    await s.say("1 و2");
+    expect(await cartOf(s)).toHaveLength(2);
+
+    await audit.query(
+      `UPDATE menu_items SET is_available = false WHERE restaurant_id = $1`,
+      [s.restaurantId],
+    );
+    await s.say("منيو");
+
+    const sent = replies.forRestaurant(s.restaurantId);
+    expect(sent.at(-1)?.body).toBe(
+      "الأصناف حمص، متبل لم تعد متوفرة وحُذفت من سلّتك.",
+    );
+    expect(await cartOf(s)).toEqual([]);
+  });
+
+  it("🔴 صف انمسح كليا: بينشال كمان، والاسم من snapshot السطر", async () => {
+    // الصف راح فما في اسم بالقاعدة نقرأه — والاسم المحفوظ هو اللي شافه الزبون.
+    const s = await shop({ label: "prune-deleted", items: TWO });
+    await s.say("1");
+    await audit.query(`DELETE FROM menu_items WHERE id = $1`, [s.ids["حمص"]]);
+    await s.say("منيو");
+
+    expect(replies.forRestaurant(s.restaurantId).at(-1)?.body).toBe(
+      "الصنف حمص لم يعد متوفرا وحُذف من سلّتك.",
+    );
+    expect(await cartOf(s)).toEqual([]);
+  });
+
+  it("🔴 ولا صنف انشال = ولا رسالة زيادة", async () => {
+    // بلا هالضابط، إشعار بيتبعت على كل «منيو» وما حدا بيلاحظ.
+    const s = await shop({ label: "prune-none", items: TWO });
+    await s.say("1");
+    const before = replies.forRestaurant(s.restaurantId).length;
+    await s.say("منيو");
+    const sent = replies.forRestaurant(s.restaurantId);
+    expect(sent).toHaveLength(before + 1);
+    expect(sent.at(-1)?.body.startsWith(MENU_HEADER_AR)).toBe(true);
+    expect((await cartOf(s)).map((l) => l.name)).toEqual(["حمص"]);
+  });
+
+  it("الإشعار بينعدّ بـoutbound_count زي أي رسالة صادرة", async () => {
+    const s = await shop({ label: "prune-count", items: TWO });
+    await s.say("1"); // ترحيب+منيو = 1، وسطر الإضافة = 2
+    expect((await s.context())["outbound_count"]).toBe(2);
+    await audit.query(
+      `UPDATE menu_items SET is_available = false WHERE id = $1`,
+      [s.ids["حمص"]],
+    );
+    await s.say("منيو"); // المنيو = 3، والإشعار = 4
+    expect((await s.context())["outbound_count"]).toBe(4);
+  });
+});
+
+// ===========================================================================
+// `pruneUnavailable` — صافية، بلا قاعدة.
+//
+// 🔴 هون وحده بتنفحص القاعدة اللي المهمة كلها عنها: **المعيار هو التوفّر
+//    الحيّ، لا العضوية في `menu_map`.** اليوم ما في بيانات بتخلّي صنفا متوفرا
+//    وغائبا عن الخريطة — الفلتران واحد — فالحالة بتتكوّن هون باليد. ولو بكرا
+//    أخفى المنيو صنفا لسبب تاني (برّا ساعاته، حد أسطر، فلتر فئة)، هالاختبار
+//    هو اللي بيوقع لو حدا كتب «الغائب عن الخريطة يُحذف».
+// ===========================================================================
+describe("pruneUnavailable", () => {
+  const line = (id: string, name: string) => ({
+    item_id: id,
+    name,
+    unit_price_minor: 250,
+    qty: 1,
+  });
+  const catalogOf = (
+    entries: [string, { name: string; available: boolean }][],
+  ): Catalog =>
+    new Map(
+      entries.map(([id, e]) => [
+        id,
+        { name: e.name, unitPriceMinor: 250, available: e.available },
+      ]),
+    );
+
+  it("🔴 متوفر وغائب عن الخريطة الجديدة: **بيضل بالسلّة**", async () => {
+    const id = randomUUID();
+    const pruned = pruneUnavailable(
+      [line(id, "حمص")],
+      catalogOf([[id, { name: "حمص", available: true }]]),
+    );
+    // الدالة ما بتاخد `menu_map` أصلا — والخريطة الجاية ما فيها هالصنف.
+    expect(pruned.removed).toEqual([]);
+    expect(pruned.cart.map((l) => l.name)).toEqual(["حمص"]);
+  });
+
+  it("غير متوفر: بينشال، والاسم من السطر", async () => {
+    const id = randomUUID();
+    const pruned = pruneUnavailable(
+      [line(id, "حمص")],
+      catalogOf([[id, { name: "اسم تاني بالقاعدة", available: false }]]),
+    );
+    expect(pruned.cart).toEqual([]);
+    expect(pruned.removed).toEqual(["حمص"]);
+  });
+
+  it("مش بالكتالوج إطلاقا (صف ممسوح): بينشال", async () => {
+    const pruned = pruneUnavailable([line(randomUUID(), "حمص")], catalogOf([]));
+    expect(pruned.cart).toEqual([]);
+    expect(pruned.removed).toEqual(["حمص"]);
+  });
+
+  it("🔴 الترتيب محفوظ، والمتوفر ما بينمسّ", async () => {
+    const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+    const pruned = pruneUnavailable(
+      [line(a, "حمص"), line(b, "متبل"), line(c, "فتوش")],
+      catalogOf([
+        [a, { name: "حمص", available: false }],
+        [b, { name: "متبل", available: true }],
+        [c, { name: "فتوش", available: false }],
+      ]),
+    );
+    expect(pruned.cart.map((l) => l.name)).toEqual(["متبل"]);
+    expect(pruned.removed).toEqual(["حمص", "فتوش"]);
   });
 });
 
