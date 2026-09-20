@@ -30,6 +30,12 @@ if (psql({ file: "db/seed/dev-contact-phone.sql", quiet: true }).status !== 0) {
   console.error("✗ فشل زرع رقم التواصل");
   process.exit(1);
 }
+// مطعم بيوصّل وآخر لأ — بدونه فرع التوصيل كله ما بينوصل له بالتطوير.
+// التفاصيل بأول db/seed/dev-delivery.sql
+if (psql({ file: "db/seed/dev-delivery.sql", quiet: true }).status !== 0) {
+  console.error("✗ فشل زرع إعدادات التوصيل");
+  process.exit(1);
+}
 process.exit(
   r.status === 0
     ? (console.log("✓ بيانات الاختبار + كلمات سر الأدوار انزرعت"), 0)

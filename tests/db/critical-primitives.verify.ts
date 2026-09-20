@@ -1,6 +1,10 @@
 // Empirical check that the four primitives in critical-primitives.ts actually
 // compile and execute against real PostgreSQL through Drizzle — rather than
 // being taken on faith from the docs.
+//
+// Section 6 extends the same discipline to the CHECK constraints added in
+// 0010: they are the safety net order creation leans on (task C brief §8), and
+// a constraint nobody has watched reject anything is a comment, not a net.
 import { drizzle } from "drizzle-orm/node-postgres";
 import {
   pgTable,
@@ -312,6 +316,132 @@ async function main() {
     `rows=${afterTx.length}`,
   );
   await db.execute(sql`RESET ROLE`);
+
+  // --- 6. 0010 order constraints ------------------------------------------
+  // The order-creation transaction (task C brief §8) writes orders,
+  // order_items and order_status_history together and leans on these three
+  // CHECKs to fail the whole thing rather than let a wrong order reach the
+  // kitchen. A constraint nobody has ever seen reject anything is a comment.
+  //
+  // Each case violates exactly ONE constraint: the other two are satisfied on
+  // purpose, so a passing check names the constraint that actually fired
+  // rather than whichever one happened to be evaluated first.
+  const CID = "c0000000-0000-4000-8000-00000000000a";
+  const insertOrder = (cols: string, vals: string) =>
+    sql.raw(`
+    INSERT INTO orders (id, restaurant_id, customer_id, payment_method,
+                        status, payment_status, ${cols})
+    VALUES (gen_random_uuid(), '${RID}', '${CID}', 'cash',
+            'pending_acceptance', 'pending_cash', ${vals})`);
+
+  // Asserts on the pg error's own `constraint` field, which drizzle keeps on
+  // `cause`. Not a substring search of the message: that text also carries the
+  // failed statement, so a query mentioning the name would pass without the
+  // constraint ever firing.
+  const rejects = async (label: string, constraint: string, stmt: unknown) => {
+    let fired: string | undefined;
+    let inserted = false;
+    try {
+      await db.transaction(async (tx) => {
+        await withTenant(tx);
+        await tx.execute(stmt as never);
+      });
+      inserted = true;
+    } catch (e) {
+      fired = (e as { cause?: { constraint?: string } }).cause?.constraint;
+    }
+    check(
+      label,
+      fired === constraint,
+      inserted
+        ? "INSERT SUCCEEDED — the constraint did not fire"
+        : fired === constraint
+          ? ""
+          : `fired ${fired ?? "nothing nameable"} instead`,
+    );
+  };
+
+  await rejects(
+    "6. orders_total_is_subtotal_plus_fee: total that is not subtotal + fee",
+    "orders_total_is_subtotal_plus_fee",
+    // pickup, fee 0, address NULL — the other two constraints are satisfied.
+    insertOrder(
+      "fulfillment_type, subtotal, delivery_fee, total",
+      "'pickup', 5.00, 0, 6.00",
+    ),
+  );
+
+  await rejects(
+    "6. orders_pickup_has_no_delivery_data: pickup carrying a delivery fee",
+    "orders_pickup_has_no_delivery_data",
+    // 5.00 + 1.50 = 6.50, so the total constraint holds and only this fires.
+    insertOrder(
+      "fulfillment_type, subtotal, delivery_fee, total",
+      "'pickup', 5.00, 1.50, 6.50",
+    ),
+  );
+
+  await rejects(
+    "6. orders_pickup_has_no_delivery_data: pickup carrying an address",
+    "orders_pickup_has_no_delivery_data",
+    insertOrder(
+      "fulfillment_type, subtotal, delivery_fee, total, delivery_address",
+      "'pickup', 5.00, 0, 5.00, 'الشميساني، شارع عبد الحميد شرف، بناية 12'",
+    ),
+  );
+
+  await rejects(
+    "6. orders_delivery_has_address: delivery with no address at all",
+    "orders_delivery_has_address",
+    insertOrder(
+      "fulfillment_type, subtotal, delivery_fee, total, delivery_address",
+      "'delivery', 5.00, 1.50, 6.50, NULL",
+    ),
+  );
+
+  await rejects(
+    "6. orders_delivery_has_address: address longer than 300 characters",
+    "orders_delivery_has_address",
+    // 301 — the bound the engine enforces before it ever gets here (§3).
+    insertOrder(
+      "fulfillment_type, subtotal, delivery_fee, total, delivery_address",
+      "'delivery', 5.00, 1.50, 6.50, repeat('ا', 301)",
+    ),
+  );
+
+  await rejects(
+    "6. orders_delivery_has_address: whitespace-only address",
+    "orders_delivery_has_address",
+    // btrim is why this fails: char_length alone would call it 5 characters.
+    insertOrder(
+      "fulfillment_type, subtotal, delivery_fee, total, delivery_address",
+      "'delivery', 5.00, 1.50, 6.50, '     '",
+    ),
+  );
+
+  // 🔴 The control. Without it, CHECK (false) would pass all six above and
+  //    no order could ever be created — the constraints must still accept a
+  //    correct delivery order, fee and address and arithmetic together.
+  let accepted = false;
+  await db
+    .transaction(async (tx) => {
+      await withTenant(tx);
+      await tx.execute(
+        insertOrder(
+          "fulfillment_type, subtotal, delivery_fee, total, delivery_address",
+          "'delivery', 5.00, 1.50, 6.50, 'الشميساني، شارع عبد الحميد شرف، بناية 12'",
+        ) as never,
+      );
+      accepted = true;
+      // Roll back: this file leaves the fixture exactly as it found it.
+      tx.rollback();
+    })
+    .catch(() => {});
+  check(
+    "6. control: a correct delivery order is still accepted",
+    accepted,
+    accepted ? "" : "the three constraints reject everything",
+  );
 
   console.log(
     `\n${failures === 0 ? "ALL PRIMITIVES VERIFIED" : failures + " FAILED"}`,

@@ -133,6 +133,12 @@ export const restaurants = pgTable("restaurants", {
     .notNull()
     .default(true),
   offersDelivery: boolean("offers_delivery").notNull().default(false),
+  // 0010 — what this restaurant currently charges to deliver. offersDelivery is
+  // the capability, this is its price, and orders.deliveryFee is the promise the
+  // customer was actually shown. 0 is a real value: delivery, free.
+  deliveryFee: numeric("delivery_fee", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
   assumedCommissionRate: numeric("assumed_commission_rate", {
     precision: 5,
     scale: 4,
@@ -260,7 +266,17 @@ export const orders = pgTable("orders", {
   cancellationReason: text("cancellation_reason"),
   notified: boolean("notified").notNull().default(false),
   subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
+  // 0010 — snapshotted from restaurants.delivery_fee when the customer chose
+  // delivery, so a fee raised mid-conversation never changes an order already
+  // summarised. Always 0 for pickup, and the database enforces that.
+  deliveryFee: numeric("delivery_fee", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
   total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+  // 0010 — the customer's own words, edges trimmed and nothing else: a driver
+  // reads this. NULL for pickup, and 1..300 characters for delivery, both by
+  // CHECK constraint.
+  deliveryAddress: text("delivery_address"),
   paymentLinkUrl: text("payment_link_url"),
   paymentGatewayRef: text("payment_gateway_ref").unique(),
   readyAt: timestamp("ready_at", { withTimezone: true }), // ADR-002 §2
