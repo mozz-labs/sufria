@@ -82,7 +82,17 @@ export const ORDER_STATUS_MESSAGE_AR = {
   /** الاستلام: أول رد بعد ما بينحفظ الطلب، قبل ما المطعم يشوفه. */
   pending_acceptance: "استلمنا طلبك — التأكيد خلال دقائق.",
   accepted: "أكّدنا طلبك.",
-  ready: "طلبك جاهز للاستلام.",
+  /**
+   * 🔴 يتفرّع حسب `fulfillment_type` (ج §2.7) — و**الشكل المتفرّع هو الحارس**:
+   *    النوع نفسه يمنع إرسال «طلبك جاهز للاستلام.» لطلب توصيل. ثابت شقيق
+   *    بجانبه كان سيسمح بذلك ويمرّ في الترجمة بلا شكوى.
+   *
+   *    و«طلبك جاهز» وحدها ممنوعة: **الرسالة لا تعيد كلمة الشارة.**
+   */
+  ready: {
+    pickup: "طلبك جاهز للاستلام.",
+    delivery: "طلبك خرج للتوصيل.",
+  },
   /** بيتفرّع حسب `cancelled_by` — مين ألغى بيغيّر الجملة، مش بس السبب. */
   cancelled: {
     restaurant: `ألغينا طلبك — ${ORDER_CANCELLATION_REASON_SLOT}.`,
@@ -350,6 +360,57 @@ export const CART_EMPTY_ON_FINISH_AR =
  */
 export const HANDOFF_AR = `للطلب مباشرة: ${RESTAURANT_PHONE_SLOT}`;
 
+// ---------------------------------------------------------------------------
+// ما بعد السلّة — طريقة الاستلام، والعنوان، والملخّص (ج §6)
+// ---------------------------------------------------------------------------
+
+/** رسوم التوصيل بالدينار، جاهزة للعرض. */
+export const FEE_SLOT = "[الرسوم]";
+/** عنوان التوصيل **كما كتبه الزبون**. يُعرض كما هو، بلا تطبيع (ج §0). */
+export const ADDRESS_SLOT = "[العنوان]";
+
+/**
+ * 🔴 كل رسالة سؤال تقول حرفيا ماذا يكتب الزبون (ج §2.3).
+ *    المحلّل صارم — «تمام خلينا نكمل» لا تطابق شيئا — و**الصرامة بلا توجيه
+ *    حلقة لا تنتهي**: الزبون يكتب، فلا يُفهم، فيُعاد عليه السؤال نفسه بلا
+ *    أي دليل على ما يُقبل. السطر التالي هو الدليل، ولهذا يتكرّر في الثلاثة.
+ */
+export const FULFILLMENT_PROMPT_AR = "اكتب «استلام» أو «توصيل».";
+
+const FULFILLMENT_QUESTION_AR = "استلام من المطعم أو توصيل؟";
+/** سؤال الاستلام حين للمطعم رسوم توصيل: الرقم يُقال **قبل** أن يختار. */
+export const FULFILLMENT_ASK_WITH_FEE_AR = `${FULFILLMENT_QUESTION_AR} رسوم التوصيل ${FEE_SLOT} د.أ.\n${FULFILLMENT_PROMPT_AR}`;
+/** ورسوم صفر: لا سطر رسوم إطلاقا، لا «0.00 د.أ» — الصفر ليس معلومة هنا. */
+export const FULFILLMENT_ASK_NO_FEE_AR = `${FULFILLMENT_QUESTION_AR}\n${FULFILLMENT_PROMPT_AR}`;
+
+/** طلب العنوان — رسالة واحدة، والثلاثة المطلوبة مسمّاة فيها. */
+export const ADDRESS_ASK_AR =
+  "اكتب عنوان التوصيل في رسالة واحدة: المنطقة والشارع ورقم البناية.";
+/** الـ300 مكتوبة بالنص، واختبار يربطها بـ`MAX_ADDRESS_LENGTH` (نمط §13.1). */
+export const ADDRESS_TOO_LONG_AR =
+  "العنوان أطول من 300 حرف. اكتبه في رسالة أقصر.";
+/** سقف العنوان — نفس الحد الذي يفرضه `orders_delivery_has_address` في 0010. */
+export const MAX_ADDRESS_LENGTH = 300;
+
+/** ذيل الملخّص، وردّ `cart_review` على أي رسالة غير مطابقة. */
+export const CONFIRM_PROMPT_AR =
+  "اكتب «أكّد» لإرسال الطلب، أو «عدّل» أو «ألغِ».";
+
+/**
+ * الإلغاء **قبل** إنشاء الطلب. الجلسة ترجع `browsing` بسلّة فارغة و`menu_map`
+ * صالحة، فالسطر الثاني مسار حقيقي: رقم الصنف يعمل فورا بلا «منيو» (ج §3).
+ */
+export const ORDER_CANCELLED_AR =
+  "ألغينا طلبك. لطلب جديد اكتب رقم الصنف أو «منيو».";
+
+export const SUMMARY_HEADER_AR = "ملخّص طلبك:";
+/** سطر الرسوم — **للتوصيل برسوم > 0 وحده** (ج §6). */
+export const SUMMARY_FEE_LINE_AR = `التوصيل — ${FEE_SLOT} د.أ`;
+export const SUMMARY_PICKUP_LINE_AR = "الاستلام من المطعم";
+export const SUMMARY_DELIVERY_LINE_AR = `التوصيل إلى: ${ADDRESS_SLOT}`;
+/** طريقة دفع واحدة في البايلوت، فلا سؤال عنها — سطر خبري يكفي (ج §2.5). */
+export const SUMMARY_PAYMENT_LINE_AR = "الدفع نقدا عند الاستلام.";
+
 /**
  * كل قوالب نصوص السلّة — للحراسة: الممنوعات، والأرقام الغربية، والنص inline،
  * والقاعدة النحوية. قالب جديد بيدخل هون، وإلا ما بتحرسه ولا بوابة.
@@ -379,6 +440,52 @@ export const CART_TEXT_TEMPLATES_AR: readonly string[] = [
   CART_EMPTY_AR,
   CART_EMPTY_ON_FINISH_AR,
   HANDOFF_AR,
+];
+
+/** قوالب ما بعد السلّة (ج §6) — تدخل نفس الحراسة، وإلا لم يحرسها شيء. */
+export const ORDER_TEXT_TEMPLATES_AR: readonly string[] = [
+  FULFILLMENT_PROMPT_AR,
+  FULFILLMENT_ASK_WITH_FEE_AR,
+  FULFILLMENT_ASK_NO_FEE_AR,
+  ADDRESS_ASK_AR,
+  ADDRESS_TOO_LONG_AR,
+  CONFIRM_PROMPT_AR,
+  ORDER_CANCELLED_AR,
+  SUMMARY_HEADER_AR,
+  SUMMARY_FEE_LINE_AR,
+  SUMMARY_PICKUP_LINE_AR,
+  SUMMARY_DELIVERY_LINE_AR,
+  SUMMARY_PAYMENT_LINE_AR,
+];
+
+/**
+ * رسائل الحالة، مسطّحة — `ORDER_STATUS_MESSAGE_AR` متداخلة، والحارس يمشي على
+ * نصوص لا على شجرة.
+ */
+export const ORDER_STATUS_TEXTS_AR: readonly string[] = [
+  ORDER_STATUS_MESSAGE_AR.pending_acceptance,
+  ORDER_STATUS_MESSAGE_AR.accepted,
+  ORDER_STATUS_MESSAGE_AR.ready.pickup,
+  ORDER_STATUS_MESSAGE_AR.ready.delivery,
+  ORDER_STATUS_MESSAGE_AR.cancelled.restaurant,
+  ORDER_STATUS_MESSAGE_AR.cancelled.customer,
+];
+
+/**
+ * **كل نص يصل الزبون**، وهو ما تمشي عليه الحراسة فعلا (ج §15.6).
+ *
+ * 🔴 §0 من بريف ج ادّعى أن القاموس المحروس يورّث «حراسات الأرقام والممنوعات».
+ *    الواقع حارسان اثنان: الأرقام العربية-الهندية، واسم الصنف ليس فاعلا.
+ *    **لا حارس للممنوعات اللهجية** — فحصها يدوي، وبوابته مهمة مستقلة بعد ج.
+ *    ولا تُقرأ هذه القائمة على أنها تحرس أكثر مما تحرس.
+ *
+ *    و`ORDER_STATUS_MESSAGE_AR` كانت خارج الحراسة كليا حتى الآن: «استلمنا
+ *    طلبك» شُحنت بلا أن يفحصها شيء.
+ */
+export const ALL_CUSTOMER_TEXTS_AR: readonly string[] = [
+  ...CART_TEXT_TEMPLATES_AR,
+  ...ORDER_TEXT_TEMPLATES_AR,
+  ...ORDER_STATUS_TEXTS_AR,
 ];
 
 // --- المال: قروش أعدادا صحيحة، والقسمة على 100 عند العرض وبس (§11.6-أ) -----
@@ -541,4 +648,94 @@ export function cartMessageAr(
 
 export function handoffMessageAr(contactPhone: string): string {
   return fillSlots(HANDOFF_AR, { [RESTAURANT_PHONE_SLOT]: contactPhone });
+}
+
+/**
+ * ما يحتاجه الملخّص من طريقة الاستلام.
+ *
+ * 🔴 العنوان هنا `string` لا `string | null`، **وهذا هو الفرق عن الشكل
+ *    المخزَّن في `SessionData`** الذي يحمل `address: string | null` لأن
+ *    الجلسة تمرّ بلحظة اختير فيها «توصيل» ولم يصل العنوان بعد (ج §4).
+ *    الملخّص لا يُعرض إلا على `fulfillment` **مكتمل** (ج §3)، فجعل النوع
+ *    يرفض الناقص يعني أن ملخّصا بلا عنوان **لا يُترجم أصلا** بدل أن يُرسَل
+ *    سطرا فيه «التوصيل إلى: » وبعده فراغ.
+ */
+export type SummaryFulfillment =
+  | { readonly type: "pickup" }
+  | {
+      readonly type: "delivery";
+      readonly feeMinor: number;
+      readonly address: string;
+    };
+
+/**
+ * رسالة `cart_review` — تحلّ محل عرض السلّة الذي كانت ب-5 ترسله (ج §6).
+ *
+ * دالة صافية: لا تقرأ قاعدة ولا ساعة. وتأخذ **مجموع السلّة** وتحسب المجموع
+ * النهائي منه ومن الرسوم — «لا تخزّن مجموعا» (ج §4)، فالرقم المعروض مشتقّ
+ * دائما من نفس المدخلين اللذين يكتبهما إنشاء الطلب.
+ *
+ * - **أعداد صحيحة بالقروش**، والقسمة على 100 عند العرض وحده عبر `formatMinor`
+ *   — المنسّق القائم، ولا منسّق ثانيا (ج §6).
+ * - **بلا ذيل «شيل»**: الأمر لا يعمل في `cart_review`، وتعليم أمر معطّل أسوأ
+ *   من عدم تعليمه (ب §15.1).
+ * - سطر الرسوم يظهر **للتوصيل برسوم > 0 وحده**: «التوصيل — 0.00 د.أ» تقول
+ *   للزبون إن هناك رسوما ثم تقول إنها صفر، وهي جملة بلا فائدة.
+ */
+export function buildOrderSummary(
+  lines: readonly CartDisplayLine[],
+  subtotalMinor: number,
+  fulfillment: SummaryFulfillment,
+): string {
+  const feeMinor = fulfillment.type === "delivery" ? fulfillment.feeMinor : 0;
+
+  return [
+    SUMMARY_HEADER_AR,
+    ...lines.map((l) =>
+      fillSlots(
+        l.menuNumber === null ? CART_LINE_UNNUMBERED_AR : CART_LINE_AR,
+        {
+          [MENU_NUMBER_SLOT]: String(l.menuNumber),
+          [ITEM_NAME_SLOT]: l.name,
+          [QUANTITY_SLOT]: String(l.qty),
+          [LINE_PRICE_SLOT]: formatMinor(l.lineTotalMinor),
+        },
+      ),
+    ),
+    ...(feeMinor > 0
+      ? [fillSlots(SUMMARY_FEE_LINE_AR, { [FEE_SLOT]: formatMinor(feeMinor) })]
+      : []),
+    fillSlots(CART_TOTAL_LINE_AR, {
+      [TOTAL_SLOT]: formatMinor(subtotalMinor + feeMinor),
+    }),
+    fulfillment.type === "pickup"
+      ? SUMMARY_PICKUP_LINE_AR
+      : fillSlots(SUMMARY_DELIVERY_LINE_AR, {
+          [ADDRESS_SLOT]: fulfillment.address,
+        }),
+    SUMMARY_PAYMENT_LINE_AR,
+    CONFIRM_PROMPT_AR,
+  ].join("\n");
+}
+
+/** سؤال «استلام أم توصيل؟» — الرسوم تُقال قبل الاختيار، إن كانت (ج §6). */
+export function fulfillmentAskAr(feeMinor: number): string {
+  return feeMinor > 0
+    ? fillSlots(FULFILLMENT_ASK_WITH_FEE_AR, {
+        [FEE_SLOT]: formatMinor(feeMinor),
+      })
+    : FULFILLMENT_ASK_NO_FEE_AR;
+}
+
+/**
+ * رسالة حالة `ready` حسب طريقة الاستلام (ج §2.7).
+ *
+ * 🔴 **قاعدة تشغيلية تسبق هذا الكود:** في طلب التوصيل، تحويل الطلب إلى
+ *    «جاهز» يعني **«سلّمناه للسائق»**، لا «خلص الطبخ». بدونها الرسالة تكذب
+ *    على الزبون، ولا كود يستطيع كشف ذلك.
+ *
+ * الإرسال نفسه مهمة المُراقِب (FR-11) وهي خارج ج — هذا الثابت وحده.
+ */
+export function readyMessageAr(fulfillmentType: "pickup" | "delivery"): string {
+  return ORDER_STATUS_MESSAGE_AR.ready[fulfillmentType];
 }

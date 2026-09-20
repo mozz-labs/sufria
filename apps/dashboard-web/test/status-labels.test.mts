@@ -24,6 +24,7 @@ import {
   ORDER_STATUSES,
   ORDER_STATUS_LABEL_AR,
   ORDER_STATUS_MESSAGE_AR,
+  readyMessageAr,
   ORDER_CANCELLATION_REASON_SLOT,
   PAYMENT_STATUS_LABEL_AR,
 } from "@sufria/shared";
@@ -84,7 +85,8 @@ test("رسائل الزبون مش نفس نصوص الشارات", () => {
   const messages = [
     ORDER_STATUS_MESSAGE_AR.pending_acceptance,
     ORDER_STATUS_MESSAGE_AR.accepted,
-    ORDER_STATUS_MESSAGE_AR.ready,
+    ORDER_STATUS_MESSAGE_AR.ready.pickup,
+    ORDER_STATUS_MESSAGE_AR.ready.delivery,
     ORDER_STATUS_MESSAGE_AR.cancelled.restaurant,
     ORDER_STATUS_MESSAGE_AR.cancelled.customer,
   ];
@@ -103,7 +105,17 @@ test("نص رسائل الزبون هو النص المعتمد", () => {
     "استلمنا طلبك — التأكيد خلال دقائق.",
   );
   assert.equal(ORDER_STATUS_MESSAGE_AR.accepted, "أكّدنا طلبك.");
-  assert.equal(ORDER_STATUS_MESSAGE_AR.ready, "طلبك جاهز للاستلام.");
+  // 🔴 فرعان لا ثابت واحد (ج §2.7 و§15.5): «جاهز» لطلب توصيل تعني «سلّمناه
+  //    للسائق»، فنص الاستلام عليه كذب. والشكل المتفرّع هو ما يمنع إرساله.
+  assert.equal(ORDER_STATUS_MESSAGE_AR.ready.pickup, "طلبك جاهز للاستلام.");
+  assert.equal(ORDER_STATUS_MESSAGE_AR.ready.delivery, "طلبك خرج للتوصيل.");
+  assert.equal(readyMessageAr("pickup"), "طلبك جاهز للاستلام.");
+  assert.equal(readyMessageAr("delivery"), "طلبك خرج للتوصيل.");
+  // الرسالة لا تعيد كلمة الشارة: «جاهز» شارة، والرسالة تقول ماذا يفعل الزبون.
+  assert.ok(
+    !ORDER_STATUS_MESSAGE_AR.ready.delivery.includes("جاهز"),
+    "رسالة التوصيل بتعيد كلمة الشارة",
+  );
   assert.equal(
     ORDER_STATUS_MESSAGE_AR.cancelled.customer,
     "ألغينا الطلب حسب طلبك.",

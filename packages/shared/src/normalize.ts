@@ -15,6 +15,20 @@
 /** الأمر الذي عناه الزبون برسالته كاملة، أو `null` إن لم تكن أمرا. */
 export type CustomerCommand = "finish" | "cart" | "menu";
 
+/**
+ * أوامر ما بعد التصفّح: اختيار طريقة الاستلام، وردّ `cart_review` (ج §5).
+ *
+ * 🔴 **مفصولة عن `CustomerCommand` بقصد. لا تُدمج القائمتان في مطابق واحد.**
+ *    لكل حالة مفرداتها، والدمج يجعل كلا منهما تعمل حيث لا يجب بلا رسالة خطأ:
+ *      - «اكد» في `browsing` **ليست أمرا** — تنزل للمحلّل كنص غير مفهوم.
+ *      - «تم» في `cart_review` **ليست تأكيدا** — هي كلمة الإنهاء في التصفّح
+ *        وحده، وهنا يُعاد السؤال (ج §2.3). ولها اختبار سالب باسمها.
+ *    والحالة التي تسأل «هل هذه أمر من أي نوع؟» — خطوة العنوان (ج §3) — تنادي
+ *    المطابقين معا. وهذا أوضح من مطابق واحد يعرف أكثر مما يجب في كل حالة.
+ */
+export type OrderCommand =
+  "pickup" | "delivery" | "confirm" | "modify" | "cancel";
+
 // ---------------------------------------------------------------------------
 // التطبيع
 // ---------------------------------------------------------------------------
@@ -90,12 +104,44 @@ export const CART_INPUTS = ["سله", "السله"] as const;
 /** عرض المنيو من جديد. */
 export const MENU_INPUTS = ["منيو", "المنيو", "القائمه"] as const;
 
+/** الاستلام من المطعم (ج §5). */
+export const PICKUP_INPUTS = ["استلام", "الاستلام", "من المطعم"] as const;
+
+/** التوصيل (ج §5). */
+export const DELIVERY_INPUTS = ["توصيل", "التوصيل", "دليفري"] as const;
+
+/**
+ * تأكيد الطلب — **اللحظة التي يُخلق فيها الطلب** (ج §2.1).
+ *
+ * 🔴 «لا» · «تم» · «تمام» · «اه» · «نعم» · «ok» **ليست هنا ولا في أي قائمة.**
+ *    إضافة كلمة موافقة عامة إلى هذه القائمة **قرار منتج لمحمد، لا قرار كود**:
+ *    هذه أقصر قائمة في الملف لأن مدخلا خاطئا فيها يخلق طلبا لم يطلبه أحد،
+ *    ويطبخه المطبخ. «لا» المجرّدة قد تعني «لا، استنّى» (ج §2.3).
+ */
+export const CONFIRM_INPUTS = ["اكد", "تاكيد"] as const;
+
+/** العودة إلى التصفّح بنفس السلّة (ج §2.3). */
+export const MODIFY_INPUTS = ["عدل", "تعديل"] as const;
+
+/** إلغاء السلّة قبل إنشاء الطلب. لا علاقة له بحالة `abandoned` (ج §3). */
+export const CANCEL_INPUTS = ["الغ", "الغي", "الغاء"] as const;
+
 const COMMAND_TABLE: ReadonlyArray<
   readonly [CustomerCommand, ReadonlySet<string>]
 > = [
   ["finish", new Set<string>(FINISH_INPUTS)],
   ["cart", new Set<string>(CART_INPUTS)],
   ["menu", new Set<string>(MENU_INPUTS)],
+];
+
+const ORDER_COMMAND_TABLE: ReadonlyArray<
+  readonly [OrderCommand, ReadonlySet<string>]
+> = [
+  ["pickup", new Set<string>(PICKUP_INPUTS)],
+  ["delivery", new Set<string>(DELIVERY_INPUTS)],
+  ["confirm", new Set<string>(CONFIRM_INPUTS)],
+  ["modify", new Set<string>(MODIFY_INPUTS)],
+  ["cancel", new Set<string>(CANCEL_INPUTS)],
 ];
 
 // ---------------------------------------------------------------------------
@@ -127,6 +173,28 @@ export function matchCommand(raw: string): CustomerCommand | null {
 }
 
 /**
+ * أمر ما بعد التصفّح الذي تعنيه الرسالة **كاملة**، أو `null`.
+ *
+ * 🔴 **نفس قيد `matchCommand`: الرسالة كاملة، لا الاحتواء إطلاقا.** والخطر هنا
+ *    أكبر مما هو هناك، لأن المطابقة الخاطئة **تخلق طلبا**:
+ *      - `ما بدي اكد`        ← تحتوي «اكد»، وبالاحتواء يصل المطبخ طلب رفضه الزبون
+ *      - `بدي اكد بس بعدين`  ← تحتوي «اكد»، والزبون قال صراحة «لاحقا»
+ *    ولكل واحدة اختبار سالب باسمها في `test/order-commands.test.mts`.
+ *
+ *    وهي **لا تعرف** «تم» ولا «سلة» ولا «منيو»: تلك مفردات التصفّح، ومن يريد
+ *    الاثنتين معا ينادي المطابقين معا.
+ */
+export function matchOrderCommand(raw: string): OrderCommand | null {
+  const normalized = normalizeArabic(raw);
+  if (normalized === "") return null;
+
+  for (const [command, entries] of ORDER_COMMAND_TABLE) {
+    if (entries.has(normalized)) return command;
+  }
+  return null;
+}
+
+/**
  * كل مدخلات القوائم الثلاث مع أسمائها — للاختبار الذي يثبت أنها مطبَّعة.
  * مصدَّرة عشان الاختبار يمشي على القوائم نفسها، لا على نسخة منها تتقادم.
  */
@@ -137,3 +205,23 @@ export const COMMAND_INPUT_LISTS: ReadonlyArray<
   ["CART_INPUTS", CART_INPUTS],
   ["MENU_INPUTS", MENU_INPUTS],
 ];
+
+/** نفسها لقوائم ما بعد التصفّح (ج §5). */
+export const ORDER_COMMAND_INPUT_LISTS: ReadonlyArray<
+  readonly [string, readonly string[]]
+> = [
+  ["PICKUP_INPUTS", PICKUP_INPUTS],
+  ["DELIVERY_INPUTS", DELIVERY_INPUTS],
+  ["CONFIRM_INPUTS", CONFIRM_INPUTS],
+  ["MODIFY_INPUTS", MODIFY_INPUTS],
+  ["CANCEL_INPUTS", CANCEL_INPUTS],
+];
+
+/**
+ * القوائم الثماني معا. **مدخل مكرر بين قائمتين لا يُكتشف إلا هنا**، وهو يهمّ
+ * لأن خطوة العنوان تسأل المطابقين معا: كلمة في قائمتين تجعل الجواب يعتمد على
+ * ترتيب النداء، لا على ما كتبه الزبون.
+ */
+export const ALL_COMMAND_INPUT_LISTS: ReadonlyArray<
+  readonly [string, readonly string[]]
+> = [...COMMAND_INPUT_LISTS, ...ORDER_COMMAND_INPUT_LISTS];

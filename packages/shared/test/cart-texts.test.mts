@@ -9,7 +9,10 @@ import assert from "node:assert/strict";
 import {
   CART_EMPTY_AR,
   CLOSED_AR,
+  ALL_CUSTOMER_TEXTS_AR,
   CART_TEXT_TEMPLATES_AR,
+  ORDER_STATUS_TEXTS_AR,
+  ORDER_TEXT_TEMPLATES_AR,
   ITEM_NAME_SLOT,
   MAX_QTY_PER_ITEM,
   QTYS_OVER_CAP_AR,
@@ -59,10 +62,10 @@ test("🔴 دليل الحارس: قالب الاسم فيه فاعل بيسقط
   assert.equal(nameNeverSubject(`${ITEM_NAME_SLOT} ×2`), true);
 });
 
-test("🔴 اسم الصنف لا يكون فاعلا أبدا — بكل نصوص السلّة", () => {
+test("🔴 اسم الصنف لا يكون فاعلا أبدا — بكل نص بيوصل الزبون", () => {
   // «كبسة لحم غير متوفر» غلط و«منسف غير متوفرة» غلط. «الصنف» مذكّر وبيحمل
   // الخبر عن أي اسم.
-  const withName = CART_TEXT_TEMPLATES_AR.filter((t) =>
+  const withName = ALL_CUSTOMER_TEXTS_AR.filter((t) =>
     t.includes(ITEM_NAME_SLOT),
   );
   assert.ok(withName.length >= 5, "الحارس لازم يلاقي قوالب يفحصها");
@@ -71,10 +74,31 @@ test("🔴 اسم الصنف لا يكون فاعلا أبدا — بكل نصو
   }
 });
 
-test("ولا رقم عربي-هندي بأي قالب", () => {
-  for (const template of CART_TEXT_TEMPLATES_AR) {
+test("ولا رقم عربي-هندي بأي نص بيوصل الزبون", () => {
+  for (const template of ALL_CUSTOMER_TEXTS_AR) {
     assert.doesNotMatch(template, /[٠-٩۰-۹]/u, template);
   }
+});
+
+// 🔴 توسيع الحارسين بلا فايدة لو القائمة نفسها فرغت من نصوص ج ورسائل الحالة.
+//    بدون هالفحص، حدا بيشيل سطرا من `ALL_CUSTOMER_TEXTS_AR` والحارسين بيضلوا
+//    خضر — بيفحصوا نصوص السلّة وبس، زي ما كانوا قبل §15.6 بالضبط.
+test("🔴 الحراسة بتشمل نصوص ج ورسائل الحالة، مش نصوص السلّة وحدها", () => {
+  for (const template of [...ORDER_TEXT_TEMPLATES_AR, ...ORDER_STATUS_TEXTS_AR])
+    assert.ok(
+      ALL_CUSTOMER_TEXTS_AR.includes(template),
+      `«${template}» برّا الحراسة`,
+    );
+  assert.ok(
+    ORDER_STATUS_TEXTS_AR.includes("استلمنا طلبك — التأكيد خلال دقائق."),
+    "رسالة إنشاء الطلب لازم تكون محروسة — كانت برّا القاموس كليا",
+  );
+  assert.equal(
+    ALL_CUSTOMER_TEXTS_AR.length,
+    CART_TEXT_TEMPLATES_AR.length +
+      ORDER_TEXT_TEMPLATES_AR.length +
+      ORDER_STATUS_TEXTS_AR.length,
+  );
 });
 
 // ---------------------------------------------------------------------------
