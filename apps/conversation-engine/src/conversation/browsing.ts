@@ -7,8 +7,8 @@ import {
   handoffMessageAr,
   interpretMessage,
   itemNotInCartAr,
-  itemUnavailableAr,
   itemsAddedLinesAr,
+  itemsUnavailableLineAr,
   nextUnparsedStreak,
   nothingUnderstoodAr,
   overCapLineAr,
@@ -241,8 +241,10 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
       if (unknownNumbers.length > 0) {
         lines.push(unknownNumbersLineAr(unknownNumbers, lastMenuNumber));
       }
-      // ⚠️ ما في نص جمع لغير المتوفر — سطر لكل صنف (§14.8).
-      for (const name of unavailable) lines.push(itemUnavailableAr(name));
+      // سطر واحد لكل غير المتوفر — نص الجمع وصل، ففجوة §14.8#1 انسدّت.
+      if (unavailable.length > 0) {
+        lines.push(itemsUnavailableLineAr(unavailable));
+      }
       if (overCap.length > 0) lines.push(overCapLineAr(overCap));
       if (result.problems.unclearParts.length > 0) {
         lines.push(unclearPartsLineAr(result.problems.unclearParts));

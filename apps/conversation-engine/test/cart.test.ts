@@ -404,6 +404,18 @@ describe("التوفّر — حيّ لحظة الإضافة", () => {
     expect((await s.context())["unparsed_streak"]).toBe(0);
   });
 
+  it("🔴 صنفان غير متوفرين برسالة وحدة: **سطر واحد** بصيغة الجمع", async () => {
+    // فجوة §14.8#1 كانت سطرين. لو رجع التكرار، هالاختبار بيسقط.
+    const s = await shop({ label: "unavail-plural", items: TWO });
+    await audit.query(
+      `UPDATE menu_items SET is_available = false WHERE restaurant_id = $1`,
+      [s.restaurantId],
+    );
+    await s.say("1 و2");
+    expect(s.last()).toBe("الأصناف حمص، متبل غير متوفرة الآن.");
+    expect(await cartOf(s)).toEqual([]);
+  });
+
   it("تصنيف انطفى = أصنافه غير متوفرة — نفس فلتر القائمة المعروضة", async () => {
     const s = await shop({ label: "cat-off", items: TWO });
     await audit.query(

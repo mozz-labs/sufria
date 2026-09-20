@@ -284,6 +284,14 @@ export const NOTHING_UNDERSTOOD_AR = `الأرقام من 1 إلى ${LAST_MENU_N
  * هاداك كاذب هون، فالصنف بالمنيو اللي بيشوفه الزبون.
  */
 export const ITEM_UNAVAILABLE_AR = `الصنف ${ITEM_NAME_SLOT} غير متوفر الآن.`;
+/**
+ * جمع `ITEM_UNAVAILABLE_AR` — صنفان فأكثر بسطر واحد (§14.4).
+ *
+ * 🔴 «الأصناف» هي الفاعل، لا الأسماء. جمع غير العاقل يُعامَل مؤنثا مفردا،
+ *    فـ«غير متوفرة» بتتفق مع أي خليط أطباق — نفس سبب «الصنف» بالمفرد (§14.6).
+ *    وبدونه كان سطران لصنفين، وهي الفجوة #1 المسجّلة بـ§14.8.
+ */
+export const ITEMS_UNAVAILABLE_AR = `الأصناف ${VALUES_SLOT} غير متوفرة الآن.`;
 /** «شيل» على صنف بالمنيو مش بالسلّة (§14.3). سطر لحاله — السلّة ما تغيّرت. */
 export const ITEM_NOT_IN_CART_AR = `الصنف ${ITEM_NAME_SLOT} غير موجود في سلّتك.`;
 
@@ -333,6 +341,7 @@ export const CART_TEXT_TEMPLATES_AR: readonly string[] = [
   UNCLEAR_PARTS_AR,
   NOTHING_UNDERSTOOD_AR,
   ITEM_UNAVAILABLE_AR,
+  ITEMS_UNAVAILABLE_AR,
   ITEM_NOT_IN_CART_AR,
   CART_HEADER_AR,
   CART_LINE_AR,
@@ -439,8 +448,16 @@ export function nothingUnderstoodAr(lastMenuNumber: number): string {
   });
 }
 
-export function itemUnavailableAr(name: string): string {
-  return fillSlots(ITEM_UNAVAILABLE_AR, { [ITEM_NAME_SLOT]: name });
+/**
+ * سطر واحد لكل الأصناف غير المتوفرة بالرسالة — مفرد أو جمع.
+ *
+ * 🔴 سطر **واحد**، لا سطر لكل صنف: قاعدة «سطر لكل نوع مشكلة» (§14.1-1) كانت
+ *    مكسورة هون عمدا لغياب نص الجمع. النص وصل، فالقاعدة رجعت.
+ */
+export function itemsUnavailableLineAr(names: readonly string[]): string {
+  return names.length === 1
+    ? fillSlots(ITEM_UNAVAILABLE_AR, { [ITEM_NAME_SLOT]: names[0]! })
+    : fillSlots(ITEMS_UNAVAILABLE_AR, { [VALUES_SLOT]: joinValues(names) });
 }
 
 export function itemNotInCartAr(name: string): string {

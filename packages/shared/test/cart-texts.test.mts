@@ -16,8 +16,8 @@ import {
   formatMinor,
   handoffMessageAr,
   itemNotInCartAr,
-  itemUnavailableAr,
   itemsAddedLinesAr,
+  itemsUnavailableLineAr,
   nothingUnderstoodAr,
   overCapLineAr,
   priceToMinor,
@@ -111,8 +111,19 @@ test("الجزء غير الواضح: مفرد وجمع حرفيا، وكل جز
   );
 });
 
-test("الصنف غير المتوفر، والصنف مش بالسلّة، ولا شيء مفهوم، والاستسلام", () => {
-  assert.equal(itemUnavailableAr("كبسة لحم"), "الصنف كبسة لحم غير متوفر الآن.");
+test("الصنف غير المتوفر: مفرد وجمع حرفيا، وسطر واحد للاثنين", () => {
+  assert.equal(
+    itemsUnavailableLineAr(["كبسة لحم"]),
+    "الصنف كبسة لحم غير متوفر الآن.",
+  );
+  // جمع غير العاقل ← مؤنث مفرد: «الأصناف … غير متوفرة» بتصلح لأي خليط أطباق.
+  assert.equal(
+    itemsUnavailableLineAr(["كبسة لحم", "منسف"]),
+    "الأصناف كبسة لحم، منسف غير متوفرة الآن.",
+  );
+});
+
+test("الصنف مش بالسلّة، ولا شيء مفهوم، والاستسلام", () => {
   assert.equal(itemNotInCartAr("منسف"), "الصنف منسف غير موجود في سلّتك.");
   assert.equal(
     nothingUnderstoodAr(5),
