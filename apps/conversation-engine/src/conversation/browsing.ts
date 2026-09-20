@@ -1,6 +1,9 @@
 import {
   CART_EMPTY_ON_FINISH_AR,
   FINISH_HINT_AR,
+  buildOrderSummary,
+  fulfillmentAskAr,
+  type SummaryFulfillment,
   HANDOFF_STREAK,
   MAX_QTY_PER_ITEM,
   cartMessageAr,
@@ -25,6 +28,7 @@ import { advanceSessionState } from "../db/critical-primitives.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 import {
   readSessionData,
+  toSummaryFulfillment,
   writeSessionData,
   type CartLine,
   type SessionData,
@@ -50,10 +54,14 @@ export interface BrowsingDecision {
   /** «منيو»: القشرة بتعيد إرسال القائمة عبر `deliverMenu` — والخريطة معها. */
   readonly resendMenu: boolean;
   /**
-   * «تم» وسلّة فيها أصناف: القشرة بتعمل CAS من `browsing` لـ`cart_review`
-   * **قبل** ما تكتب وتبعت. خسارة الـCAS = تجاهل صامت (ب-5).
+   * «تم» وسلّة فيها أصناف: القشرة بتعمل CAS من `browsing` للحالة هاي **قبل**
+   * ما تكتب وتبعت. خسارة الـCAS = تجاهل صامت (ب-5). `null` = ولا انتقال.
+   *
+   * 🔴 صارت حالة بدل `boolean` بج-3: «تم» ما عادت بتوصّل لمكان واحد. المطعم
+   *    اللي بيوصّل بيوقّف الزبون عند سؤال الاستلام (`fulfillment_choice`)،
+   *    واللي ما بيوصّل بيفوت على الملخّص رأسا (`cart_review`) — ج §3.
    */
-  readonly finish: boolean;
+  readonly advanceTo: "cart_review" | "fulfillment_choice" | null;
 }
 
 export interface BrowsingInput {
@@ -63,21 +71,29 @@ export interface BrowsingInput {
   readonly catalog: Catalog;
   /** `restaurants.contact_phone`. `null` = الاستسلام صامت تماما (§11.3). */
   readonly contactPhone: string | null;
+  /**
+   * `restaurants.offers_delivery` — **قدرة المطعم، مش اختيار الطلب** (ج §2.4).
+   * 🔴 بينقرا **حيّا لحظة «تم»** (ج §3)، مش من الجلسة: مطعم طفّى التوصيل
+   *    بينطبّق عليه القرار من أول «تم» جاية، بلا ما تنتظر جلسة جديدة.
+   */
+  readonly offersDelivery: boolean;
+  /** `restaurants.delivery_fee` بالقروش — بينعمله snapshot عند اختيار «توصيل». */
+  readonly deliveryFeeMinor: number;
 }
 
 /** كل رد صادر بينعدّ — فجوة القياس بـ§4. الصمت ما بينعدّ. */
 function withReply(
   next: SessionData,
   reply: string | null,
-  finish = false,
+  advanceTo: BrowsingDecision["advanceTo"] = null,
 ): BrowsingDecision {
   return reply === null
-    ? { next, reply: null, resendMenu: false, finish }
+    ? { next, reply: null, resendMenu: false, advanceTo }
     : {
         next: { ...next, outbound_count: next.outbound_count + 1 },
         reply,
         resendMenu: false,
-        finish,
+        advanceTo,
       };
 }
 
@@ -103,8 +119,42 @@ function renderCart(data: SessionData, removeHint = true): string {
   );
 }
 
+/** أسطر العرض من السلّة — نفس الترقيم اللي بتستعمله `renderCart` بالضبط. */
+function displayLines(data: SessionData) {
+  const numberOf = new Map<string, number>(
+    Object.entries(data.menu_map).map(([n, id]) => [id, Number(n)]),
+  );
+  return data.cart.map((l) => ({
+    menuNumber: numberOf.get(l.item_id) ?? null,
+    name: l.name,
+    qty: l.qty,
+    lineTotalMinor: l.unit_price_minor * l.qty,
+  }));
+}
+
+/** رسالة `cart_review` — بتحلّ محل عرض السلّة اللي كانت ب-5 تبعته (ج §6). */
+function renderSummary(
+  data: SessionData,
+  fulfillment: SummaryFulfillment,
+): string {
+  return buildOrderSummary(
+    displayLines(data),
+    cartTotalMinor(data.cart),
+    fulfillment,
+  );
+}
+
 export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
-  const { data, intent, catalog, contactPhone } = input;
+  const { data, intent, catalog, contactPhone, offersDelivery } = input;
+  const { deliveryFeeMinor } = input;
+
+  /** الملخّص ← `cart_review`. */
+  const summaryDecision = (
+    next: SessionData,
+    fulfillment: SummaryFulfillment,
+  ): BrowsingDecision =>
+    withReply(next, renderSummary(next, fulfillment), "cart_review");
+
   /** `N` = عدد مفاتيح `menu_map` — لا عدد الأصناف بالقاعدة (§4). */
   const lastMenuNumber = Object.keys(data.menu_map).length;
 
@@ -116,7 +166,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
       const next = { ...data, unparsed_streak: 0 };
       switch (intent.command) {
         case "menu":
-          return { next, reply: null, resendMenu: true, finish: false };
+          return { next, reply: null, resendMenu: true, advanceTo: null };
         case "cart":
           return withReply(next, renderCart(next));
         case "finish": {
@@ -125,9 +175,31 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
           if (next.cart.length === 0) {
             return withReply(next, CART_EMPTY_ON_FINISH_AR);
           }
-          // 🔴 الرسالة بتنتهي عند عرض السلّة. سؤال التوصيل/الاستلام مهمة
-          //    تالية — ما بينخترع نصه هون.
-          return withReply(next, renderCart(next, false), true);
+
+          // الصفوف الأربعة الأولى من ج §3، بنفس ترتيبها:
+
+          // ١. طريقة الاستلام مختارة وكاملة — رجع من «عدّل» مثلا. ولا سؤال
+          //    تاني عن إشي انسأل عنه، والملخّص رأسا.
+          const chosen = toSummaryFulfillment(next.fulfillment);
+          if (chosen !== null) return summaryDecision(next, chosen);
+
+          // ٢. المطعم ما بيوصّل: الاستلام هو الخيار الوحيد، فما بينسأل عنه.
+          //    مطعم «توصيل فقط» مش مدعوم بالبايلوت — انحراف مسجّل (ج §2.4).
+          if (!offersDelivery) {
+            return summaryDecision(
+              { ...next, fulfillment: { type: "pickup" } },
+              { type: "pickup" },
+            );
+          }
+
+          // ٣. بيوصّل وما في اختيار بعد: السؤال، والرسوم بتنقال قبل ما يقرر.
+          //    🔴 ولا snapshot هون — الرسوم بتنحفظ لحظة ما يختار «توصيل»
+          //    فعلا، مش لحظة ما بنسأله. لو اختار «استلام» ما إلها معنى أصلا.
+          return withReply(
+            next,
+            fulfillmentAskAr(deliveryFeeMinor),
+            "fulfillment_choice",
+          );
         }
         default: {
           const unhandled: never = intent.command;
@@ -295,6 +367,8 @@ export interface BrowsingMessage {
   /** نص الرسالة. `null` لصورة أو صوت — بيتعامل كرسالة ما انفهم منها شي. */
   readonly body: string | null;
   readonly contactPhone: string | null;
+  readonly offersDelivery: boolean;
+  readonly deliveryFeeMinor: number;
   readonly now: Date;
 }
 
@@ -326,22 +400,28 @@ export async function handleBrowsingMessage(
     intent,
     catalog,
     contactPhone: message.contactPhone,
+    offersDelivery: message.offersDelivery,
+    deliveryFeeMinor: message.deliveryFeeMinor,
   });
 
-  if (decision.finish) {
-    // 🔴 CAS ذري `browsing → cart_review`. `rowcount = 0` = حدا تاني سبقنا
-    //    («تم» مرتين بنفس اللحظة) → **تجاهل بصمت، لا استثناء**، وبلا كتابة
-    //    وبلا إرسال: ولا انتقال تاني، ولا عدّ رسالة صادرة ما انبعثت.
+  if (decision.advanceTo !== null) {
+    // 🔴 CAS ذري من `browsing`. `rowcount = 0` = حدا تاني سبقنا («تم» مرتين
+    //    بنفس اللحظة) → **تجاهل بصمت، لا استثناء**، وبلا كتابة وبلا إرسال:
+    //    ولا انتقال تاني، ولا عدّ رسالة صادرة ما انبعثت.
     if (
       !(await advanceSessionState(
         tx,
         message.sessionId,
         "browsing",
-        "cart_review",
+        decision.advanceTo,
       ))
     ) {
       logger.debug(
-        { restaurantId: message.restaurantId, sessionId: message.sessionId },
+        {
+          restaurantId: message.restaurantId,
+          sessionId: message.sessionId,
+          target: decision.advanceTo,
+        },
         "CAS خسر — «تم» انعالجت مرة قبل هيك. تجاهل صامت",
       );
       return;

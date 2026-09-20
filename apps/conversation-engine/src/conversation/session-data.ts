@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { conversationSessions } from "@sufria/shared";
+import { conversationSessions, type SummaryFulfillment } from "@sufria/shared";
 import { z } from "zod";
 
 import type { TenantTx } from "../db/types.js";
@@ -33,6 +33,63 @@ const cartLineSchema = z.object({
 
 export type CartLine = z.infer<typeof cartLineSchema>;
 
+/**
+ * طريقة الاستلام واللي بيتبعها — ج §4.
+ *
+ * 🔴 **`fee_minor` snapshot، مش قراءة حيّة.** بينقرا مرة وحدة لحظة ما الزبون
+ *    بيختار «توصيل»، وبيضل هو هو مهما غيّر المطعم رسومه بعدها. نفس منطق
+ *    سعر الصنف بالضبط (ب §14.5): **السعر وعد، والتوفّر واقع** — والرسوم وعد
+ *    كمان، لأن الزبون شافها بالسؤال قبل ما يقرر. قراءتها حيّة عند الإنشاء
+ *    بتخلّي اللي بيدفعه ≠ اللي شافه.
+ *
+ * 🔴 **`address` بيحتمل `null` هون وبس.** الجلسة بتمرّ بلحظة اختار فيها
+ *    «توصيل» وما وصل العنوان بعد — هاي خطوة العنوان. و`SummaryFulfillment`
+ *    بـ`shared` عنوانه `string` مش `string | null`، فالملخّص ما بينبنى على
+ *    ناقص أصلا؛ التضييق بيصير هون، مرة وحدة، عند الاكتمال.
+ */
+const fulfillmentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("pickup") }),
+  z.object({
+    type: z.literal("delivery"),
+    fee_minor: z.number().int().nonnegative(),
+    address: z.string().nullable(),
+  }),
+]);
+
+export type Fulfillment = z.infer<typeof fulfillmentSchema>;
+
+/**
+ * الشكل المخزَّن ← شكل الملخّص، أو `null` لو ناقص.
+ *
+ * 🔴 **هون التضييق الوحيد** من `address: string | null` لـ`address: string`.
+ *    `buildOrderSummary` ما بتقبل ناقصا أصلا (نوعها بيرفضه)، فبدل ما نرمي
+ *    استثناء — وهو بيسحب معاملة الرسالة فتعيد ميتا إرسالها سبعة أيام على
+ *    عطل ما بتصلّحه الإعادة — الدالة بترجّع `null` والمستدعي بيقرر.
+ */
+export function toSummaryFulfillment(
+  fulfillment: Fulfillment | undefined,
+): SummaryFulfillment | null {
+  if (fulfillment === undefined) return null;
+  if (fulfillment.type === "pickup") return { type: "pickup" };
+  if (fulfillment.address === null) return null;
+  return {
+    type: "delivery",
+    feeMinor: fulfillment.fee_minor,
+    address: fulfillment.address,
+  };
+}
+
+/**
+ * «مكتمل» = `pickup`، أو `delivery` وعنوانه ليس null (ج §3).
+ * معرَّفة بدلالة `toSummaryFulfillment` بقصد: قاعدة وحدة بمكان واحد، فما
+ * بيصير وحدة تتغيّر والتانية لأ.
+ */
+export function isFulfillmentComplete(
+  fulfillment: Fulfillment | undefined,
+): boolean {
+  return toSummaryFulfillment(fulfillment) !== null;
+}
+
 const sessionDataSchema = z.object({
   /**
    * 🔴 الترقيم **موضعي داخل القائمة المُرسَلة**، لا معرّفات قاعدة.
@@ -53,6 +110,12 @@ const sessionDataSchema = z.object({
    * بتنعدّ هون، وبتنتقل لهناك عند الإنشاء (النقل بمهمة إنشاء الطلب، مش هون).
    */
   outbound_count: z.number().int().nonnegative().default(0),
+  /**
+   * طريقة الاستلام. **غائب = الزبون ما انسأل بعد** (أو انسأل ورجع «عدّل»).
+   * بيضل بعد «عدّل» من `cart_review` بقصد — السلّة بترجع للتصفّح وطريقة
+   * الاستلام بتضل مختارة، فما بينسأل مرتين عن نفس الإشي (ج §3).
+   */
+  fulfillment: fulfillmentSchema.optional(),
 });
 
 export type SessionData = z.infer<typeof sessionDataSchema>;

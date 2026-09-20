@@ -3,6 +3,7 @@ import {
   closedMessageAr,
   conversationSessions,
   customers,
+  priceToMinor,
   restaurants,
   welcomeMessageAr,
 } from "@sufria/shared";
@@ -16,6 +17,7 @@ import {
 } from "../restaurant/business-hours.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
 import { handleBrowsingMessage } from "./browsing.js";
+import { handleFulfillmentMessage } from "./fulfillment.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 
 /**
@@ -38,6 +40,8 @@ export type ConversationOutcome =
   | "closed"
   /** جلسة بحالة `browsing`: الرسالة انعالجت بـ`browsing.ts`. */
   | "browsing"
+  /** جلسة بحالة `fulfillment_choice`: انعالجت بـ`fulfillment.ts` (ج-3). */
+  | "fulfillment_choice"
   /** جلسة نشطة بحالة ما إلها معالج بعد. انخزنت الرسالة وبس. */
   | "active_session"
   /** خسرنا سباق CAS: حدا تاني رحّب. تجاهل صامت. */
@@ -105,9 +109,26 @@ export class ConversationService {
           to: ctx.from,
           body: ctx.body,
           contactPhone: restaurant.contactPhone,
+          offersDelivery: restaurant.offersDelivery,
+          deliveryFeeMinor: restaurant.deliveryFeeMinor,
           now: this.now(),
         });
         return "browsing";
+      }
+      if (existing.state === "fulfillment_choice") {
+        // 🔴 نفس قاعدة `browsing`: ولا `UPDATE` على صف الجلسة قبل النداء.
+        //    أول قفل عليه لازم يكون `FOR UPDATE` جوّا المعالج.
+        await handleFulfillmentMessage(tx, this.sender, {
+          sessionId: existing.id,
+          restaurantId: ctx.restaurantId,
+          phoneNumberId: ctx.phoneNumberId,
+          to: ctx.from,
+          body: ctx.body,
+          contactPhone: restaurant.contactPhone,
+          deliveryFeeMinor: restaurant.deliveryFeeMinor,
+          now: this.now(),
+        });
+        return "fulfillment_choice";
       }
       await tx
         .update(conversationSessions)
@@ -234,6 +255,8 @@ export class ConversationService {
     businessHours: unknown;
     timezone: string;
     contactPhone: string | null;
+    offersDelivery: boolean;
+    deliveryFeeMinor: number;
   }> {
     // 🔴 `resolve_restaurant_by_phone_id` بترجّع uuid وبس، فالاسم وساعات الدوام
     //    والمنطقة الزمنية بدهم قراءة. الشرط على المعرّف مش هو اللي بيعزل — سياسة tenant_isolation
@@ -244,6 +267,8 @@ export class ConversationService {
         businessHours: restaurants.businessHours,
         timezone: restaurants.timezone,
         contactPhone: restaurants.contactPhone,
+        offersDelivery: restaurants.offersDelivery,
+        deliveryFee: restaurants.deliveryFee,
       })
       .from(restaurants)
       .where(eq(restaurants.id, restaurantId))
@@ -254,7 +279,12 @@ export class ConversationService {
         `صف المطعم ${restaurantId} غير مقروء — سياق المستأجر مش مضبوط`,
       );
     }
-    return row;
+    // 🔴 التحويل بـ`priceToMinor` القائمة، لا بـ`(delivery_fee * 100)::int`
+    //    (ج §15.4): **مسار تحويل واحد** للقراءة بالسلّة كلها — نفس الدالة
+    //    اللي بتقرأ سعر الصنف. مساران بيخلّوا رقمين يتفاوتا بقرش بلا ما
+    //    يسقط إشي.
+    const { deliveryFee, ...rest } = row;
+    return { ...rest, deliveryFeeMinor: priceToMinor(deliveryFee) };
   }
 
   /**
