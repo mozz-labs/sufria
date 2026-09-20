@@ -52,6 +52,47 @@ export type ConversationOutcome =
   /** القائمة أطول من سقف واتساب. انسجّل خطأ، وما انقطعت، وما انفتحت جلسة. */
   | "reply_too_long";
 
+/**
+ * رسالة بتنبعت **بعد** ما تُقفل معاملة الرسالة بنجاح — ج §8، الخطوة 7.
+ *
+ * 🔴 **ليش في طابور أصلا.** باقي المسارات بتبعت جوّا المعاملة، وهاد صح
+ *    إلها: أسوأ ما بيصير إن الإرسال بيفشل فبتنسحب المعاملة وميتا بتعيد
+ *    الرسالة. بس إنشاء الطلب غير: الطلب **انخلق**، وسحبه بسبب فشل إرسال
+ *    بيضيّع طلبا دفع الزبون عمره ليعمله. والعكس أسوأ — إرسال «استلمنا
+ *    طلبك» قبل الـCOMMIT بيخلّي الزبون ماسك تأكيدا عن طلب ما انكتب أبدا،
+ *    وهو **ما بينسحب** لأنه راح على واتساب.
+ *
+ *    فالترتيب الوحيد الصحيح: اكتب، اقفل المعاملة، **وبعدين** ابعت. وفشل
+ *    الإرسال بعدها بينسجّل وبس — الطلب ما بينمسّ.
+ */
+export interface DeferredSend {
+  readonly restaurantId: string;
+  readonly phoneNumberId: string;
+  readonly to: string;
+  readonly body: string;
+}
+
+/**
+ * بتبعت طابور ما بعد الـCOMMIT. **ما بترمي أبدا** (ج §8، الخطوة 7): الطلب
+ * مكتوب ومقفول، وأي رمية هون بترجّع 500 فتعيد ميتا الرسالة على عطل ما
+ * بتصلّحه الإعادة.
+ */
+export async function flushDeferred(
+  sender: WhatsAppSender,
+  deferred: readonly DeferredSend[],
+): Promise<void> {
+  for (const message of deferred) {
+    try {
+      await sender.sendText(message);
+    } catch (error) {
+      logger.error(
+        { err: error, restaurantId: message.restaurantId },
+        "🔴 فشل إرسال رسالة ما بعد الـCOMMIT — الطلب مكتوب وما بينمسّ",
+      );
+    }
+  }
+}
+
 export interface ConversationContext {
   restaurantId: string;
   phoneNumberId: string;
@@ -65,6 +106,13 @@ export interface ConversationContext {
    *    الاستسلام وهو عم يكتب أرقاما صحيحة.
    */
   body: string | null;
+  /**
+   * طابور ما بعد الـCOMMIT. **إجباري مش اختياري**، بنفس سبب `body`: حقل
+   * اختياري بينساه المستدعي بصمت، وهون النسيان معناه إن الزبون بيعمل طلبا
+   * وما بيوصله ولا تأكيد — وولا اختبار بيسقط. المستدعي اللي بيملك المعاملة
+   * هو اللي بيفرّغه بـ`flushDeferred` بعد ما تنجح.
+   */
+  deferred: DeferredSend[];
 }
 
 export class ConversationService {
@@ -76,7 +124,8 @@ export class ConversationService {
    *    محقونة بتخلّي حالة "مطعم بيسكّر الساعة 2:00 ص" تنكتب كحقيقة ثابتة.
    */
   constructor(
-    private readonly sender: WhatsAppSender,
+    /** مكشوف عشان مالك المعاملة يفرّغ طابور ما بعد الـCOMMIT (ج §8). */
+    readonly sender: WhatsAppSender,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -142,6 +191,8 @@ export class ConversationService {
           to: ctx.from,
           body: ctx.body,
           contactPhone: restaurant.contactPhone,
+          deliveryFeeMinor: restaurant.deliveryFeeMinor,
+          deferred: ctx.deferred,
           now: this.now(),
         });
         return "cart_review";

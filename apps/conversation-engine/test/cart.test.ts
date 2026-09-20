@@ -34,7 +34,11 @@ import {
 } from "@sufria/shared";
 
 import { env } from "../src/config/env.js";
-import { ConversationService } from "../src/conversation/session.service.js";
+import {
+  ConversationService,
+  flushDeferred,
+  type DeferredSend,
+} from "../src/conversation/session.service.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "../src/http/server.js";
 import { pruneUnavailable } from "../src/conversation/menu-delivery.js";
@@ -123,15 +127,25 @@ async function shop(opts: {
   }
 
   const from = nextCustomer();
-  const say = (body: string | null): Promise<string> =>
-    db.runInTenant(restaurantId, (tx) =>
+  /**
+   * رسالة كاملة زي ما بيمشيها الـwebhook: معاملة، **وبعدها** تفريغ طابور
+   * ما بعد الـCOMMIT. بلا التفريغ، «استلمنا طلبك» بتنكتب بالطابور وما
+   * بتنبعت أبدا — والاختبار بيشوف صفر رسائل بلا سبب ظاهر (ج §8).
+   */
+  const say = async (body: string | null): Promise<string> => {
+    const deferred: DeferredSend[] = [];
+    const outcome = await db.runInTenant(restaurantId, (tx) =>
       conversation.handleInbound(tx, {
         restaurantId,
         phoneNumberId: pid,
         from,
         body,
+        deferred,
       }),
     );
+    await flushDeferred(conversation.sender, deferred);
+    return outcome;
+  };
 
   expect(await say("مرحبا")).toBe("greeted");
   replies.reset();
@@ -764,6 +778,8 @@ describe("العدّاد والاستسلام", () => {
       restaurantId: s.restaurantId,
       phoneNumberId: s.pid,
       from: s.from,
+      // سباق على `browsing`؛ ولا واحد من الفرعين بيخلق طلبا.
+      deferred: [],
     };
     const winnerDb = new TenantDb();
     let releaseWinner = (): void => {};
@@ -906,6 +922,8 @@ describe("ب-5 · «تم» → cart_review", () => {
       phoneNumberId: s.pid,
       from: s.from,
       body: "تم",
+      // «تم» مرتين بنفس اللحظة — الفائز بيوصل `cart_review`، ولا طلب بينخلق.
+      deferred: [],
     };
     const winnerDb = new TenantDb();
     let releaseWinner = (): void => {};

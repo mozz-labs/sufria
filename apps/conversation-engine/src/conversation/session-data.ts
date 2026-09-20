@@ -116,6 +116,11 @@ const sessionDataSchema = z.object({
    * الاستلام بتضل مختارة، فما بينسأل مرتين عن نفس الإشي (ج §3).
    */
   fulfillment: fulfillmentSchema.optional(),
+  /**
+   * معرّف الطلب بعد إنشائه — **للتتبّع وبس** (ج §4). مصدر الحقيقة صف
+   * `orders`؛ هاد بيخلّي سجلّ المحادثة يوصّل لطلبها بلا استعلام عكسي.
+   */
+  order_id: z.string().uuid().optional(),
 });
 
 export type SessionData = z.infer<typeof sessionDataSchema>;

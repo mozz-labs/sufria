@@ -1,4 +1,8 @@
-import type { ConversationService } from "../conversation/session.service.js";
+import {
+  flushDeferred,
+  type ConversationService,
+  type DeferredSend,
+} from "../conversation/session.service.js";
 import { claimWebhookEvent } from "../db/critical-primitives.js";
 import {
   resolveRestaurantByPhoneId,
@@ -96,8 +100,10 @@ export class WebhookService {
   }
 
   private async ingestOne(message: InboundMessage): Promise<IngestOutcome> {
+    // طابور ما بعد الـCOMMIT — بينعبّى جوّا المعاملة وبينفرّغ بعدها (ج §8).
+    const deferred: DeferredSend[] = [];
     try {
-      return await this.db.runUnscoped(async (tx) => {
+      const outcome = await this.db.runUnscoped(async (tx) => {
         // ---------------------------------------------------------------
         // ١. بوابة منع التكرار — أول شي بعد التوقيع، قبل أي منطق.
         //
@@ -184,6 +190,7 @@ export class WebhookService {
           phoneNumberId: message.phoneNumberId,
           from: message.from,
           body: message.body,
+          deferred,
         });
         logger.debug(
           { restaurantId, waMessageId: message.waMessageId, conversation },
@@ -192,6 +199,15 @@ export class WebhookService {
 
         return "stored";
       });
+
+      // ---------------------------------------------------------------
+      // ٥. 🔴 **بعد الـCOMMIT.** رسالة «استلمنا طلبك» بتنبعت من هون وبس
+      //    (ج §8، الخطوة 7): قبل الـCOMMIT بتخلّي الزبون ماسك تأكيدا عن
+      //    طلب ممكن ما ينكتب، و**الرسالة ما بتنسحب** مع المعاملة.
+      //    وفشلها بينسجّل وبس — الطلب مكتوب ومقفول وما بينمسّ.
+      // ---------------------------------------------------------------
+      await flushDeferred(this.conversation.sender, deferred);
+      return outcome;
     } catch (error) {
       if (error instanceof UnroutableMessageError) {
         logger.error(

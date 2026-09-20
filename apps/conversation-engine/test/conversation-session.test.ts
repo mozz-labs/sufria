@@ -384,6 +384,7 @@ describe("بوابة ساعات الدوام — FR-22", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
 
@@ -453,6 +454,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
 
@@ -493,6 +495,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
 
@@ -523,6 +526,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
     const second = await db.runInTenant(restaurantId, (tx) =>
@@ -531,6 +535,7 @@ describe("أول رسالة من زبون بلا جلسة", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
 
@@ -583,7 +588,14 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     const restaurantId = await createRestaurant({ phoneNumberId: pid });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
+    const ctx = {
+      restaurantId,
+      phoneNumberId: pid,
+      from,
+      body: GREETING,
+      // ولا مسار هون بيوصل `cart_review`، فالطابور دايما فاضي (ج §8).
+      deferred: [],
+    };
 
     const { rows } = await audit.query<{ id: string }>(
       `INSERT INTO customers (restaurant_id, phone_number) VALUES ($1, $2) RETURNING id`,
@@ -644,7 +656,14 @@ describe("رسالتين بفارق ميلي ثانية", () => {
     const dbA = new TenantDb();
     const dbB = new TenantDb();
     try {
-      const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
+      const ctx = {
+        restaurantId,
+        phoneNumberId: pid,
+        from,
+        body: GREETING,
+        // ولا مسار هون بيوصل `cart_review`، فالطابور دايما فاضي (ج §8).
+        deferred: [],
+      };
       const outcomes = await Promise.all([
         dbA.runInTenant(restaurantId, (tx) =>
           conversation.handleInbound(tx, ctx),
@@ -689,7 +708,14 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
     const restaurantId = await createRestaurant({ phoneNumberId: pid });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
+    const ctx = {
+      restaurantId,
+      phoneNumberId: pid,
+      from,
+      body: GREETING,
+      // ولا مسار هون بيوصل `cart_review`، فالطابور دايما فاضي (ج §8).
+      deferred: [],
+    };
 
     expect(
       await db.runInTenant(restaurantId, (tx) =>
@@ -809,6 +835,7 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
         phoneNumberId: ammanPid,
         from: nextCustomer(),
         body: GREETING,
+        deferred: [],
       }),
     );
     const utcOutcome = await db.runInTenant(utcId, (tx) =>
@@ -817,6 +844,7 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
         phoneNumberId: utcPid,
         from: nextCustomer(),
         body: GREETING,
+        deferred: [],
       }),
     );
 
@@ -835,7 +863,14 @@ describe("الفروع اللي ما كان عليها اختبار", () => {
     });
     await addCategory(restaurantId, "مقبلات", [{ name: "حمص", price: "2.50" }]);
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
+    const ctx = {
+      restaurantId,
+      phoneNumberId: pid,
+      from,
+      body: GREETING,
+      // ولا مسار هون بيوصل `cart_review`، فالطابور دايما فاضي (ج §8).
+      deferred: [],
+    };
 
     // الاثنين 01:00 بعمّان = الأحد 22:00 UTC. ذيل نافذة الأحد.
     const onePastMidnight = new ConversationService(
@@ -926,6 +961,7 @@ describe("سقف نص واتساب", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
 
@@ -949,7 +985,14 @@ describe("سقف نص واتساب", () => {
       })),
     );
     const from = nextCustomer();
-    const ctx = { restaurantId, phoneNumberId: pid, from, body: GREETING };
+    const ctx = {
+      restaurantId,
+      phoneNumberId: pid,
+      from,
+      body: GREETING,
+      // ولا مسار هون بيوصل `cart_review`، فالطابور دايما فاضي (ج §8).
+      deferred: [],
+    };
 
     expect(
       await db.runInTenant(restaurantId, (tx) =>
@@ -1244,6 +1287,7 @@ describe("ب-2 · menu_map وذيل الأوامر", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
     const sessions = await sessionsOf(restaurantId);
@@ -1410,6 +1454,7 @@ describe("ب-2 · menu_map وذيل الأوامر", () => {
         phoneNumberId: pid,
         from,
         body: GREETING,
+        deferred: [],
       }),
     );
 

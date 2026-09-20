@@ -24,7 +24,11 @@ import {
   handoffMessageAr,
 } from "@sufria/shared";
 
-import { ConversationService } from "../src/conversation/session.service.js";
+import {
+  ConversationService,
+  flushDeferred,
+  type DeferredSend,
+} from "../src/conversation/session.service.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { RecordingWhatsAppSender } from "../src/whatsapp/sender.js";
 
@@ -98,15 +102,25 @@ async function atCartReview(opts: {
   }
 
   const from = nextCustomer();
-  const say = (body: string | null): Promise<string> =>
-    db.runInTenant(restaurantId, (tx) =>
+  /**
+   * رسالة كاملة زي ما بيمشيها الـwebhook: معاملة، **وبعدها** تفريغ طابور
+   * ما بعد الـCOMMIT. بلا التفريغ، «استلمنا طلبك» بتنكتب بالطابور وما
+   * بتنبعت أبدا — والاختبار بيشوف صفر رسائل بلا سبب ظاهر (ج §8).
+   */
+  const say = async (body: string | null): Promise<string> => {
+    const deferred: DeferredSend[] = [];
+    const outcome = await db.runInTenant(restaurantId, (tx) =>
       conversation.handleInbound(tx, {
         restaurantId,
         phoneNumberId: pid,
         from,
         body,
+        deferred,
       }),
     );
+    await flushDeferred(conversation.sender, deferred);
+    return outcome;
+  };
 
   const shop: Shop = {
     restaurantId,
