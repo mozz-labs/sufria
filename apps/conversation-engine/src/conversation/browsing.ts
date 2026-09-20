@@ -1,12 +1,10 @@
 import {
   CART_EMPTY_ON_FINISH_AR,
   FINISH_HINT_AR,
-  buildOrderSummary,
   fulfillmentAskAr,
   type SummaryFulfillment,
   HANDOFF_STREAK,
   MAX_QTY_PER_ITEM,
-  cartMessageAr,
   handoffMessageAr,
   interpretMessage,
   itemNotInCartAr,
@@ -25,12 +23,12 @@ import { logger } from "../logger.js";
 import { readCatalog, type Catalog } from "../restaurant/catalog.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
 import { advanceSessionState } from "../db/critical-primitives.js";
+import { cartTotalMinor, renderCart, renderSummary } from "./cart-view.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 import {
   readSessionData,
   toSummaryFulfillment,
   writeSessionData,
-  type CartLine,
   type SessionData,
 } from "./session-data.js";
 
@@ -95,53 +93,6 @@ function withReply(
         resendMenu: false,
         advanceTo,
       };
-}
-
-/** مجموع السلّة **بالقروش** — أعداد صحيحة، بلا float بأي خطوة (§11.6-أ). */
-export function cartTotalMinor(cart: readonly CartLine[]): number {
-  return cart.reduce((sum, l) => sum + l.unit_price_minor * l.qty, 0);
-}
-
-/** عرض السلّة **برقم الخريطة الحالية** — مصدر ترقيم واحد (§12.1). */
-function renderCart(data: SessionData, removeHint = true): string {
-  const numberOf = new Map<string, number>(
-    Object.entries(data.menu_map).map(([n, id]) => [id, Number(n)]),
-  );
-  return cartMessageAr(
-    data.cart.map((l) => ({
-      menuNumber: numberOf.get(l.item_id) ?? null,
-      name: l.name,
-      qty: l.qty,
-      lineTotalMinor: l.unit_price_minor * l.qty,
-    })),
-    cartTotalMinor(data.cart),
-    { removeHint },
-  );
-}
-
-/** أسطر العرض من السلّة — نفس الترقيم اللي بتستعمله `renderCart` بالضبط. */
-function displayLines(data: SessionData) {
-  const numberOf = new Map<string, number>(
-    Object.entries(data.menu_map).map(([n, id]) => [id, Number(n)]),
-  );
-  return data.cart.map((l) => ({
-    menuNumber: numberOf.get(l.item_id) ?? null,
-    name: l.name,
-    qty: l.qty,
-    lineTotalMinor: l.unit_price_minor * l.qty,
-  }));
-}
-
-/** رسالة `cart_review` — بتحلّ محل عرض السلّة اللي كانت ب-5 تبعته (ج §6). */
-function renderSummary(
-  data: SessionData,
-  fulfillment: SummaryFulfillment,
-): string {
-  return buildOrderSummary(
-    displayLines(data),
-    cartTotalMinor(data.cart),
-    fulfillment,
-  );
 }
 
 export function decideBrowsing(input: BrowsingInput): BrowsingDecision {

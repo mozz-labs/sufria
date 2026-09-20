@@ -5,8 +5,6 @@ import {
   HANDOFF_STREAK,
   MAX_ADDRESS_LENGTH,
   ORDER_CANCELLED_AR,
-  buildOrderSummary,
-  cartMessageAr,
   handoffMessageAr,
   matchCommand,
   matchOrderCommand,
@@ -14,6 +12,7 @@ import {
 } from "@sufria/shared";
 
 import { advanceSessionState } from "../db/critical-primitives.js";
+import { renderCart, renderSummary } from "./cart-view.js";
 import type { TenantTx } from "../db/types.js";
 import { logger } from "../logger.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
@@ -74,22 +73,6 @@ function withReply(
       };
 }
 
-function cartTotalMinor(data: SessionData): number {
-  return data.cart.reduce((sum, l) => sum + l.unit_price_minor * l.qty, 0);
-}
-
-function displayLines(data: SessionData) {
-  const numberOf = new Map<string, number>(
-    Object.entries(data.menu_map).map(([n, id]) => [id, Number(n)]),
-  );
-  return data.cart.map((l) => ({
-    menuNumber: numberOf.get(l.item_id) ?? null,
-    name: l.name,
-    qty: l.qty,
-    lineTotalMinor: l.unit_price_minor * l.qty,
-  }));
-}
-
 /** الملخّص ← `cart_review`. */
 function summaryDecision(
   data: SessionData,
@@ -97,11 +80,7 @@ function summaryDecision(
   summary: SummaryFulfillment,
 ): FulfillmentDecision {
   const next = { ...data, fulfillment };
-  return withReply(
-    next,
-    buildOrderSummary(displayLines(next), cartTotalMinor(next), summary),
-    "cart_review",
-  );
+  return withReply(next, renderSummary(next, summary), "cart_review");
 }
 
 /**
@@ -112,11 +91,7 @@ function summaryDecision(
  */
 function modifyDecision(data: SessionData): FulfillmentDecision {
   const next = { ...data, fulfillment: undefined };
-  return withReply(
-    next,
-    cartMessageAr(displayLines(next), cartTotalMinor(next)),
-    "browsing",
-  );
+  return withReply(next, renderCart(next), "browsing");
 }
 
 /**

@@ -17,6 +17,7 @@ import {
 } from "../restaurant/business-hours.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
 import { handleBrowsingMessage } from "./browsing.js";
+import { handleCartReviewMessage } from "./cart-review.js";
 import { handleFulfillmentMessage } from "./fulfillment.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 
@@ -42,6 +43,8 @@ export type ConversationOutcome =
   | "browsing"
   /** جلسة بحالة `fulfillment_choice`: انعالجت بـ`fulfillment.ts` (ج-3). */
   | "fulfillment_choice"
+  /** جلسة بحالة `cart_review`: انعالجت بـ`cart-review.ts` (ج-4). */
+  | "cart_review"
   /** جلسة نشطة بحالة ما إلها معالج بعد. انخزنت الرسالة وبس. */
   | "active_session"
   /** خسرنا سباق CAS: حدا تاني رحّب. تجاهل صامت. */
@@ -129,6 +132,19 @@ export class ConversationService {
           now: this.now(),
         });
         return "fulfillment_choice";
+      }
+      if (existing.state === "cart_review") {
+        // 🔴 نفس القاعدة: ولا `UPDATE` على صف الجلسة قبل النداء.
+        await handleCartReviewMessage(tx, this.sender, {
+          sessionId: existing.id,
+          restaurantId: ctx.restaurantId,
+          phoneNumberId: ctx.phoneNumberId,
+          to: ctx.from,
+          body: ctx.body,
+          contactPhone: restaurant.contactPhone,
+          now: this.now(),
+        });
+        return "cart_review";
       }
       await tx
         .update(conversationSessions)

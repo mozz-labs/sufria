@@ -23,6 +23,7 @@ import {
   CART_EMPTY_AR,
   CART_EMPTY_ON_FINISH_AR,
   CART_REMOVE_HINT_AR,
+  CONFIRM_PROMPT_AR,
   FINISH_HINT_AR,
   MENU_HEADER_AR,
   MENU_COMMANDS_TAIL_AR,
@@ -870,15 +871,26 @@ describe("ب-5 · «تم» → cart_review", () => {
     expect(await stateOf(s)).toBe("browsing");
   });
 
-  it("«تم» بعد الانتقال: الرسالة التانية ما بتمرق من معالج التصفّح", async () => {
+  /**
+   * 🔴 **الاختبار تغيّر بج-4، والتغيير هو المقصود.** كان بيؤكد `active_session`
+   *    — يعني «ولا رد إطلاقا» — وهاي كانت **فجوة §15.3 المسجّلة** عند نقطة
+   *    توقف ب-5، لا سلوكا مطلوبا: «الزبون بيشوف سلّته وبعدين ما بينجاوب مهما
+   *    كتب… بس ما بيصلح للبايلوت». ج-4 بتسدّها.
+   *
+   *    اللي بيضل صحيحا وبينحرس هون: «تم» **ما بتمرق من معالج التصفّح** —
+   *    ولا انتقال تاني، ولا السلّة بتتغيّر. اللي تغيّر إنها صارت تلاقي جوابا.
+   */
+  it("«تم» بعد الانتقال: بيتعاد السؤال، وولا انتقال تاني", async () => {
     const s = await shop({ label: "finish-again", items: TWO });
     await s.say("1");
     await s.say("تم");
-    const before = replies.forRestaurant(s.restaurantId).length;
+    const cartBefore = await cartOf(s);
 
-    expect(await s.say("تم")).toBe("active_session");
-    expect(replies.forRestaurant(s.restaurantId)).toHaveLength(before);
+    expect(await s.say("تم")).toBe("cart_review");
+
+    expect(s.last()).toBe(CONFIRM_PROMPT_AR);
     expect(await stateOf(s)).toBe("cart_review");
+    expect(await cartOf(s)).toEqual(cartBefore);
   });
 
   it("🔴 «تم» مرتين بنفس اللحظة: انتقال واحد ورسالة واحدة — الـCAS", async () => {
