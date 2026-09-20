@@ -8,11 +8,13 @@ import assert from "node:assert/strict";
 
 import {
   CART_EMPTY_AR,
+  CLOSED_AR,
   CART_TEXT_TEMPLATES_AR,
   ITEM_NAME_SLOT,
   MAX_QTY_PER_ITEM,
   QTYS_OVER_CAP_AR,
   cartMessageAr,
+  closedMessageAr,
   formatMinor,
   handoffMessageAr,
   itemNotInCartAr,
@@ -23,6 +25,7 @@ import {
   priceToMinor,
   unclearPartsLineAr,
   unknownNumbersLineAr,
+  welcomeMessageAr,
 } from "@sufria/shared";
 
 // ---------------------------------------------------------------------------
@@ -204,6 +207,24 @@ test("🔴 المال بالقروش: ولا float بالمجموع", () => {
     "0.30",
   );
   assert.equal(formatMinor(630 * 2), "12.60");
+});
+
+test("🔴 اسم مطعم فيه $& بينطبع حرفيا — الترحيب والإغلاق بمرور واحد", () => {
+  // نصّا ب-2 كانوا لسا على `String.replace` ببديل نصي، فـ`$&` بالقيمة
+  // كانت تُفسّر نمطا وتحط اسم الخانة نفسها محلها. واسم المطعم
+  // قيمة بيكتبها المطعم، مش ثابت بالكود.
+  assert.equal(welcomeMessageAr("مطعم $& الشام"), "أهلا بك في مطعم $& الشام.");
+  assert.equal(
+    closedMessageAr({ opensAt: "$&", closesAt: "23:00" }),
+    "المطعم مغلق حاليا. نستقبل الطلبات من $& إلى 23:00.",
+  );
+  // والعلّة التانية للـ`replace` المتتالية: قيمة فيها خانة بتتعبّى
+  // بالخطوة الجاية — وقتها «إلى» كانت بتنزل على موضع «من».
+  assert.equal(
+    closedMessageAr({ opensAt: "[إلى]", closesAt: "23:00" }),
+    "المطعم مغلق حاليا. نستقبل الطلبات من [إلى] إلى 23:00.",
+  );
+  assert.equal(closedMessageAr(null), CLOSED_AR);
 });
 
 test("🔴 اسم صنف فيه خانة أو $& بينطبع حرفيا — لا حقن بين الخانات", () => {

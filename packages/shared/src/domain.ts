@@ -191,6 +191,22 @@ export const MENU_HEADER_AR = "القائمة";
 export const MENU_COMMANDS_TAIL_AR =
   "اكتب رقم الصنف · «منيو» · «سلة» · «تم» لما تخلص";
 
+/**
+ * بيعبّي كل الخانات **بمرور واحد** — لكل نص بالملف، لا لنصوص السلّة وحدها.
+ *
+ * 🔴 مش `replace` متتالية، ولا `replace` واحدة ببديل نصي:
+ *    - قيمة فيها `$&` بيفسّرها `String.replace` **نمطا**، فبتحط محله اسم
+ *      الخانة نفسها: مطعم اسمه `مطعم $&` بيصير `مطعم [اسم المطعم]` برسالة الترحيب.
+ *    - وقيمة فيها خانة تانية بتتعبّى بالخطوة الجاية.
+ *    المرور الواحد بدالة استبدال بيحط كل قيمة مرة وحدة وحرفيا.
+ *
+ * والقيمتان اللي بتيجيا من برّا حقيقيتان: اسم المطعم بيكتبه المطعم، واسم
+ * الصنف كذلك — ولا واحد فيهم ثابت بالكود.
+ */
+function fillSlots(template: string, values: Record<string, string>): string {
+  return template.replace(/\[[^\]]+\]/gu, (slot) => values[slot] ?? slot);
+}
+
 /** `CLOSED_WITH_HOURS_AR` بخاناتها مستبدلة. بترجّع `CLOSED_AR` لو ما في أوقات. */
 export function closedMessageAr(
   window: {
@@ -199,15 +215,15 @@ export function closedMessageAr(
   } | null,
 ): string {
   if (window === null) return CLOSED_AR;
-  return CLOSED_WITH_HOURS_AR.replace(OPENS_AT_SLOT, window.opensAt).replace(
-    CLOSES_AT_SLOT,
-    window.closesAt,
-  );
+  return fillSlots(CLOSED_WITH_HOURS_AR, {
+    [OPENS_AT_SLOT]: window.opensAt,
+    [CLOSES_AT_SLOT]: window.closesAt,
+  });
 }
 
 /** `WELCOME_AR` باسم المطعم مستبدلا. */
 export function welcomeMessageAr(restaurantName: string): string {
-  return WELCOME_AR.replace(RESTAURANT_NAME_SLOT, restaurantName);
+  return fillSlots(WELCOME_AR, { [RESTAURANT_NAME_SLOT]: restaurantName });
 }
 
 // ---------------------------------------------------------------------------
@@ -368,17 +384,6 @@ export function priceToMinor(price: string): number {
  */
 export function formatMinor(minor: number): string {
   return (minor / 100).toFixed(2);
-}
-
-/**
- * بيعبّي كل الخانات **بمرور واحد**.
- *
- * 🔴 مش `replace` متتالية: اسم صنف فيه `[الكمية]` كان بيتعبّى بالخطوة الجاية،
- *    واسم فيه `$&` كان بيفسّره `String.replace` كنمط. المرور الواحد بدالة
- *    استبدال بيحط كل قيمة مرة وحدة وحرفيا.
- */
-function fillSlots(template: string, values: Record<string, string>): string {
-  return template.replace(/\[[^\]]+\]/gu, (slot) => values[slot] ?? slot);
 }
 
 const joinValues = (values: readonly (string | number)[]): string =>
