@@ -22,7 +22,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session + first reply, browsing cart (B-4) — no order creation yet |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -86,16 +86,22 @@ existing one fails loudly at `0001` by design. The upgrade path is always
 
 ## Tests
 
-All three packages run real suites — Jest for the backend apps, `node --test` for
-`dashboard-web`. The web tests guard the *decision*, not the code: they fail if a
-status label is written inline, if a local status map or `OrderStatus` type
-reappears, or if `preparing`/`completed` gain a customer message.
+All four packages run real suites — Jest for the backend apps, `node --test` for
+`shared` and `dashboard-web`. The web tests guard the *decision*, not the code:
+they fail if a status label is written inline, if a local status map or
+`OrderStatus` type reappears, or if `preparing`/`completed` gain a customer
+message.
 
 | Package | `test` script | Real? |
 |---|---|---|
 | `@sufria/dashboard-api` | `jest --config jest.config.json --runInBand` | yes |
 | `@sufria/conversation-engine` | `jest --config jest.config.json --runInBand` | yes |
+| `@sufria/shared` | `tsc -b && node --test "test/**/*.test.mts"` | yes |
 | `@sufria/dashboard-web` | `tsc -b ../../packages/shared && node --test "test/**/*.test.mts"` | yes |
+
+`shared` holds the pure half — the command matchers, the item parser, the cart
+and order texts — so the parsing decisions are tested without a database, and
+the engine suites are free to test only what needs one.
 
 **Jest, not Vitest, and never `tsx` — see `docs/ADR-004`.** Anything that boots
 Nest DI must be compiled by a toolchain that emits `design:paramtypes`. esbuild
@@ -133,6 +139,18 @@ conflict-branch test is ordered rather than raced — it holds the winner's
 transaction open — because a `Promise.all` race passes or fails depending on
 machine load, which it did.
 
+`conversation-engine/test/order.test.ts` guards the two decisions in task C that
+no reading of the code would catch. **Post-COMMIT send:** the guard is a test
+that forces the failure *at COMMIT* (a deferred constraint trigger), because a
+failure forced earlier — the `order_status_history` trigger — fires before the
+send is ever reached, so moving the send back inside the transaction drops
+nothing. **The CAS:** ignoring its result while keeping `FOR UPDATE` writes two
+orders for two concurrent «أكّد», verified by breaking it. That one has to be
+concurrent *and ordered* — the winner holds its transaction open — because a
+sequential double-send never reaches the handler at all: `findActiveSession`
+already sees `order_placed`. `cart.test.ts`, `fulfillment.test.ts` and
+`cart-review.test.ts` cover the states leading there.
+
 `conversation-engine/test/webhook.test.ts` does the same for the inbound webhook,
 which has no guard and no logged-in staff: the tenant comes from a
 `phone_number_id`, so the test asserts the message lands under that restaurant
@@ -160,18 +178,42 @@ RLS.
   moved into `packages/shared`, and the drift check now also walks the
   database's own table list, so a table mirrored nowhere is a failure rather
   than a silent gap. Put new mirrors in `packages/shared`; anywhere else fails.
-- `@sufria/conversation-engine` dedupes, routes, stores, applies the
-  business-hours gate, opens a session, sends the first reply, and handles the
-  `browsing` state: add, show, remove (`شيل`), menu resend, the unparsed counter
-  and the handoff (`conversation/browsing.ts`, cart brief §14), plus «تم» and
-  the atomic move to `cart_review` (B-5). Writing a new `menu_map` re-checks
-  every cart line's availability live and drops what is gone, telling the
-  customer in a message of its own after the menu — **the criterion is
-  `is_available`, never absence from `menu_map`**, which is authority over
-  numbering alone (cart brief §16). Sessions in any later state still only
-  refresh `last_message_at`. No address, no payment, no order creation.
-  Order creation must re-check availability again, inside its own transaction
-  (§16.6) — a cart can sit for minutes, and «منيو» may never come twice.
+- `@sufria/conversation-engine` now carries a conversation from the first
+  message to a row in `orders`. One handler per state, each the same shape — a
+  pure decision plus a thin I/O shell — and the state is only ever in the
+  session row:
+  `browsing` (`conversation/browsing.ts`) · `fulfillment_choice`
+  (`conversation/fulfillment.ts`, two steps in one enum value) · `cart_review`
+  (`conversation/cart-review.ts`) · order creation
+  (`conversation/order-creation.ts`). Briefs: `docs/11-cart-brief.md` and
+  `docs/12-after-cart-brief.md`.
+  Writing a new `menu_map` re-checks every cart line's availability live and
+  drops what is gone — **the criterion is `is_available`, never absence from
+  `menu_map`**, which is authority over numbering alone (cart brief §16). Order
+  creation re-checks it again inside its own transaction (cart brief §16.6): a cart can sit
+  for minutes, and «منيو» may never come twice.
+- **The customer's «استلمنا طلبك» is sent after COMMIT, never inside the
+  transaction.** Handlers push onto `ConversationContext.deferred` and whoever
+  owns the transaction drains it with `flushDeferred` once it succeeds; a send
+  that fails there is logged and the order is left alone. Sending first would
+  hand the customer a confirmation for an order that may never be written — and
+  a sent WhatsApp message does not roll back. The field is mandatory on purpose:
+  an optional one gets forgotten silently, and the customer then orders and
+  hears nothing, with no test failing. A test that forces the failure at COMMIT
+  (a deferred constraint trigger) is the one that guards this; forcing it
+  earlier proves nothing, because the send is never reached.
+- **Every state transition is a CAS, and the row lock does not substitute for
+  it.** `readSessionData` takes `FOR UPDATE`, but it reads `context` only — the
+  state that routed the message was read before the lock, in
+  `findActiveSession`. Drop the CAS and two concurrent «أكّد» write two orders;
+  verified by breaking it. A *sequential* double-send proves nothing here, since
+  routing alone stops the second one.
+- **`orders.notified` is written `true` at creation, against its default.**
+  `false` means "the poller must send" — the notify loop is part هـ of blueprint
+  §6.4, and `idx_orders_unnotified` is built for it — and the engine already sent
+  the message itself.
+  Deviation recorded in `docs/12-after-cart-brief.md` §12. **The poller, when it
+  is built, must send nothing for an order in `pending_acceptance`.**
 - **`business_hours` has no schema in the database — its contract is
   `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
   nothing ever wrote a shape into it; the shape is still defined by
@@ -195,6 +237,15 @@ RLS.
   behaviour on a row that really carries a legacy `timezone` key is unverified.
   No production database exists, so nothing is at risk today. If a legacy database
   ever appears, check it by hand before migrating.
+- **`order_placed` is a closed state, so the next message opens a brand-new
+  session and the customer gets the whole menu again.** There is no "your order
+  is on its way" reply and no way to ask about an order that was just placed.
+  Deliberate for now — recorded as a product decision for Mohammed before the
+  pilot (`docs/12-after-cart-brief.md` §16.8), not as a bug to fix in code.
+- **A failed «استلمنا طلبك» is never retried.** It is logged, and the order is
+  already in the dashboard, so the restaurant still sees it — but the customer
+  gets silence after «أكّد». Retrying belongs with the notify poller, which does
+  not exist yet.
 - **A closed restaurant answers every message with the closing text.** No session
   is opened by design, so nothing remembers that the customer was already told.
   Rate-limiting that repeat belongs with the state machine.
