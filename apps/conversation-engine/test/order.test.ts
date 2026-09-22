@@ -736,9 +736,19 @@ describe("رقم الطلب — بريف د §2.1", () => {
       await winnerDb.stop();
     }
 
-    // ١. الاتنين انخلقوا — ولا «أكّد» ضاعت عالقيد الفريد.
-    expect(settled[0]).toMatchObject({ status: "fulfilled" });
-    expect(settled[1]).toMatchObject({ status: "fulfilled" });
+    // ١. الاتنين انخلقوا — ولا «أكّد» ضاعت عالقيد الفريد. السبب بينطبع
+    //    بالفشل، عشان ضابط الكسر يبيّن **ليش** سقط، مش بس إنه سقط.
+    const rejections = settled.flatMap((r) =>
+      r.status === "rejected"
+        ? [
+            String(
+              (r.reason as { cause?: { message?: string } }).cause?.message ??
+                r.reason,
+            ),
+          ]
+        : [],
+    );
+    expect(rejections).toEqual([]);
     // ٢. برقمين مختلفين متتاليين، وكل زبون وصله رقمه هو.
     expect(await numbersOf(s)).toEqual([101, 102]);
     expect(winnerSends.map((m) => m.body)).toEqual([
