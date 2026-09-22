@@ -68,6 +68,8 @@ interface Shop {
   restaurantId: string;
   /** رقم الزبون اللي بيحكي بـ`say`. */
   from: string;
+  /** الترحيب والمنيو، قبل ما ينمسح السجل. */
+  greeting: string;
   ids: Record<string, string>;
   say: (body: string | null) => Promise<string>;
   last: () => string | undefined;
@@ -82,6 +84,8 @@ async function shop(opts: {
   offersDelivery?: boolean;
   deliveryFee?: string;
   items?: { name: string; price: string }[];
+  /** بلا قيمة = افتراضي القاعدة (`JOD`) — مش قيمة بيحطها الاختبار. */
+  currency?: "JOD" | "ILS";
 }): Promise<Shop> {
   const pid = phoneId(opts.label);
   const { rows } = await audit.query<{ id: string }>(
@@ -99,6 +103,12 @@ async function shop(opts: {
   );
   const restaurantId = rows[0]?.id ?? "";
   createdRestaurants.push(restaurantId);
+  if (opts.currency !== undefined) {
+    await audit.query(`UPDATE restaurants SET currency = $2 WHERE id = $1`, [
+      restaurantId,
+      opts.currency,
+    ]);
+  }
 
   const cat = await audit.query<{ id: string }>(
     `INSERT INTO menu_categories (restaurant_id, name) VALUES ($1, 'مقبلات') RETURNING id`,
@@ -136,11 +146,13 @@ async function shop(opts: {
   };
 
   expect(await say("مرحبا")).toBe("greeted");
+  const greeting = replies.forRestaurant(restaurantId).at(-1)?.body ?? "";
   replies.reset();
 
   return {
     restaurantId,
     from,
+    greeting,
     ids,
     say,
     last: () => replies.forRestaurant(restaurantId).at(-1)?.body,
@@ -763,6 +775,106 @@ describe("رقم الطلب — بريف د §2.1", () => {
   });
 });
 
+describe("العملة — بريف د §2.2 و§8.4", () => {
+  /**
+   * محادثة بتمرق على **كل** نص فيه مبلغ، بكل مسار بيرسمه: الترحيب مع المنيو
+   * (`session.service`)، «منيو» (`browsing`)، الإضافة، «سلة»، سؤال الرسوم،
+   * الملخّص (`fulfillment`)، «عدّل» من الملخّص (`cart-review`)، والملخّص
+   * مرة تانية، و«استلمنا». بترجّع كل نص صادر بالترتيب، والترحيب أوله.
+   */
+  async function converse(
+    label: string,
+    currency?: "JOD" | "ILS",
+  ): Promise<{ s: Shop; bodies: string[] }> {
+    const s = await shop({
+      label,
+      currency,
+      offersDelivery: true,
+      deliveryFee: "5.00",
+      items: [
+        { name: "شاورما دجاج", price: "12.00" },
+        { name: "حمص", price: "8.50" },
+      ],
+    });
+    for (const body of [
+      "منيو",
+      "1 ×2",
+      "2",
+      "سلة",
+      "تم",
+      "توصيل",
+      "غزة، شارع الوحدة، بناية 3",
+      "عدّل",
+      "تم",
+      "أكّد",
+    ]) {
+      await s.say(body);
+    }
+    expect(await s.orders()).toHaveLength(1);
+    return {
+      s,
+      bodies: [
+        s.greeting,
+        ...replies.forRestaurant(s.restaurantId).map((m) => m.body),
+      ],
+    };
+  }
+
+  /** كل سطر فيه مبلغ (رقم بمنزلتين) لازم يحمل تسمية العملة. */
+  const amountLines = (bodies: readonly string[]): string[] =>
+    bodies.flatMap((b) => b.split("\n")).filter((l) => /\d\.\d{2}\b/u.test(l));
+
+  it("🔴 مطعم ILS: المنيو والسلّة والملخّص وسؤال الرسوم كلها بـ«شيكل»، ولا «د.أ» بأي نص صادر", async () => {
+    const { bodies } = await converse("cur-ils", "ILS");
+
+    for (const body of bodies) expect(body).not.toContain("د.أ");
+    const lines = amountLines(bodies);
+    // المنيو مرتين بسطرين، والإضافة مرتين، والسلّة مرتين، والرسوم، والملخّص مرتين.
+    expect(lines.length).toBeGreaterThanOrEqual(15);
+    for (const line of lines) expect(line).toContain("شيكل");
+
+    const all = bodies.join("\n").split("\n");
+    // المنيو — الترحيب و«منيو».
+    expect(bodies[0]).toContain("1. شاورما دجاج — 12.00 شيكل\n");
+    expect(bodies[1]).toContain("2. حمص — 8.50 شيكل\n");
+    // الإضافة والسلّة.
+    expect(all).toContain("أضفت: شاورما دجاج ×2 — المجموع 24.00 شيكل");
+    expect(all).toContain("1 · شاورما دجاج ×2 — 24.00 شيكل");
+    expect(all).toContain("المجموع 32.50 شيكل");
+    // سؤال الرسوم، حرفيا.
+    expect(bodies).toContain(fulfillmentAskAr(500, "ILS"));
+    // الملخّص.
+    expect(all).toContain("التوصيل — 5.00 شيكل");
+    expect(all).toContain("المجموع 37.50 شيكل");
+    expect(all).toContain("الدفع نقدا.");
+    expect(bodies.at(-1)).toBe(orderReceivedMessageAr(101));
+  });
+
+  it("مطعم بلا عملة مسمّاة (افتراضي القاعدة JOD): نفس المحادثة بـ«د.أ»، ولا «شيكل»", async () => {
+    const { bodies } = await converse("cur-jod");
+
+    for (const body of bodies) expect(body).not.toContain("شيكل");
+    const lines = amountLines(bodies);
+    expect(lines.length).toBeGreaterThanOrEqual(15);
+    for (const line of lines) expect(line).toContain("د.أ");
+    expect(bodies[0]).toContain("1. شاورما دجاج — 12.00 د.أ\n");
+    expect(bodies).toContain(fulfillmentAskAr(500, "JOD"));
+  });
+
+  it("🔴 ولا نص صادر فيه خانة ما انعبّت ولا «{» — بالعملتين", async () => {
+    for (const [label, currency] of [
+      ["slots-jod", "JOD"],
+      ["slots-ils", "ILS"],
+    ] as const) {
+      const { bodies } = await converse(label, currency);
+      for (const body of bodies) {
+        expect(body).not.toMatch(/\[[^\]]*\]/u);
+        expect(body).not.toContain("{");
+      }
+    }
+  });
+});
+
 describe("الثابت المكسور — الخطوة 0", () => {
   it("«أكّد» وطريقة الاستلام ناقصة: رجوع لسؤال الاستلام، ولا طلب", async () => {
     const s = await shop({
@@ -787,6 +899,6 @@ describe("الثابت المكسور — الخطوة 0", () => {
 
     expect(await s.orders()).toHaveLength(0);
     expect(await s.state()).toBe("fulfillment_choice");
-    expect(s.last()).toBe(fulfillmentAskAr(150));
+    expect(s.last()).toBe(fulfillmentAskAr(150, "JOD"));
   });
 });

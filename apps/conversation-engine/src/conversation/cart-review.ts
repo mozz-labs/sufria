@@ -8,6 +8,7 @@ import {
   itemsRemovedUnavailableLineAr,
   matchOrderCommand,
   orderReceivedMessageAr,
+  type Currency,
 } from "@sufria/shared";
 
 import { advanceSessionState } from "../db/critical-primitives.js";
@@ -53,6 +54,8 @@ export interface CartReviewInput {
   readonly data: SessionData;
   readonly body: string | null;
   readonly contactPhone: string | null;
+  /** `restaurants.currency` — لكل نص فيه مبلغ (بريف د §2.2). */
+  readonly currency: Currency;
 }
 
 /** كل رد صادر بينعدّ — فجوة القياس بـب §4. الصمت ما بينعدّ. */
@@ -72,7 +75,7 @@ function withReply(
 }
 
 export function decideCartReview(input: CartReviewInput): CartReviewDecision {
-  const { data, contactPhone } = input;
+  const { data, contactPhone, currency } = input;
   const command = matchOrderCommand(input.body ?? "");
 
   switch (command) {
@@ -90,7 +93,7 @@ export function decideCartReview(input: CartReviewInput): CartReviewDecision {
      *    فبتفوت على الملخّص رأسا (ج §3، الصفّ التاني).
      */
     case "modify":
-      return withReply(data, renderCart(data), "browsing");
+      return withReply(data, renderCart(data, currency), "browsing");
 
     /**
      * «ألغِ» — سلّة فارغة ورجوع للتصفّح. **مش `abandoned`** (تلك للمهلة،
@@ -164,6 +167,7 @@ export interface CartReviewMessage {
   readonly contactPhone: string | null;
   /** حيّة — بتلزم لو انكسر الثابت ورجعنا نسأل عن طريقة الاستلام (§8، خطوة 0). */
   readonly deliveryFeeMinor: number;
+  readonly currency: Currency;
   /** طابور ما بعد الـCOMMIT. «استلمنا طلبك» بتتحط هون، ما بتنبعت هون. */
   readonly deferred: DeferredSend[];
   readonly now: Date;
@@ -214,7 +218,7 @@ async function handleConfirm(
     ) {
       return;
     }
-    const ask = fulfillmentAskAr(message.deliveryFeeMinor);
+    const ask = fulfillmentAskAr(message.deliveryFeeMinor, message.currency);
     await writeSessionData(
       tx,
       message.sessionId,
@@ -268,7 +272,7 @@ async function handleConfirm(
     await writeSessionData(tx, message.sessionId, next, message.now);
     await sendAll(sender, message, [
       removedLine,
-      renderSummary(next, fulfillment),
+      renderSummary(next, fulfillment, message.currency),
     ]);
     return;
   }
@@ -344,6 +348,7 @@ export async function handleCartReviewMessage(
     data,
     body: message.body,
     contactPhone: message.contactPhone,
+    currency: message.currency,
   });
 
   if (decision.confirm) {

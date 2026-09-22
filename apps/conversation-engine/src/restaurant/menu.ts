@@ -2,8 +2,11 @@ import { and, asc, eq } from "drizzle-orm";
 import {
   menuCategories,
   menuItems,
+  menuLineAr,
+  priceToMinor,
   MENU_COMMANDS_TAIL_AR,
   MENU_HEADER_AR,
+  type Currency,
 } from "@sufria/shared";
 
 import type { TenantTx } from "../db/types.js";
@@ -22,7 +25,8 @@ export interface MenuLine {
   number: number;
   itemId: string;
   name: string;
-  price: string;
+  /** بالقروش — نفس مسار التحويل الوحيد اللي بتقرأ فيه السلّة السعر. */
+  priceMinor: number;
 }
 
 /** سطر قائمة ومعه تصنيفه — الشكل الداخلي اللي العرض بيشتغل عليه. */
@@ -79,9 +83,10 @@ async function readMenu(tx: TenantTx): Promise<MenuRow[]> {
     number: i + 1,
     itemId: r.itemId,
     name: r.itemName,
-    // numeric(12,2) بترجع نصا من pg. toFixed بتضمن منزلتين حتى لو رجعت "12".
-    // 🔴 toFixed بترجّع أرقاما غربية دايما — بوابة check:numerals بتفحص هاد.
-    price: Number(r.price).toFixed(2),
+    // 🔴 `priceToMinor` مش `Number(price).toFixed(2)` (بريف د §8.4): الأخيرة
+    //    تحويل مال بالـJS. القروش بتمرق بـ`formatMinor` جوّا `menuLineAr`،
+    //    نفس المنسّق اللي بيكتب سعر السلّة — فالمنيو والسلّة ما بيفترقوا بقرش.
+    priceMinor: priceToMinor(r.price),
     categoryId: r.categoryId,
     categoryName: r.categoryName,
     categoryOrder: r.categoryOrder,
@@ -89,7 +94,10 @@ async function readMenu(tx: TenantTx): Promise<MenuRow[]> {
 }
 
 /** بتبني النص النهائي. مفصولة عن القراءة عشان تنفحص بلا قاعدة. */
-export function renderMenuText(rows: readonly MenuRow[]): string {
+export function renderMenuText(
+  rows: readonly MenuRow[],
+  currency: Currency,
+): string {
   const parts: string[] = [MENU_HEADER_AR];
   let currentCategory: string | null = null;
 
@@ -98,7 +106,9 @@ export function renderMenuText(rows: readonly MenuRow[]): string {
       currentCategory = row.categoryId;
       parts.push("", row.categoryName);
     }
-    parts.push(`${row.number}. ${row.name} — ${row.price}`);
+    // 🔴 القالب بـ`domain.ts` جوّا القاموس المحروس، مش سطر inline هون —
+    //    كان هون بلا عملة، والسلّة بعملة (بريف د §2.3).
+    parts.push(menuLineAr(row, currency));
   }
 
   // 🔴 الذيل بينضاف هون، بمكان واحد، فبيطلع **مرة وحدة** بكل رسالة قائمة.
@@ -108,15 +118,18 @@ export function renderMenuText(rows: readonly MenuRow[]): string {
   return parts.join("\n");
 }
 
-export async function buildMenu(tx: TenantTx): Promise<RenderedMenu> {
+export async function buildMenu(
+  tx: TenantTx,
+  currency: Currency,
+): Promise<RenderedMenu> {
   const rows = await readMenu(tx);
   return {
-    text: renderMenuText(rows),
-    lines: rows.map(({ number, itemId, name, price }) => ({
+    text: renderMenuText(rows, currency),
+    lines: rows.map(({ number, itemId, name, priceMinor }) => ({
       number,
       itemId,
       name,
-      price,
+      priceMinor,
     })),
   };
 }

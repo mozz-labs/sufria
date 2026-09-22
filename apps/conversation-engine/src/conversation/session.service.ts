@@ -6,6 +6,7 @@ import {
   priceToMinor,
   restaurants,
   welcomeMessageAr,
+  type Currency,
 } from "@sufria/shared";
 
 import { advanceSessionState } from "../db/critical-primitives.js";
@@ -163,6 +164,7 @@ export class ConversationService {
           contactPhone: restaurant.contactPhone,
           offersDelivery: restaurant.offersDelivery,
           deliveryFeeMinor: restaurant.deliveryFeeMinor,
+          currency: restaurant.currency,
           now: this.now(),
         });
         return "browsing";
@@ -178,6 +180,7 @@ export class ConversationService {
           body: ctx.body,
           contactPhone: restaurant.contactPhone,
           deliveryFeeMinor: restaurant.deliveryFeeMinor,
+          currency: restaurant.currency,
           now: this.now(),
         });
         return "fulfillment_choice";
@@ -192,6 +195,7 @@ export class ConversationService {
           body: ctx.body,
           contactPhone: restaurant.contactPhone,
           deliveryFeeMinor: restaurant.deliveryFeeMinor,
+          currency: restaurant.currency,
           deferred: ctx.deferred,
           now: this.now(),
         });
@@ -250,7 +254,11 @@ export class ConversationService {
     //        ويرجّعها لطابور ميتا اللي بيعيدها سبعة أيام على عطل إعادة
     //        المحاولة ما بتصلّحه.
     // ---------------------------------------------------------------------
-    const prepared = await prepareMenu(tx, welcomeMessageAr(restaurant.name));
+    const prepared = await prepareMenu(
+      tx,
+      welcomeMessageAr(restaurant.name),
+      restaurant.currency,
+    );
     if (!prepared.ok) {
       logger.error(
         {
@@ -324,6 +332,7 @@ export class ConversationService {
     contactPhone: string | null;
     offersDelivery: boolean;
     deliveryFeeMinor: number;
+    currency: Currency;
   }> {
     // 🔴 `resolve_restaurant_by_phone_id` بترجّع uuid وبس، فالاسم وساعات الدوام
     //    والمنطقة الزمنية بدهم قراءة. الشرط على المعرّف مش هو اللي بيعزل — سياسة tenant_isolation
@@ -336,6 +345,9 @@ export class ConversationService {
         contactPhone: restaurants.contactPhone,
         offersDelivery: restaurants.offersDelivery,
         deliveryFee: restaurants.deliveryFee,
+        // 🔴 مع بيانات المطعم اللي بتنقرأ أصلا بكل رسالة (بريف د §2.2)، **بلا
+        //    snapshot بالجلسة**: العملة ما بتتغيّر بنص محادثة.
+        currency: restaurants.currency,
       })
       .from(restaurants)
       .where(eq(restaurants.id, restaurantId))

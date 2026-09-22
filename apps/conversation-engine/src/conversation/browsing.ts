@@ -15,6 +15,7 @@ import {
   overCapLineAr,
   unclearPartsLineAr,
   unknownNumbersLineAr,
+  type Currency,
   type MessageIntent,
 } from "@sufria/shared";
 
@@ -77,6 +78,8 @@ export interface BrowsingInput {
   readonly offersDelivery: boolean;
   /** `restaurants.delivery_fee` بالقروش — بينعمله snapshot عند اختيار «توصيل». */
   readonly deliveryFeeMinor: number;
+  /** `restaurants.currency` — لكل نص فيه مبلغ (بريف د §2.2). */
+  readonly currency: Currency;
 }
 
 /** كل رد صادر بينعدّ — فجوة القياس بـ§4. الصمت ما بينعدّ. */
@@ -97,14 +100,14 @@ function withReply(
 
 export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
   const { data, intent, catalog, contactPhone, offersDelivery } = input;
-  const { deliveryFeeMinor } = input;
+  const { deliveryFeeMinor, currency } = input;
 
   /** الملخّص ← `cart_review`. */
   const summaryDecision = (
     next: SessionData,
     fulfillment: SummaryFulfillment,
   ): BrowsingDecision =>
-    withReply(next, renderSummary(next, fulfillment), "cart_review");
+    withReply(next, renderSummary(next, fulfillment, currency), "cart_review");
 
   /** `N` = عدد مفاتيح `menu_map` — لا عدد الأصناف بالقاعدة (§4). */
   const lastMenuNumber = Object.keys(data.menu_map).length;
@@ -119,7 +122,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
         case "menu":
           return { next, reply: null, resendMenu: true, advanceTo: null };
         case "cart":
-          return withReply(next, renderCart(next));
+          return withReply(next, renderCart(next, currency));
         case "finish": {
           // 🔴 سلّة فارغة: **ولا انتقال ولا CAS**، رسالة وبس، والجلسة بتضل
           //    `browsing` — فالزبون بيقدر يبلّش طلبه من نفس المكان (ب-5).
@@ -148,7 +151,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
           //    فعلا، مش لحظة ما بنسأله. لو اختار «استلام» ما إلها معنى أصلا.
           return withReply(
             next,
-            fulfillmentAskAr(deliveryFeeMinor),
+            fulfillmentAskAr(deliveryFeeMinor, currency),
             "fulfillment_choice",
           );
         }
@@ -187,7 +190,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
         ...next,
         cart: next.cart.filter((l) => l.item_id !== itemId),
       };
-      return withReply(removed, renderCart(removed));
+      return withReply(removed, renderCart(removed, currency));
     }
 
     // -----------------------------------------------------------------------
@@ -259,7 +262,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
 
       // 🔴 الترتيب ثابت (§14.1-1): النجاح أولا، ثم المشاكل. سطر لكل نوع.
       const lines: string[] = [
-        ...itemsAddedLinesAr(added, cartTotalMinor(cart)),
+        ...itemsAddedLinesAr(added, cartTotalMinor(cart), currency),
       ];
       if (unknownNumbers.length > 0) {
         lines.push(unknownNumbersLineAr(unknownNumbers, lastMenuNumber));
@@ -320,6 +323,7 @@ export interface BrowsingMessage {
   readonly contactPhone: string | null;
   readonly offersDelivery: boolean;
   readonly deliveryFeeMinor: number;
+  readonly currency: Currency;
   readonly now: Date;
 }
 
@@ -353,6 +357,7 @@ export async function handleBrowsingMessage(
     contactPhone: message.contactPhone,
     offersDelivery: message.offersDelivery,
     deliveryFeeMinor: message.deliveryFeeMinor,
+    currency: message.currency,
   });
 
   if (decision.advanceTo !== null) {
@@ -383,7 +388,7 @@ export async function handleBrowsingMessage(
 
   if (decision.resendMenu) {
     // «منيو»: نفس الطريق الوحيد لإرسال قائمة — الخريطة بتنستبدل كاملة معها.
-    const prepared = await prepareMenu(tx, null);
+    const prepared = await prepareMenu(tx, null, message.currency);
     if (!prepared.ok) {
       logger.error(
         {

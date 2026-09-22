@@ -225,7 +225,7 @@ describe("«تم» — الصفوف الأربعة الأولى من §3", () =>
 
     expect(await s.say("تم")).toBe("browsing");
     expect(await s.state()).toBe("fulfillment_choice");
-    expect(s.last()).toBe(fulfillmentAskAr(150));
+    expect(s.last()).toBe(fulfillmentAskAr(150, "JOD"));
     expect(s.last()).toContain("رسوم التوصيل 1.50 د.أ");
 
     expect(await s.say("توصيل")).toBe("fulfillment_choice");
@@ -378,7 +378,7 @@ describe("snapshot الرسوم — وعد، لا قراءة حيّة", () => {
     });
 
     await s.say("تم");
-    expect(s.last()).toBe(fulfillmentAskAr(0));
+    expect(s.last()).toBe(fulfillmentAskAr(0, "JOD"));
     expect(s.last()).not.toContain("رسوم التوصيل");
 
     await s.say("توصيل");
@@ -453,7 +453,7 @@ describe("«عدّل» و«ألغِ» — بالخطوتين", () => {
     // و«تم» تانية بتسأل من جديد.
     await s.say("تم");
     expect(await s.state()).toBe("fulfillment_choice");
-    expect(s.last()).toBe(fulfillmentAskAr(150));
+    expect(s.last()).toBe(fulfillmentAskAr(150, "JOD"));
   });
 });
 

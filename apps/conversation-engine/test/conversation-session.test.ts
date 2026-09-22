@@ -260,7 +260,7 @@ function metaPayload(...messages: MessageOpts[]): Record<string, unknown> {
 async function buildMenuForTest(
   tx: Parameters<typeof buildMenu>[0],
 ): Promise<string> {
-  return (await buildMenu(tx)).text;
+  return (await buildMenu(tx, "JOD")).text;
 }
 
 /**
@@ -459,10 +459,12 @@ describe("أول رسالة من زبون بلا جلسة", () => {
     );
 
     const body = replies.forRestaurant(restaurantId)[0]?.body ?? "";
-    expect(body).toContain("1. حمص — 2.50");
-    expect(body).toContain("2. متبل — 3.00");
+    // بريف د §2.3: سطر المنيو بعملة المطعم، زي السلّة — تغيّر عمدا. بلا
+    // العملة بالمتوقَّع، الاحتواء كان رح يمرّ على السطر القديم.
+    expect(body).toContain("1. حمص — 2.50 د.أ\n");
+    expect(body).toContain("2. متبل — 3.00 د.أ\n");
     // 🔴 لو الترقيم كان جوّا كل تصنيف، هاد بيصير "1. شيش طاووق".
-    expect(body).toContain("3. شيش طاووق — 7.25");
+    expect(body).toContain("3. شيش طاووق — 7.25 د.أ\n");
     // أرقام غربية وبس — القرار المقفول.
     expect(body).not.toMatch(/[٠-٩۰-۹]/);
   });

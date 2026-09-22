@@ -8,6 +8,7 @@ import {
   handoffMessageAr,
   matchCommand,
   matchOrderCommand,
+  type Currency,
   type SummaryFulfillment,
 } from "@sufria/shared";
 
@@ -56,6 +57,8 @@ export interface FulfillmentInput {
   readonly contactPhone: string | null;
   /** `restaurants.delivery_fee` بالقروش، **حيّة** — بتنعمل snapshot هون. */
   readonly deliveryFeeMinor: number;
+  /** `restaurants.currency` — لكل نص فيه مبلغ (بريف د §2.2). */
+  readonly currency: Currency;
 }
 
 /** كل رد صادر بينعدّ — فجوة القياس بـب §4. الصمت ما بينعدّ. */
@@ -78,9 +81,10 @@ function summaryDecision(
   data: SessionData,
   fulfillment: Fulfillment,
   summary: SummaryFulfillment,
+  currency: Currency,
 ): FulfillmentDecision {
   const next = { ...data, fulfillment };
-  return withReply(next, renderSummary(next, summary), "cart_review");
+  return withReply(next, renderSummary(next, summary, currency), "cart_review");
 }
 
 /**
@@ -89,9 +93,12 @@ function summaryDecision(
  *    الملخّص، يعني ما وافق على طريقة الاستلام، فبينسأل عنها من جديد.
  *    («عدّل» من `cart_review` بتخليها — ذاك صفّ تاني بـ§3، وهو ج-4.)
  */
-function modifyDecision(data: SessionData): FulfillmentDecision {
+function modifyDecision(
+  data: SessionData,
+  currency: Currency,
+): FulfillmentDecision {
   const next = { ...data, fulfillment: undefined };
-  return withReply(next, renderCart(next), "browsing");
+  return withReply(next, renderCart(next, currency), "browsing");
 }
 
 /**
@@ -110,11 +117,11 @@ function cancelDecision(data: SessionData): FulfillmentDecision {
 export function decideFulfillment(
   input: FulfillmentInput,
 ): FulfillmentDecision {
-  const { data, body, contactPhone, deliveryFeeMinor } = input;
+  const { data, body, contactPhone, deliveryFeeMinor, currency } = input;
   const command = matchOrderCommand(body ?? "");
 
   // «عدّل» و«ألغِ» بيشتغلوا **بالخطوتين** (§3، صفّا «أي خطوة»).
-  if (command === "modify") return modifyDecision(data);
+  if (command === "modify") return modifyDecision(data, currency);
   if (command === "cancel") return cancelDecision(data);
 
   const pending = data.fulfillment;
@@ -126,7 +133,12 @@ export function decideFulfillment(
     //    بيعرضه قبل «أكّد» — وهاد بالضبط اللي بيخلّي §2.1 آمنة.
     if (command === "pickup") {
       // بدّل رأيه. الرسوم بتختفي معها — ما عاد إلها معنى.
-      return summaryDecision(data, { type: "pickup" }, { type: "pickup" });
+      return summaryDecision(
+        data,
+        { type: "pickup" },
+        { type: "pickup" },
+        currency,
+      );
     }
     // أي أمر تاني معروف: مش عنوان.
     //
@@ -153,7 +165,7 @@ export function decideFulfillment(
     const delivery = { ...pending, address };
     const summary = toSummaryFulfillment(delivery);
     if (summary === null) return withReply(data, ADDRESS_ASK_AR);
-    return summaryDecision(data, delivery, summary);
+    return summaryDecision(data, delivery, summary, currency);
   }
 
   // خطوة النوع.
@@ -171,6 +183,7 @@ export function decideFulfillment(
       { ...data, unparsed_streak: 0 },
       { type: "pickup" },
       { type: "pickup" },
+      currency,
     );
   }
 
@@ -218,6 +231,7 @@ export interface FulfillmentMessage {
   readonly body: string | null;
   readonly contactPhone: string | null;
   readonly deliveryFeeMinor: number;
+  readonly currency: Currency;
   readonly now: Date;
 }
 
@@ -234,6 +248,7 @@ export async function handleFulfillmentMessage(
     body: message.body,
     contactPhone: message.contactPhone,
     deliveryFeeMinor: message.deliveryFeeMinor,
+    currency: message.currency,
   });
 
   if (decision.advanceTo !== null) {

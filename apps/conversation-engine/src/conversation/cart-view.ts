@@ -2,6 +2,7 @@ import {
   buildOrderSummary,
   cartMessageAr,
   type CartDisplayLine,
+  type Currency,
   type SummaryFulfillment,
 } from "@sufria/shared";
 
@@ -38,20 +39,31 @@ export function displayLines(data: SessionData): CartDisplayLine[] {
 }
 
 /** عرض السلّة بالتصفّح — بذيل «شيل» إلا لو انطلب غير هيك. */
-export function renderCart(data: SessionData, removeHint = true): string {
-  return cartMessageAr(displayLines(data), cartTotalMinor(data.cart), {
-    removeHint,
-  });
+export function renderCart(
+  data: SessionData,
+  currency: Currency,
+  removeHint = true,
+): string {
+  return cartMessageAr(
+    displayLines(data),
+    cartTotalMinor(data.cart),
+    currency,
+    {
+      removeHint,
+    },
+  );
 }
 
 /** رسالة `cart_review` — بتحلّ محل عرض السلّة اللي كانت ب-5 تبعته (ج §6). */
 export function renderSummary(
   data: SessionData,
   fulfillment: SummaryFulfillment,
+  currency: Currency,
 ): string {
   return buildOrderSummary(
     displayLines(data),
     cartTotalMinor(data.cart),
     fulfillment,
+    currency,
   );
 }

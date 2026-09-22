@@ -160,14 +160,14 @@ const SUBTOTAL = 1450;
 
 test("الملخّص — استلام: بلا سطر رسوم، والمجموع هو مجموع السلّة", () => {
   assert.equal(
-    buildOrderSummary(LINES, SUBTOTAL, { type: "pickup" }),
+    buildOrderSummary(LINES, SUBTOTAL, { type: "pickup" }, "JOD"),
     [
       "ملخّص طلبك:",
       "2 · شاورما عربي ×2 — 12.00 د.أ",
       "5 · حمص ×1 — 2.50 د.أ",
       "المجموع 14.50 د.أ",
       "الاستلام من المطعم",
-      "الدفع نقدا عند الاستلام.",
+      "الدفع نقدا.",
       "اكتب «أكّد» لإرسال الطلب، أو «عدّل» أو «ألغِ».",
     ].join("\n"),
   );
@@ -175,11 +175,16 @@ test("الملخّص — استلام: بلا سطر رسوم، والمجموع
 
 test("الملخّص — توصيل برسوم: سطر الرسوم، والمجموع بيشملها", () => {
   assert.equal(
-    buildOrderSummary(LINES, SUBTOTAL, {
-      type: "delivery",
-      feeMinor: 150,
-      address: "الشميساني، شارع عبد الحميد شرف، بناية 12",
-    }),
+    buildOrderSummary(
+      LINES,
+      SUBTOTAL,
+      {
+        type: "delivery",
+        feeMinor: 150,
+        address: "الشميساني، شارع عبد الحميد شرف، بناية 12",
+      },
+      "JOD",
+    ),
     [
       "ملخّص طلبك:",
       "2 · شاورما عربي ×2 — 12.00 د.أ",
@@ -187,18 +192,23 @@ test("الملخّص — توصيل برسوم: سطر الرسوم، والمج
       "التوصيل — 1.50 د.أ",
       "المجموع 16.00 د.أ",
       "التوصيل إلى: الشميساني، شارع عبد الحميد شرف، بناية 12",
-      "الدفع نقدا عند الاستلام.",
+      "الدفع نقدا.",
       "اكتب «أكّد» لإرسال الطلب، أو «عدّل» أو «ألغِ».",
     ].join("\n"),
   );
 });
 
 test("الملخّص — توصيل بلا رسوم: ولا سطر «التوصيل — 0.00 د.أ»", () => {
-  const summary = buildOrderSummary(LINES, SUBTOTAL, {
-    type: "delivery",
-    feeMinor: 0,
-    address: "الجاردنز، شارع وصفي التل",
-  });
+  const summary = buildOrderSummary(
+    LINES,
+    SUBTOTAL,
+    {
+      type: "delivery",
+      feeMinor: 0,
+      address: "الجاردنز، شارع وصفي التل",
+    },
+    "JOD",
+  );
   assert.equal(
     summary,
     [
@@ -207,7 +217,7 @@ test("الملخّص — توصيل بلا رسوم: ولا سطر «التوص�
       "5 · حمص ×1 — 2.50 د.أ",
       "المجموع 14.50 د.أ",
       "التوصيل إلى: الجاردنز، شارع وصفي التل",
-      "الدفع نقدا عند الاستلام.",
+      "الدفع نقدا.",
       "اكتب «أكّد» لإرسال الطلب، أو «عدّل» أو «ألغِ».",
     ].join("\n"),
   );
@@ -219,7 +229,7 @@ test("🔴 الملخّص بلا ذيل «شيل» — الأمر ما بيشت�
     { type: "pickup" },
     { type: "delivery", feeMinor: 150, address: "عمان" },
   ] as const) {
-    assert.ok(!buildOrderSummary(LINES, SUBTOTAL, f).includes("شيل"));
+    assert.ok(!buildOrderSummary(LINES, SUBTOTAL, f, "JOD").includes("شيل"));
   }
 });
 
@@ -227,11 +237,16 @@ test("🔴 العنوان بينطبع حرفيا — ولا تطبيع على �
   // «ة» و«أ» بيرجعوا زي ما هم: التطبيع للمطابقة وحدها، لا للتخزين ولا للعرض.
   const address = "أم أذينة، عمارة رقم 3، بجانب مطعم الأصيل";
   assert.ok(
-    buildOrderSummary(LINES, SUBTOTAL, {
-      type: "delivery",
-      feeMinor: 150,
-      address,
-    }).includes(`التوصيل إلى: ${address}`),
+    buildOrderSummary(
+      LINES,
+      SUBTOTAL,
+      {
+        type: "delivery",
+        feeMinor: 150,
+        address,
+      },
+      "JOD",
+    ).includes(`التوصيل إلى: ${address}`),
   );
 });
 
@@ -240,6 +255,7 @@ test("🔴 اسم صنف فيه خانة أو $& بينطبع حرفيا بال�
     [{ menuNumber: 1, name: "طبق [المجموع] $&", qty: 1, lineTotalMinor: 500 }],
     500,
     { type: "pickup" },
+    "JOD",
   );
   assert.ok(summary.includes("1 · طبق [المجموع] $& ×1 — 5.00 د.أ"));
   assert.ok(summary.includes("المجموع 5.00 د.أ"));
@@ -251,6 +267,7 @@ test("🔴 المال بالقروش: ولا float بمجموع الملخّص",
     [{ menuNumber: 1, name: "منسف", qty: 2, lineTotalMinor: 1260 }],
     1260,
     { type: "delivery", feeMinor: 75, address: "عمان" },
+    "JOD",
   );
   assert.ok(summary.includes("المجموع 13.35 د.أ"), summary);
 });
@@ -261,19 +278,19 @@ test("🔴 المال بالقروش: ولا float بمجموع الملخّص",
 
 test("سؤال الاستلام: الرسوم بتنقال قبل الاختيار، وصفر ما بيطلع", () => {
   assert.equal(
-    fulfillmentAskAr(150),
+    fulfillmentAskAr(150, "JOD"),
     "استلام من المطعم أو توصيل؟ رسوم التوصيل 1.50 د.أ.\nاكتب «استلام» أو «توصيل».",
   );
   assert.equal(
-    fulfillmentAskAr(0),
+    fulfillmentAskAr(0, "JOD"),
     "استلام من المطعم أو توصيل؟\nاكتب «استلام» أو «توصيل».",
   );
 });
 
 test("🔴 كل رسالة سؤال بتقول حرفيا شو يكتب الزبون", () => {
   // صرامة بلا توجيه = حلقة ما بتنتهي (§2.3).
-  assert.ok(fulfillmentAskAr(150).includes(FULFILLMENT_PROMPT_AR));
-  assert.ok(fulfillmentAskAr(0).includes(FULFILLMENT_PROMPT_AR));
+  assert.ok(fulfillmentAskAr(150, "JOD").includes(FULFILLMENT_PROMPT_AR));
+  assert.ok(fulfillmentAskAr(0, "JOD").includes(FULFILLMENT_PROMPT_AR));
   for (const word of ["أكّد", "عدّل", "ألغِ"]) {
     assert.ok(CONFIRM_PROMPT_AR.includes(word), word);
   }

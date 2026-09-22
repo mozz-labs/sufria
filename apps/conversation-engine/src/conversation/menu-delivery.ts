@@ -1,4 +1,4 @@
-import { itemsRemovedUnavailableLineAr } from "@sufria/shared";
+import { itemsRemovedUnavailableLineAr, type Currency } from "@sufria/shared";
 
 import type { TenantTx } from "../db/types.js";
 import { buildMenu, type MenuLine } from "../restaurant/menu.js";
@@ -57,8 +57,9 @@ export type PrepareMenuResult =
 export async function prepareMenu(
   tx: TenantTx,
   prefix: string | null,
+  currency: Currency,
 ): Promise<PrepareMenuResult> {
-  const menu = await buildMenu(tx);
+  const menu = await buildMenu(tx, currency);
   const body = prefix === null ? menu.text : `${prefix}\n${menu.text}`;
 
   try {

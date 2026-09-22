@@ -139,9 +139,12 @@ export const restaurants = pgTable("restaurants", {
   deliveryFee: numeric("delivery_fee", { precision: 12, scale: 2 })
     .notNull()
     .default("0"),
-  // 0011 — what the restaurant sells in. CHECK (currency IN ('JOD','ILS')) is
-  // in SQL only; the labels every amount carries are CURRENCY_LABEL_AR.
-  currency: text("currency").notNull().default("JOD"),
+  // 0011 — what the restaurant sells in. The enum here is a TypeScript type
+  // only; CHECK (currency IN ('JOD','ILS')) in SQL is what enforces it. The
+  // labels every amount carries are CURRENCY_LABEL_AR in domain.ts.
+  currency: text("currency", { enum: ["JOD", "ILS"] })
+    .notNull()
+    .default("JOD"),
   assumedCommissionRate: numeric("assumed_commission_rate", {
     precision: 5,
     scale: 4,

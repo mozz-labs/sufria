@@ -220,7 +220,7 @@ describe("«عدّل» — انتقال حالة حقيقي، و`fulfillment` ب
     const reply = s.last() ?? "";
     expect(reply).toContain("ملخّص طلبك:");
     expect(reply).not.toContain("أو توصيل؟");
-    expect(reply).not.toBe(fulfillmentAskAr(150));
+    expect(reply).not.toBe(fulfillmentAskAr(150, "JOD"));
   });
 
   it("المسار الطبيعي كامل: عدّل ← شيل ← تم ← ملخّص أنقص", async () => {
@@ -277,7 +277,7 @@ describe("«ألغِ»", () => {
     await s.say("تم");
 
     expect(await s.state()).toBe("fulfillment_choice");
-    expect(s.last()).toBe(fulfillmentAskAr(150));
+    expect(s.last()).toBe(fulfillmentAskAr(150, "JOD"));
   });
 });
 

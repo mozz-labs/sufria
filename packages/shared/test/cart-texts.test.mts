@@ -15,6 +15,8 @@ import {
   ORDER_TEXT_TEMPLATES_AR,
   ITEM_NAME_SLOT,
   MAX_QTY_PER_ITEM,
+  MENU_LINE_AR,
+  MENU_NUMBER_SLOT,
   QTYS_OVER_CAP_AR,
   cartMessageAr,
   closedMessageAr,
@@ -38,14 +40,25 @@ import {
 
 /**
  * كل موضع لخانة الاسم: إما يسبقه «الصنف » (الاسم بدل، و«الصنف» هو الفاعل)،
- * أو يتبعه « ×» (الاسم بقائمة، بلا خبر).
+ * أو يتبعه « ×» (الاسم بقائمة، بلا خبر)، أو هو سطر منيو مرقّم.
+ *
+ * 🔴 **استثناء سطر المنيو ضيّق بالقصد** (بريف د §8.4): الشكل
+ *    «[رقم المنيو]. [الاسم]» **حرفيا وفي بداية القالب وبس**. مش «أي شي قبله
+ *    نقطة»، ولا «[رقم المنيو]. » بنص جملة — التليين العام بيمرّق فاعلا بعد
+ *    أول نقطة بأي جملة.
  */
+const MENU_LINE_PREFIX = `${MENU_NUMBER_SLOT}. `;
 function nameNeverSubject(template: string): boolean {
   let at = template.indexOf(ITEM_NAME_SLOT);
   while (at !== -1) {
     const before = template.slice(0, at);
     const after = template.slice(at + ITEM_NAME_SLOT.length);
-    if (!before.endsWith("الصنف ") && !after.startsWith(" ×")) return false;
+    if (
+      !before.endsWith("الصنف ") &&
+      !after.startsWith(" ×") &&
+      before !== MENU_LINE_PREFIX
+    )
+      return false;
     at = template.indexOf(ITEM_NAME_SLOT, at + 1);
   }
   return true;
@@ -60,6 +73,30 @@ test("🔴 دليل الحارس: قالب الاسم فيه فاعل بيسقط
     true,
   );
   assert.equal(nameNeverSubject(`${ITEM_NAME_SLOT} ×2`), true);
+});
+
+test("🔴 دليل استثناء سطر المنيو: الشكل الحرفي بأول القالب وبس", () => {
+  // الحالة اللي الاستثناء موجود عشانها.
+  assert.equal(
+    nameNeverSubject(`${MENU_NUMBER_SLOT}. ${ITEM_NAME_SLOT} — [السعر]`),
+    true,
+  );
+  assert.equal(nameNeverSubject(MENU_LINE_AR), true);
+  // 🔴 السالب المطلوب: قالب بيبلّش بالاسم بلا رقم قبله بيضل مرفوضا.
+  assert.equal(nameNeverSubject(`${ITEM_NAME_SLOT} — [السعر]`), false);
+  // ومش تليين عام: نفس البادئة بنص جملة، أو رقم حرفي بدل الخانة، أو نقطة
+  // بآخر جملة قبل الاسم — كلها بتضل مرفوضة.
+  assert.equal(
+    nameNeverSubject(
+      `اخترت ${MENU_NUMBER_SLOT}. ${ITEM_NAME_SLOT} غير متوفر الآن.`,
+    ),
+    false,
+  );
+  assert.equal(nameNeverSubject(`1. ${ITEM_NAME_SLOT} غير متوفر الآن.`), false);
+  assert.equal(
+    nameNeverSubject(`انتهى الطلب. ${ITEM_NAME_SLOT} غير متوفر الآن.`),
+    false,
+  );
 });
 
 test("🔴 اسم الصنف لا يكون فاعلا أبدا — بكل نص بيوصل الزبون", () => {
@@ -184,9 +221,10 @@ test("الصنف مش بالسلّة، ولا شيء مفهوم، والاستس
 // ---------------------------------------------------------------------------
 
 test("إضافة صنف واحد: سطر واحد، والمجموع مجموع السلّة", () => {
-  assert.deepEqual(itemsAddedLinesAr([{ name: "شاورما عربي", qty: 2 }], 1450), [
-    "أضفت: شاورما عربي ×2 — المجموع 14.50 د.أ",
-  ]);
+  assert.deepEqual(
+    itemsAddedLinesAr([{ name: "شاورما عربي", qty: 2 }], 1450, "JOD"),
+    ["أضفت: شاورما عربي ×2 — المجموع 14.50 د.أ"],
+  );
 });
 
 test("إضافة أكثر من صنف: رأس، سطر لكل صنف، ثم المجموع", () => {
@@ -197,6 +235,7 @@ test("إضافة أكثر من صنف: رأس، سطر لكل صنف، ثم ال
         { name: "متبل", qty: 2 },
       ],
       850,
+      "JOD",
     ),
     ["أضفت:", "حمص ×1", "متبل ×2", "المجموع 8.50 د.أ"],
   );
@@ -204,7 +243,7 @@ test("إضافة أكثر من صنف: رأس، سطر لكل صنف، ثم ال
 
 test("🔴 ولا صنف انضاف = ولا سطر «أضفت:» ولا مجموع", () => {
   // طباعة مجموع ما تغيّر بتقول للزبون إن إشي صار، وما صار. §14.1-2
-  assert.deepEqual(itemsAddedLinesAr([], 1450), []);
+  assert.deepEqual(itemsAddedLinesAr([], 1450, "JOD"), []);
 });
 
 test("عرض السلّة برقم المنيو، والمجموع، وذيل «شيل»", () => {
@@ -215,6 +254,7 @@ test("عرض السلّة برقم المنيو، والمجموع، وذيل «
         { menuNumber: 5, name: "حمص", qty: 1, lineTotalMinor: 250 },
       ],
       1450,
+      "JOD",
     ),
     [
       "سلّتك:",
@@ -224,7 +264,7 @@ test("عرض السلّة برقم المنيو، والمجموع، وذيل «
       "لحذف صنف: «شيل» ورقمه",
     ].join("\n"),
   );
-  assert.equal(cartMessageAr([], 0), CART_EMPTY_AR);
+  assert.equal(cartMessageAr([], 0, "JOD"), CART_EMPTY_AR);
 });
 
 test("صنف بلا رقم بالخريطة الحالية: السطر بلا بادئة، ما في رقم صادق", () => {
@@ -232,6 +272,7 @@ test("صنف بلا رقم بالخريطة الحالية: السطر بلا ب
     cartMessageAr(
       [{ menuNumber: null, name: "حمص", qty: 1, lineTotalMinor: 250 }],
       250,
+      "JOD",
     ).split("\n")[1],
     "حمص ×1 — 2.50 د.أ",
   );
@@ -274,7 +315,7 @@ test("🔴 اسم مطعم فيه $& بينطبع حرفيا — الترحيب 
 test("🔴 اسم صنف فيه خانة أو $& بينطبع حرفيا — لا حقن بين الخانات", () => {
   // `replace` متتالية كانت بتعبّي [الكمية] جوّا الاسم، و$& كانت بتنفسّر نمطا.
   assert.deepEqual(
-    itemsAddedLinesAr([{ name: "صنف $& [الكمية]", qty: 2 }], 500),
+    itemsAddedLinesAr([{ name: "صنف $& [الكمية]", qty: 2 }], 500, "JOD"),
     ["أضفت: صنف $& [الكمية] ×2 — المجموع 5.00 د.أ"],
   );
 });

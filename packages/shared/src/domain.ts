@@ -28,6 +28,26 @@ export const CANCELLED_BY = ["customer", "restaurant", "system"] as const;
 export type CancelledBy = (typeof CANCELLED_BY)[number];
 
 /**
+ * مرآة `restaurants_currency_check` بـ0011 — عملة المطعم (بريف د §2.2).
+ * الأردن سوق الإطلاق فالافتراضي بالقاعدة `JOD`، ومطعم البايلوت التشغيلي
+ * بغزة `ILS`.
+ */
+export const CURRENCIES = ["JOD", "ILS"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+
+/**
+ * تسمية العملة كما بتنكتب جنب كل مبلغ بيوصل الزبون (بريف د §2.2).
+ *
+ * 🔴 **بتدخل القوالب خانةً `[العملة]`، مش ملزوقة بالمنسّق** (§8.4):
+ *    `formatMinor` بترجّع الرقم وحده زي ما كانت، والقالب بيضل جملة عربية
+ *    كاملة بيقرأها إنسان ويراجعها.
+ */
+export const CURRENCY_LABEL_AR: Record<Currency, string> = {
+  JOD: "د.أ",
+  ILS: "شيكل",
+};
+
+/**
  * شارات حالة الطلب بلوحة الموظفين. DESIGN.md §4 — لا تُكتب inline بأي مكان تاني.
  *
  * هاي **شارات**، مش رسائل. كلمة وحدة بتنقرأ بلمحة جوّا badge ضيّق وقت الضغط.
@@ -292,14 +312,29 @@ export const PART_SLOT = "[النص]";
 /** قيم متعددة بسطر واحد، مفصولة بـ«، » — صيغ الجمع (§14.4). */
 export const VALUES_SLOT = "[القيم]";
 export const RESTAURANT_PHONE_SLOT = "[رقم المطعم]";
+/**
+ * تسمية عملة المطعم (`CURRENCY_LABEL_AR`) — بكل قالب فيه مبلغ (بريف د §8.4).
+ * 🔴 كانت «د.أ» ثابتة بالقوالب الستة، فمطعم غزة كان رح يبيع بالشيكل ويكتب
+ *    للزبون دينارا.
+ */
+export const CURRENCY_SLOT = "[العملة]";
+/** سعر الصنف الواحد بسطر المنيو — مش سعر سطر السلّة. */
+export const PRICE_SLOT = "[السعر]";
+
+/**
+ * سطر المنيو (بريف د §2.3 و§8.4) — كان مكتوبا inline بـ`menu.ts` بلا عملة،
+ * بينما السلّة بتقول `2.50 د.أ`. نفس الشكل القائم، والعملة بخانتها.
+ * الرقم متسلسل عبر القائمة كلها، ومنه بتنكتب `menu_map`.
+ */
+export const MENU_LINE_AR = `${MENU_NUMBER_SLOT}. ${ITEM_NAME_SLOT} — ${PRICE_SLOT} ${CURRENCY_SLOT}`;
 
 /** إضافة صنف واحد. `[المجموع]` = مجموع **السلّة**، لا مجموع السطر. */
-export const ITEM_ADDED_AR = `أضفت: ${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} — المجموع ${TOTAL_SLOT} د.أ`;
+export const ITEM_ADDED_AR = `أضفت: ${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} — المجموع ${TOTAL_SLOT} ${CURRENCY_SLOT}`;
 /** إضافة أكثر من صنف: رأس، وسطر لكل صنف، ثم سطر المجموع. */
 export const ITEMS_ADDED_HEADER_AR = "أضفت:";
 export const ITEMS_ADDED_LINE_AR = `${ITEM_NAME_SLOT} ×${QUANTITY_SLOT}`;
 /** سطر المجموع — نفسه بالإضافة المتعددة وبعرض السلّة. */
-export const CART_TOTAL_LINE_AR = `المجموع ${TOTAL_SLOT} د.أ`;
+export const CART_TOTAL_LINE_AR = `المجموع ${TOTAL_SLOT} ${CURRENCY_SLOT}`;
 
 /**
  * تذكير الإنهاء — **على تأكيد الصنف الأول وحده**. مع ذيل المنيو: مرّتان
@@ -348,12 +383,12 @@ export const CART_HEADER_AR = "سلّتك:";
  * سطر السلّة **برقم المنيو** (§12.3-ب). بلاه «شيل 2» ملتبسة: رقم منيو ولا
  * ترتيب السطر؟ والالتباس بيحذف الصنف الغلط بلا ولا رسالة خطأ.
  */
-export const CART_LINE_AR = `${MENU_NUMBER_SLOT} · ${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} — ${LINE_PRICE_SLOT} د.أ`;
+export const CART_LINE_AR = `${MENU_NUMBER_SLOT} · ${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} — ${LINE_PRICE_SLOT} ${CURRENCY_SLOT}`;
 /**
  * ⚠️ صنف بالسلّة وما عاد إله رقم بالخريطة — إعادة «منيو» بعد ما انخفى. نفس
  * السطر بلا بادئة الرقم: ما في رقم صادق نعرضه. فجوة معروفة (§14.8).
  */
-export const CART_LINE_UNNUMBERED_AR = `${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} — ${LINE_PRICE_SLOT} د.أ`;
+export const CART_LINE_UNNUMBERED_AR = `${ITEM_NAME_SLOT} ×${QUANTITY_SLOT} — ${LINE_PRICE_SLOT} ${CURRENCY_SLOT}`;
 /** ذيل عرض السلّة — المكان الوحيد اللي بيعلّم «شيل» (§12.3-أ). */
 export const CART_REMOVE_HINT_AR = "لحذف صنف: «شيل» ورقمه";
 export const CART_EMPTY_AR = "سلّتك فارغة. اكتب رقم الصنف من المنيو.";
@@ -375,7 +410,7 @@ export const HANDOFF_AR = `للطلب مباشرة: ${RESTAURANT_PHONE_SLOT}`;
 // ما بعد السلّة — طريقة الاستلام، والعنوان، والملخّص (ج §6)
 // ---------------------------------------------------------------------------
 
-/** رسوم التوصيل بالدينار، جاهزة للعرض. */
+/** رسوم التوصيل، رقما جاهزا للعرض. العملة بخانتها جنبه (`[العملة]`). */
 export const FEE_SLOT = "[الرسوم]";
 /** عنوان التوصيل **كما كتبه الزبون**. يُعرض كما هو، بلا تطبيع (ج §0). */
 export const ADDRESS_SLOT = "[العنوان]";
@@ -390,7 +425,7 @@ export const FULFILLMENT_PROMPT_AR = "اكتب «استلام» أو «توصي�
 
 const FULFILLMENT_QUESTION_AR = "استلام من المطعم أو توصيل؟";
 /** سؤال الاستلام حين للمطعم رسوم توصيل: الرقم يُقال **قبل** أن يختار. */
-export const FULFILLMENT_ASK_WITH_FEE_AR = `${FULFILLMENT_QUESTION_AR} رسوم التوصيل ${FEE_SLOT} د.أ.\n${FULFILLMENT_PROMPT_AR}`;
+export const FULFILLMENT_ASK_WITH_FEE_AR = `${FULFILLMENT_QUESTION_AR} رسوم التوصيل ${FEE_SLOT} ${CURRENCY_SLOT}.\n${FULFILLMENT_PROMPT_AR}`;
 /** ورسوم صفر: لا سطر رسوم إطلاقا، لا «0.00 د.أ» — الصفر ليس معلومة هنا. */
 export const FULFILLMENT_ASK_NO_FEE_AR = `${FULFILLMENT_QUESTION_AR}\n${FULFILLMENT_PROMPT_AR}`;
 
@@ -416,11 +451,15 @@ export const ORDER_CANCELLED_AR =
 
 export const SUMMARY_HEADER_AR = "ملخّص طلبك:";
 /** سطر الرسوم — **للتوصيل برسوم > 0 وحده** (ج §6). */
-export const SUMMARY_FEE_LINE_AR = `التوصيل — ${FEE_SLOT} د.أ`;
+export const SUMMARY_FEE_LINE_AR = `التوصيل — ${FEE_SLOT} ${CURRENCY_SLOT}`;
 export const SUMMARY_PICKUP_LINE_AR = "الاستلام من المطعم";
 export const SUMMARY_DELIVERY_LINE_AR = `التوصيل إلى: ${ADDRESS_SLOT}`;
-/** طريقة دفع واحدة في البايلوت، فلا سؤال عنها — سطر خبري يكفي (ج §2.5). */
-export const SUMMARY_PAYMENT_LINE_AR = "الدفع نقدا عند الاستلام.";
+/**
+ * طريقة دفع واحدة في البايلوت، فلا سؤال عنها — سطر خبري يكفي (ج §2.5).
+ * 🔴 «الدفع نقدا.» لا «… عند الاستلام.» (بريف د §2.4)، للاستلام والتوصيل:
+ *    في طلب الاستلام يأتي مباشرة بعد «الاستلام من المطعم» فتتكرّر الكلمة.
+ */
+export const SUMMARY_PAYMENT_LINE_AR = "الدفع نقدا.";
 
 /**
  * كل قوالب نصوص السلّة — للحراسة: الممنوعات، والأرقام الغربية، والنص inline،
@@ -451,6 +490,8 @@ export const CART_TEXT_TEMPLATES_AR: readonly string[] = [
   CART_EMPTY_AR,
   CART_EMPTY_ON_FINISH_AR,
   HANDOFF_AR,
+  // سطر المنيو مش نص سلّة، بس هون بيدخل الحراسة — وبينطبق عليه اللي فوق.
+  MENU_LINE_AR,
 ];
 
 /** قوالب ما بعد السلّة (ج §6) — تدخل نفس الحراسة، وإلا لم يحرسها شيء. */
@@ -520,10 +561,40 @@ export function formatMinor(minor: number): string {
 const joinValues = (values: readonly (string | number)[]): string =>
   values.map(String).join("، ");
 
+/**
+ * خانة العملة لـ`fillSlots`. 🔴 **العملة باراميتر إجباري بكل دالة فيها مبلغ**،
+ * مش اختياري بافتراضي `JOD`: مسار بينسى يمرّرها لازم يوقف بالـtypecheck، مش
+ * يبعت «د.أ» لمطعم غزة بصمت.
+ */
+const currencySlot = (currency: Currency): Record<string, string> => ({
+  [CURRENCY_SLOT]: CURRENCY_LABEL_AR[currency],
+});
+
+/**
+ * سطر المنيو بعملة المطعم (بريف د §8.4). السعر **بالقروش** ويمرّ بـ`formatMinor`
+ * نفسها — مش `Number(price).toFixed(2)`، اللي هو تحويل مال بالـJS.
+ */
+export function menuLineAr(
+  line: {
+    readonly number: number;
+    readonly name: string;
+    readonly priceMinor: number;
+  },
+  currency: Currency,
+): string {
+  return fillSlots(MENU_LINE_AR, {
+    [MENU_NUMBER_SLOT]: String(line.number),
+    [ITEM_NAME_SLOT]: line.name,
+    [PRICE_SLOT]: formatMinor(line.priceMinor),
+    ...currencySlot(currency),
+  });
+}
+
 /** سطر الإضافة — صنف واحد بسطر، أو رأس + أسطر + مجموع. فاضي لو ما انضاف شي. */
 export function itemsAddedLinesAr(
   added: readonly { name: string; qty: number }[],
   cartTotalMinor: number,
+  currency: Currency,
 ): string[] {
   const total = formatMinor(cartTotalMinor);
   if (added.length === 0) return [];
@@ -534,6 +605,7 @@ export function itemsAddedLinesAr(
         [ITEM_NAME_SLOT]: only!.name,
         [QUANTITY_SLOT]: String(only!.qty),
         [TOTAL_SLOT]: total,
+        ...currencySlot(currency),
       }),
     ];
   }
@@ -545,7 +617,10 @@ export function itemsAddedLinesAr(
         [QUANTITY_SLOT]: String(a.qty),
       }),
     ),
-    fillSlots(CART_TOTAL_LINE_AR, { [TOTAL_SLOT]: total }),
+    fillSlots(CART_TOTAL_LINE_AR, {
+      [TOTAL_SLOT]: total,
+      ...currencySlot(currency),
+    }),
   ];
 }
 
@@ -634,6 +709,7 @@ export interface CartDisplayLine {
 export function cartMessageAr(
   lines: readonly CartDisplayLine[],
   cartTotalMinor: number,
+  currency: Currency,
   options: { readonly removeHint?: boolean } = {},
 ): string {
   if (lines.length === 0) return CART_EMPTY_AR;
@@ -647,11 +723,13 @@ export function cartMessageAr(
           [ITEM_NAME_SLOT]: l.name,
           [QUANTITY_SLOT]: String(l.qty),
           [LINE_PRICE_SLOT]: formatMinor(l.lineTotalMinor),
+          ...currencySlot(currency),
         },
       ),
     ),
     fillSlots(CART_TOTAL_LINE_AR, {
       [TOTAL_SLOT]: formatMinor(cartTotalMinor),
+      ...currencySlot(currency),
     }),
     ...(options.removeHint === false ? [] : [CART_REMOVE_HINT_AR]),
   ].join("\n");
@@ -697,6 +775,7 @@ export function buildOrderSummary(
   lines: readonly CartDisplayLine[],
   subtotalMinor: number,
   fulfillment: SummaryFulfillment,
+  currency: Currency,
 ): string {
   const feeMinor = fulfillment.type === "delivery" ? fulfillment.feeMinor : 0;
 
@@ -710,14 +789,21 @@ export function buildOrderSummary(
           [ITEM_NAME_SLOT]: l.name,
           [QUANTITY_SLOT]: String(l.qty),
           [LINE_PRICE_SLOT]: formatMinor(l.lineTotalMinor),
+          ...currencySlot(currency),
         },
       ),
     ),
     ...(feeMinor > 0
-      ? [fillSlots(SUMMARY_FEE_LINE_AR, { [FEE_SLOT]: formatMinor(feeMinor) })]
+      ? [
+          fillSlots(SUMMARY_FEE_LINE_AR, {
+            [FEE_SLOT]: formatMinor(feeMinor),
+            ...currencySlot(currency),
+          }),
+        ]
       : []),
     fillSlots(CART_TOTAL_LINE_AR, {
       [TOTAL_SLOT]: formatMinor(subtotalMinor + feeMinor),
+      ...currencySlot(currency),
     }),
     fulfillment.type === "pickup"
       ? SUMMARY_PICKUP_LINE_AR
@@ -730,10 +816,11 @@ export function buildOrderSummary(
 }
 
 /** سؤال «استلام أم توصيل؟» — الرسوم تُقال قبل الاختيار، إن كانت (ج §6). */
-export function fulfillmentAskAr(feeMinor: number): string {
+export function fulfillmentAskAr(feeMinor: number, currency: Currency): string {
   return feeMinor > 0
     ? fillSlots(FULFILLMENT_ASK_WITH_FEE_AR, {
         [FEE_SLOT]: formatMinor(feeMinor),
+        ...currencySlot(currency),
       })
     : FULFILLMENT_ASK_NO_FEE_AR;
 }
