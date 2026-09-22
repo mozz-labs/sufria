@@ -28,6 +28,7 @@ import {
   flushDeferred,
   type DeferredSend,
 } from "../src/conversation/session.service.js";
+import { ORDER_NUMBER_LOCK_NS } from "../src/conversation/order-creation.js";
 import { TenantDb } from "../src/db/tenant-db.js";
 import { RecordingWhatsAppSender } from "../src/whatsapp/sender.js";
 
@@ -732,13 +733,14 @@ describe("رقم الطلب — بريف د §2.1", () => {
         conversation.handleInbound(tx, confirmAs(other.from, loserSends)),
       );
       await settle();
-      // لقطة والأول لسا ماسك: التاني واقف على القفل الاستشاري (11 = الـnamespace
-      // بـorder-creation.ts، و`objsubid = 2` = الشكل بمفتاحين int4).
+      // لقطة والأول لسا ماسك: التاني واقف على قفل رقم الطلب (`classid` =
+      // الـnamespace، و`objsubid = 2` = الشكل بمفتاحين int4).
       const { rows: waiting } = await audit.query(
         `SELECT 1 FROM pg_locks
-          WHERE locktype = 'advisory' AND classid = 11 AND objsubid = 2
+          WHERE locktype = 'advisory' AND classid = $1 AND objsubid = 2
             AND NOT granted
             AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+        [ORDER_NUMBER_LOCK_NS],
       );
       loserWaitedOnLock = waiting.length === 1;
       releaseWinner();
