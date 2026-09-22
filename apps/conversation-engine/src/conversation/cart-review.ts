@@ -3,11 +3,11 @@ import {
   CONFIRM_PROMPT_AR,
   HANDOFF_STREAK,
   ORDER_CANCELLED_AR,
-  ORDER_STATUS_MESSAGE_AR,
   fulfillmentAskAr,
   handoffMessageAr,
   itemsRemovedUnavailableLineAr,
   matchOrderCommand,
+  orderReceivedMessageAr,
 } from "@sufria/shared";
 
 import { advanceSessionState } from "../db/critical-primitives.js";
@@ -313,17 +313,19 @@ async function handleConfirm(
 
   // --- الخطوة 7: بعد الـCOMMIT ------------------------------------------------
   // 🔴 بتتحط بالطابور وبس. مالك المعاملة بيبعتها بعد ما تنجح.
+  //    والرقم هو اللي انكتب بالصف نفسه — مش رقم منحسب مرة تانية هون.
   message.deferred.push({
     restaurantId: message.restaurantId,
     phoneNumberId: message.phoneNumberId,
     to: message.to,
-    body: ORDER_STATUS_MESSAGE_AR.pending_acceptance,
+    body: orderReceivedMessageAr(created.orderNumber),
   });
 
   logger.info(
     {
       restaurantId: message.restaurantId,
       orderId: created.orderId,
+      orderNumber: created.orderNumber,
       fulfillment: fulfillment.type,
     },
     "طلب انخلق",

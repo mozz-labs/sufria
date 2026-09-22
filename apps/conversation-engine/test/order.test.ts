@@ -18,9 +18,9 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import {
   CART_EMPTY_AR,
-  ORDER_STATUS_MESSAGE_AR,
   fulfillmentAskAr,
   itemsRemovedUnavailableLineAr,
+  orderReceivedMessageAr,
 } from "@sufria/shared";
 
 import {
@@ -49,6 +49,7 @@ const createdRestaurants: string[] = [];
 
 interface OrderRow {
   id: string;
+  order_number: number;
   status: string;
   payment_method: string;
   payment_status: string;
@@ -65,6 +66,8 @@ interface OrderRow {
 
 interface Shop {
   restaurantId: string;
+  /** رقم الزبون اللي بيحكي بـ`say`. */
+  from: string;
   ids: Record<string, string>;
   say: (body: string | null) => Promise<string>;
   last: () => string | undefined;
@@ -137,6 +140,7 @@ async function shop(opts: {
 
   return {
     restaurantId,
+    from,
     ids,
     say,
     last: () => replies.forRestaurant(restaurantId).at(-1)?.body,
@@ -163,7 +167,7 @@ async function shop(opts: {
     },
     orders: async () => {
       const { rows: o } = await audit.query<OrderRow>(
-        `SELECT id, status::text, payment_method::text, payment_status::text,
+        `SELECT id, order_number, status::text, payment_method::text, payment_status::text,
                 fulfillment_type::text, notified, subtotal::text, delivery_fee::text,
                 total::text, delivery_address, outbound_msg_count,
                 session_id, customer_id
@@ -276,7 +280,8 @@ describe("محادثة كاملة", () => {
     });
 
     expect(await s.state()).toBe("order_placed");
-    expect(s.last()).toBe(ORDER_STATUS_MESSAGE_AR.pending_acceptance);
+    // بريف د §2.1: «استلمنا» صارت بالرقم — تغيّرت عمدا لأن نصها تغيّر.
+    expect(s.last()).toBe(orderReceivedMessageAr(101));
     expect((await s.context())["order_id"]).toBe(order?.id);
     // §15.2 — العمود `session_id`.
     expect(order?.session_id).not.toBeNull();
@@ -412,7 +417,7 @@ describe("الذرّية والعزل", () => {
     expect(
       replies
         .forRestaurant(s.restaurantId)
-        .filter((m) => m.body === ORDER_STATUS_MESSAGE_AR.pending_acceptance),
+        .filter((m) => m.body === orderReceivedMessageAr(101)),
     ).toHaveLength(1);
   });
 
@@ -579,6 +584,172 @@ describe("الذرّية والعزل", () => {
       ),
     );
     expect((seenFromB as unknown as { rows: unknown[] }).rows).toHaveLength(0);
+  });
+});
+
+describe("رقم الطلب — بريف د §2.1", () => {
+  /** زبون تاني بنفس المطعم — رقمه وجلسته لحاله. */
+  async function secondCustomer(
+    s: Shop,
+    label: string,
+  ): Promise<{ from: string; say: (body: string) => Promise<string> }> {
+    const from = nextCustomer();
+    const say = async (body: string): Promise<string> => {
+      const deferred: DeferredSend[] = [];
+      const outcome = await db.runInTenant(s.restaurantId, (tx) =>
+        conversation.handleInbound(tx, {
+          restaurantId: s.restaurantId,
+          phoneNumberId: phoneId(label),
+          from,
+          body,
+          deferred,
+        }),
+      );
+      await flushDeferred(conversation.sender, deferred);
+      return outcome;
+    };
+    expect(await say("مرحبا")).toBe("greeted");
+    return { from, say };
+  }
+
+  const numbersOf = async (s: Shop): Promise<number[]> =>
+    (await s.orders()).map((o) => o.order_number).sort((a, b) => a - b);
+
+  it("مطعم بلا طلبات: أول طلب 101، والتالي 102", async () => {
+    const s = await shop({ label: "num-first" });
+    await s.say("1");
+    await s.say("تم");
+    await s.say("أكّد");
+    expect(await numbersOf(s)).toEqual([101]);
+
+    // `order_placed` حالة مغلقة، فالرسالة الجاية بتفتح جلسة جديدة (§16.8).
+    expect(await s.say("مرحبا")).toBe("greeted");
+    await s.say("2");
+    await s.say("تم");
+    await s.say("أكّد");
+
+    expect(await numbersOf(s)).toEqual([101, 102]);
+    expect(s.last()).toBe(orderReceivedMessageAr(102));
+  });
+
+  it("مطعمان: أول طلب بكل واحد منهم 101 — العدّاد لكل مطعم، مش عام", async () => {
+    const a = await shop({ label: "num-a" });
+    const b = await shop({ label: "num-b" });
+    for (const s of [a, b]) {
+      await s.say("1");
+      await s.say("تم");
+      await s.say("أكّد");
+    }
+
+    expect(await numbersOf(a)).toEqual([101]);
+    expect(await numbersOf(b)).toEqual([101]);
+  });
+
+  it("«استلمنا» فيها الرقم المخزَّن نفسه — مش 101 ثابتة", async () => {
+    const s = await shop({ label: "num-stored" });
+    // طلب قائم برقم 257: الجاي 258. رقم ثابت بالرسالة، أو محسوب بمكان تاني
+    // غير الصف، بيطلع هون.
+    const { rows: who } = await audit.query<{ id: string }>(
+      `SELECT id FROM customers WHERE restaurant_id = $1`,
+      [s.restaurantId],
+    );
+    await audit.query(
+      `INSERT INTO orders (restaurant_id, customer_id, order_number, fulfillment_type,
+                           payment_method, status, payment_status, subtotal, total)
+       VALUES ($1, $2, 257, 'pickup', 'cash', 'completed', 'collected', 1.00, 1.00)`,
+      [s.restaurantId, who[0]?.id],
+    );
+
+    await s.say("1");
+    await s.say("تم");
+    await s.say("أكّد");
+
+    const created = (await s.orders()).find((o) => o.order_number !== 257);
+    expect(created?.order_number).toBe(258);
+    expect(s.last()).toBe(orderReceivedMessageAr(created?.order_number ?? 0));
+    expect(s.last()).toBe("استلمنا طلبك رقم 258 — التأكيد خلال دقائق.");
+  });
+
+  /**
+   * 🔴 **مرتَّب مش مسابَق** — نفس شكل «أكّد مرتين بالتزامن» فوق: الأول بيمسك
+   *    معاملته مفتوحة **بعد** ما خصّص رقمه وكتب طلبه، والتاني بيبلّش وقتها.
+   *    `Promise.all` بيخلّي الاتنين يمرقوا ورا بعض على جهاز فاضي، فالاختبار
+   *    بيمر حتى بلا قفل.
+   *
+   *    زبونين مختلفين = جلستين مختلفتين، فما في `FOR UPDATE` ولا CAS مشترك
+   *    بينهم. الشي الوحيد اللي بيسلسلهم هو قفل رقم الطلب — وهاد اللي بيتفحص.
+   */
+  it("🔴 طلبان لزبونين مختلفين بنفس المطعم بالتزامن: الاتنين بينخلقوا، برقمين متتاليين", async () => {
+    const label = "num-race";
+    const s = await shop({ label });
+    const other = await secondCustomer(s, label);
+    for (const say of [s.say, other.say]) {
+      await say("1");
+      await say("تم");
+    }
+    replies.reset();
+
+    const confirmAs = (from: string, deferred: DeferredSend[]) => ({
+      restaurantId: s.restaurantId,
+      phoneNumberId: phoneId(label),
+      from,
+      body: "أكّد",
+      deferred,
+    });
+    const winnerSends: DeferredSend[] = [];
+    const loserSends: DeferredSend[] = [];
+
+    const winnerDb = new TenantDb();
+    await winnerDb.start();
+    let releaseWinner = (): void => {};
+    const winnerHeld = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    const settle = (): Promise<void> =>
+      new Promise((resolve) => setTimeout(resolve, 150));
+
+    let loserWaitedOnLock: boolean;
+    let settled: PromiseSettledResult<unknown>[];
+    try {
+      const winner = winnerDb.runInTenant(s.restaurantId, async (tx) => {
+        await conversation.handleInbound(tx, confirmAs(s.from, winnerSends));
+        await winnerHeld;
+      });
+      await settle();
+      const loser = db.runInTenant(s.restaurantId, (tx) =>
+        conversation.handleInbound(tx, confirmAs(other.from, loserSends)),
+      );
+      await settle();
+      // لقطة والأول لسا ماسك: التاني واقف على القفل الاستشاري (11 = الـnamespace
+      // بـorder-creation.ts، و`objsubid = 2` = الشكل بمفتاحين int4).
+      const { rows: waiting } = await audit.query(
+        `SELECT 1 FROM pg_locks
+          WHERE locktype = 'advisory' AND classid = 11 AND objsubid = 2
+            AND NOT granted
+            AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+      );
+      loserWaitedOnLock = waiting.length === 1;
+      releaseWinner();
+      settled = await Promise.allSettled([winner, loser]);
+    } finally {
+      releaseWinner();
+      await winnerDb.stop();
+    }
+
+    // ١. الاتنين انخلقوا — ولا «أكّد» ضاعت عالقيد الفريد.
+    expect(settled[0]).toMatchObject({ status: "fulfilled" });
+    expect(settled[1]).toMatchObject({ status: "fulfilled" });
+    // ٢. برقمين مختلفين متتاليين، وكل زبون وصله رقمه هو.
+    expect(await numbersOf(s)).toEqual([101, 102]);
+    expect(winnerSends.map((m) => m.body)).toEqual([
+      orderReceivedMessageAr(101),
+    ]);
+    expect(loserSends.map((m) => m.body)).toEqual([
+      orderReceivedMessageAr(102),
+    ]);
+    // ٣. 🔴 دليل إن التزامن صار فعلا، مش إنهم مرقوا ورا بعض. آخر شي بالقصد:
+    //    لو القفل انشال، الاختبار لازم يسقط عند ١ (القيد رفض التاني) — مش هون.
+    expect(loserWaitedOnLock).toBe(true);
   });
 });
 

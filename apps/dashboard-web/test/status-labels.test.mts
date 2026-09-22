@@ -25,7 +25,9 @@ import {
   ORDER_STATUS_LABEL_AR,
   ORDER_STATUS_MESSAGE_AR,
   readyMessageAr,
+  orderReceivedMessageAr,
   ORDER_CANCELLATION_REASON_SLOT,
+  ORDER_NUMBER_SLOT,
   PAYMENT_STATUS_LABEL_AR,
 } from "@sufria/shared";
 
@@ -100,9 +102,14 @@ test("رسائل الزبون مش نفس نصوص الشارات", () => {
 });
 
 test("نص رسائل الزبون هو النص المعتمد", () => {
+  // 🔴 بالرقم من بريف د §2.1 — تغيّر عمدا لأن القرار تغيّر (ج §15.5).
   assert.equal(
     ORDER_STATUS_MESSAGE_AR.pending_acceptance,
-    "استلمنا طلبك — التأكيد خلال دقائق.",
+    `استلمنا طلبك رقم ${ORDER_NUMBER_SLOT} — التأكيد خلال دقائق.`,
+  );
+  assert.equal(
+    orderReceivedMessageAr(101),
+    "استلمنا طلبك رقم 101 — التأكيد خلال دقائق.",
   );
   assert.equal(ORDER_STATUS_MESSAGE_AR.accepted, "أكّدنا طلبك.");
   // 🔴 فرعان لا ثابت واحد (ج §2.7 و§15.5): «جاهز» لطلب توصيل تعني «سلّمناه

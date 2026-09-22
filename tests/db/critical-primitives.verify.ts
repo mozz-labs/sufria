@@ -5,6 +5,12 @@
 // Section 6 extends the same discipline to the CHECK constraints added in
 // 0010: they are the safety net order creation leans on (task C brief §8), and
 // a constraint nobody has watched reject anything is a comment, not a net.
+// Section 7 does the same for 0011's order number and currency.
+//
+// Every order inserted here carries an explicit order_number (0011: NOT NULL,
+// no default), and no two orders of the same restaurant in one section share
+// one — so a UNIQUE violation can never stand in for the constraint a case is
+// actually about.
 import { drizzle } from "drizzle-orm/node-postgres";
 import {
   pgTable,
@@ -248,10 +254,11 @@ async function main() {
   const TMP = "f0000000-0000-4000-8000-0000000000aa";
   await db.transaction(async (tx) => {
     await withTenant(tx);
+    // 9001: the fixture's own order for this restaurant is 101.
     await tx.execute(sql`
-      INSERT INTO orders (id, restaurant_id, customer_id, fulfillment_type,
+      INSERT INTO orders (id, restaurant_id, customer_id, order_number, fulfillment_type,
                           payment_method, status, payment_status, subtotal, total, ready_at)
-      VALUES (${TMP}, ${RID}, 'c0000000-0000-4000-8000-00000000000a', 'pickup',
+      VALUES (${TMP}, ${RID}, 'c0000000-0000-4000-8000-00000000000a', 9001, 'pickup',
               'cash', 'ready', 'pending_cash', 5.00, 5.00, now() - interval '30 hours')`);
     await tx.execute(sql`
       UPDATE orders SET status='ready', ready_at = now() - interval '30 hours'
@@ -327,23 +334,33 @@ async function main() {
   // purpose, so a passing check names the constraint that actually fired
   // rather than whichever one happened to be evaluated first.
   const CID = "c0000000-0000-4000-8000-00000000000a";
+  // A fresh number per statement, clear of the fixture's 101: each case below
+  // must be rejected by its own constraint, never by the UNIQUE one.
+  let orderNumber = 9100;
   const insertOrder = (cols: string, vals: string) =>
     sql.raw(`
-    INSERT INTO orders (id, restaurant_id, customer_id, payment_method,
+    INSERT INTO orders (id, restaurant_id, customer_id, order_number, payment_method,
                         status, payment_status, ${cols})
-    VALUES (gen_random_uuid(), '${RID}', '${CID}', 'cash',
+    VALUES (gen_random_uuid(), '${RID}', '${CID}', ${++orderNumber}, 'cash',
             'pending_acceptance', 'pending_cash', ${vals})`);
 
   // Asserts on the pg error's own `constraint` field, which drizzle keeps on
   // `cause`. Not a substring search of the message: that text also carries the
   // failed statement, so a query mentioning the name would pass without the
   // constraint ever firing.
-  const rejects = async (label: string, constraint: string, stmt: unknown) => {
+  const rejects = async (
+    label: string,
+    constraint: string,
+    stmt: unknown,
+    tenant = RID,
+  ) => {
     let fired: string | undefined;
     let inserted = false;
     try {
       await db.transaction(async (tx) => {
-        await withTenant(tx);
+        await tx.execute(
+          sql`SELECT set_config('app.current_restaurant_id', ${tenant}, true)`,
+        );
         await tx.execute(stmt as never);
       });
       inserted = true;
@@ -441,6 +458,129 @@ async function main() {
     "6. control: a correct delivery order is still accepted",
     accepted,
     accepted ? "" : "the three constraints reject everything",
+  );
+
+  // --- 7. 0011 order number and currency ----------------------------------
+  // The engine allocates order_number under a per-restaurant advisory lock
+  // (task D brief §2.1). These are what catch a writer that gets it wrong —
+  // and the UNIQUE one is the net under the lock itself: without the lock two
+  // concurrent orders read the same MAX, and the second one lands here.
+  const numberedOrder = (n: string) =>
+    sql.raw(`
+    INSERT INTO orders (id, restaurant_id, customer_id, order_number, payment_method,
+                        status, payment_status, fulfillment_type, subtotal, total)
+    VALUES (gen_random_uuid(), '${RID}', '${CID}', ${n}, 'cash',
+            'pending_acceptance', 'pending_cash', 'pickup', 5.00, 5.00)`);
+
+  await rejects(
+    "7. orders_order_number_positive: order number 0",
+    "orders_order_number_positive",
+    numberedOrder("0"),
+  );
+
+  await rejects(
+    "7. orders_restaurant_order_number_unique: a second 101 in one restaurant",
+    "orders_restaurant_order_number_unique",
+    // The fixture's own order for this restaurant is 101.
+    numberedOrder("101"),
+  );
+
+  // A writer that forgets the number. NOT NULL has no constraint name in
+  // PostgreSQL 16, so the error's own code and column are what name it.
+  let nullFired = false;
+  let nullInserted = false;
+  try {
+    await db.transaction(async (tx) => {
+      await withTenant(tx);
+      await tx.execute(
+        sql.raw(`
+        INSERT INTO orders (id, restaurant_id, customer_id, payment_method,
+                            status, payment_status, fulfillment_type, subtotal, total)
+        VALUES (gen_random_uuid(), '${RID}', '${CID}', 'cash',
+                'pending_acceptance', 'pending_cash', 'pickup', 5.00, 5.00)`) as never,
+      );
+    });
+    nullInserted = true;
+  } catch (e) {
+    const cause = (e as { cause?: { code?: string; column?: string } }).cause;
+    nullFired = cause?.code === "23502" && cause.column === "order_number";
+  }
+  check(
+    "7. order_number NOT NULL: an order written without a number",
+    nullFired,
+    nullInserted
+      ? "INSERT SUCCEEDED — something supplied a number nobody asked for"
+      : nullFired
+        ? ""
+        : "rejected for another reason",
+  );
+
+  // restaurants' policy is id = current restaurant, so a new restaurant can
+  // only be inserted with its own id as the context — which is what lets
+  // this INSERT reach the CHECK instead of being stopped by RLS first.
+  const NEW_RID = "aaaaaaaa-0011-4aaa-8aaa-aaaaaaaaaaaa";
+  const newRestaurant = (currencyCol: string, currencyVal: string) =>
+    sql.raw(`
+    INSERT INTO restaurants (id, name${currencyCol})
+    VALUES ('${NEW_RID}', 'مطعم فحص 0011'${currencyVal})
+    RETURNING currency`);
+
+  await rejects(
+    "7. restaurants_currency_check: a currency outside JOD/ILS",
+    "restaurants_currency_check",
+    newRestaurant(", currency", ", 'USD'"),
+    NEW_RID,
+  );
+
+  await rejects(
+    "7. restaurants_currency_check: lower-case 'jod' — the labels are keyed on the exact code",
+    "restaurants_currency_check",
+    newRestaurant(", currency", ", 'jod'"),
+    NEW_RID,
+  );
+
+  // 🔴 The controls, rolled back. Without them CHECK (false) and a UNIQUE on
+  //    restaurant_id alone would pass every case above.
+  const acceptedValue = async (
+    stmt: unknown,
+    tenant: string,
+  ): Promise<string | null> => {
+    let value: string | null = null;
+    await db
+      .transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT set_config('app.current_restaurant_id', ${tenant}, true)`,
+        );
+        const r = (await tx.execute(stmt as never)) as unknown as {
+          rows: Record<string, unknown>[];
+        };
+        value = String(r.rows[0]?.["currency"] ?? "inserted");
+        tx.rollback();
+      })
+      .catch(() => {});
+    return value;
+  };
+
+  const numbered = await acceptedValue(numberedOrder("9201"), RID);
+  check(
+    "7. control: a fresh positive number in the same restaurant is accepted",
+    numbered !== null,
+    numbered === null ? "the order-number constraints reject everything" : "",
+  );
+
+  const ils = await acceptedValue(
+    newRestaurant(", currency", ", 'ILS'"),
+    NEW_RID,
+  );
+  check("7. control: an ILS restaurant is accepted", ils === "ILS", `${ils}`);
+
+  // DEFAULT 'JOD' is what keeps every restaurant that predates 0011 — and
+  // every test that creates one without naming a currency — as it was.
+  const defaulted = await acceptedValue(newRestaurant("", ""), NEW_RID);
+  check(
+    "7. control: a restaurant with no currency named gets JOD",
+    defaulted === "JOD",
+    `${defaulted}`,
   );
 
   console.log(

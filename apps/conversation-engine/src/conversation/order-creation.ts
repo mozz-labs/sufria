@@ -67,7 +67,51 @@ export async function checkAvailability(
 
 export interface CreatedOrder {
   readonly orderId: string;
+  /** اللي بيقوله الزبون عالكاونتر — نفسه اللي بـ«استلمنا» (بريف د §2.1). */
+  readonly orderNumber: number;
   readonly outboundCount: number;
+}
+
+/**
+ * الـnamespace تبع القفل الاستشاري اللي بيسلسل تخصيص رقم الطلب — **لهاد
+ * القفل وحده** (بريف د §2.1). المفتاح التاني `hashtext(restaurant_id)`، فالقفل
+ * بيسلسل طلبات **نفس المطعم** وبس، ومطعمان ما بيستنّوا بعض.
+ *
+ * تصادم `hashtext` بين مطعمين بيسلسلهم على بعض بلا داعي — أبطأ، مش أغلط.
+ */
+const ORDER_NUMBER_LOCK_NS = 11;
+
+/**
+ * رقم الطلب الجاي لهاد المطعم — من 101، متسلسل، ما بيتصفّر.
+ *
+ * 🔴 **جملتان، مش جملة وحدة.** بـREAD COMMITTED (مستوى العزل القائم، فحص
+ *    د-0 #9) كل جملة بتاخد snapshot لحظة ما تبلّش. الـ`MAX` بجملة لحالها بعد
+ *    ما رجع القفل بيشوف طلب اللي كان ماسكه، لأنه اتكوّم قبل ما يتحرّر القفل.
+ *    `MAX` بنفس جملة القفل كانت بتاخد snapshot **قبل** الانتظار، فبتشوف نفس
+ *    الـMAX اللي شافه الأول — وبتصير تصادم على القيد الفريد بالذروة.
+ *
+ *    والقفل بيتحرّر بالـCOMMIT وحده (`xact`)، فالرقم محجوز لحد ما يا بينكتب
+ *    الطلب، يا بتنسحب المعاملة كلها ومعها الحجز.
+ *
+ * 🔴 **القيد `orders_restaurant_order_number_unique` شبكة الأمان، مش الآلية.**
+ *    بلا القفل، طلبان بنفس اللحظة بيقرأوا نفس الـMAX، والتاني بيسقط عالقيد —
+ *    يعني زبون كتب «أكّد» وطلبه ما انكتب.
+ */
+async function allocateOrderNumber(
+  tx: TenantTx,
+  restaurantId: string,
+): Promise<number> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(${ORDER_NUMBER_LOCK_NS}::int, hashtext(${restaurantId}::text))`,
+  );
+  const [row] = await tx
+    .select({
+      next: sql<number>`COALESCE(MAX(${orders.orderNumber}), 100) + 1`,
+    })
+    .from(orders)
+    .where(eq(orders.restaurantId, restaurantId));
+  if (row === undefined) throw new Error("ما انقرأ رقم الطلب الجاي");
+  return row.next;
 }
 
 /**
@@ -106,12 +150,18 @@ export async function insertOrder(
   const totalMinor = subtotalMinor + feeMinor;
   const outboundCount = data.outbound_count + 1;
 
+  // --- بين الخطوتين 2 و3: رقم الطلب (بريف د §2.1) ----------------------------
+  // بعد الـCAS بالقصد: «أكّد» التانية اللي خسرت الـCAS ما بتوصل هون، فما
+  // بتستنّى عالقفل ولا بتحجز رقما.
+  const orderNumber = await allocateOrderNumber(tx, restaurantId);
+
   // --- الخطوة 3 -------------------------------------------------------------
   const [order] = await tx
     .insert(orders)
     .values({
       restaurantId,
       customerId: session.customerId,
+      orderNumber,
       // 🔴 اسم العمود `session_id`، مش `conversation_session_id` (§15.2).
       sessionId,
       fulfillmentType: fulfillment.type,
@@ -167,5 +217,5 @@ export async function insertOrder(
     actorStaffId: null,
   });
 
-  return { orderId: order.id, outboundCount };
+  return { orderId: order.id, orderNumber, outboundCount };
 }

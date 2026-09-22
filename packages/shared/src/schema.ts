@@ -139,6 +139,9 @@ export const restaurants = pgTable("restaurants", {
   deliveryFee: numeric("delivery_fee", { precision: 12, scale: 2 })
     .notNull()
     .default("0"),
+  // 0011 — what the restaurant sells in. CHECK (currency IN ('JOD','ILS')) is
+  // in SQL only; the labels every amount carries are CURRENCY_LABEL_AR.
+  currency: text("currency").notNull().default("JOD"),
   assumedCommissionRate: numeric("assumed_commission_rate", {
     precision: 5,
     scale: 4,
@@ -258,6 +261,9 @@ export const orders = pgTable("orders", {
     .notNull()
     .references(() => customers.id),
   sessionId: uuid("session_id").references(() => conversationSessions.id),
+  // 0011 — per restaurant from 101, UNIQUE (restaurant_id, order_number) in SQL.
+  // No default on purpose: the engine allocates it under an advisory lock.
+  orderNumber: integer("order_number").notNull(),
   fulfillmentType: fulfillmentType("fulfillment_type").notNull(),
   paymentMethod: paymentMethod("payment_method").notNull(),
   status: orderStatus("status").notNull().default("pending_acceptance"),

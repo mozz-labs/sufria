@@ -64,6 +64,12 @@ export const PAYMENT_STATUS_LABEL_AR: Partial<Record<PaymentStatus, string>> = {
 export const ORDER_CANCELLATION_REASON_SLOT = "[السبب]";
 
 /**
+ * رقم الطلب برسالة «استلمنا» (بريف د §2.1) — مصدّرة لنفس السبب. بتنعبّى من
+ * `orders.order_number` المخزَّن، لا من رقم محسوب بمكان تاني.
+ */
+export const ORDER_NUMBER_SLOT = "[رقم الطلب]";
+
+/**
  * رسائل الواتساب اللي بتوصل الزبون. **مفردة منفصلة عن الشارات فوق** —
  * الشارة حالة بتُقرأ، والرسالة جملة بتُبعت. نفس المفتاح، نصان مختلفان بقصد.
  *
@@ -79,8 +85,13 @@ export const ORDER_CANCELLATION_REASON_SLOT = "[السبب]";
  * لسا بلا نص معتمد — البحث عنه لازم يكون صريح، ما بينحل بقيمة افتراضية.
  */
 export const ORDER_STATUS_MESSAGE_AR = {
-  /** الاستلام: أول رد بعد ما بينحفظ الطلب، قبل ما المطعم يشوفه. */
-  pending_acceptance: "استلمنا طلبك — التأكيد خلال دقائق.",
+  /**
+   * الاستلام: أول رد بعد ما بينحفظ الطلب، قبل ما المطعم يشوفه.
+   * 🔴 **بالرقم** (بريف د §2.1): الزبون بيوصل المطعم وبيقول شي، والموظف
+   *    بيدوّر بشي. بتنبعت عبر `orderReceivedMessageAr` وحدها — القالب الخام
+   *    فيه الخانة.
+   */
+  pending_acceptance: `استلمنا طلبك رقم ${ORDER_NUMBER_SLOT} — التأكيد خلال دقائق.`,
   accepted: "أكّدنا طلبك.",
   /**
    * 🔴 يتفرّع حسب `fulfillment_type` (ج §2.7) — و**الشكل المتفرّع هو الحارس**:
@@ -738,4 +749,14 @@ export function fulfillmentAskAr(feeMinor: number): string {
  */
 export function readyMessageAr(fulfillmentType: "pickup" | "delivery"): string {
   return ORDER_STATUS_MESSAGE_AR.ready[fulfillmentType];
+}
+
+/**
+ * «استلمنا طلبك رقم 101 — …» — **بالرقم المخزَّن** بـ`orders.order_number`.
+ * `String` بتعطي أرقاما غربية، والحارس القائم بيمسك غيرها (بريف د §2.1).
+ */
+export function orderReceivedMessageAr(orderNumber: number): string {
+  return fillSlots(ORDER_STATUS_MESSAGE_AR.pending_acceptance, {
+    [ORDER_NUMBER_SLOT]: String(orderNumber),
+  });
 }

@@ -41,10 +41,10 @@ INSERT INTO menu_items (id, restaurant_id, category_id, name, price) VALUES
   ('e0000000-0000-4000-8000-00000000000a', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'd0000000-0000-4000-8000-00000000000a', 'شاورما دجاج', 2.50),
   ('e0000000-0000-4000-8000-00000000000b', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'd0000000-0000-4000-8000-00000000000b', 'شاورما لحمة', 3.00);
 
-INSERT INTO orders (id, restaurant_id, customer_id, fulfillment_type, payment_method, status, payment_status, subtotal, total) VALUES
-  ('f0000000-0000-4000-8000-00000000000a', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'c0000000-0000-4000-8000-00000000000a', 'pickup', 'cash',   'pending_acceptance', 'pending_cash',   5.00,  5.00),
-  ('f0000000-0000-4000-8000-00000000000b', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'c0000000-0000-4000-8000-00000000000b', 'pickup', 'online', 'pending_acceptance', 'pending_online', 12.00, 12.00),
-  ('f0000000-0000-4000-8000-00000000000c', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'c0000000-0000-4000-8000-00000000000c', 'pickup', 'cash',   'pending_acceptance', 'pending_cash',   10.00, 10.00);
+INSERT INTO orders (id, restaurant_id, customer_id, order_number, fulfillment_type, payment_method, status, payment_status, subtotal, total) VALUES
+  ('f0000000-0000-4000-8000-00000000000a', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'c0000000-0000-4000-8000-00000000000a', 101, 'pickup', 'cash',   'pending_acceptance', 'pending_cash',   5.00,  5.00),
+  ('f0000000-0000-4000-8000-00000000000b', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'c0000000-0000-4000-8000-00000000000b', 101, 'pickup', 'online', 'pending_acceptance', 'pending_online', 12.00, 12.00),
+  ('f0000000-0000-4000-8000-00000000000c', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'c0000000-0000-4000-8000-00000000000c', 101, 'pickup', 'cash',   'pending_acceptance', 'pending_cash',   10.00, 10.00);
 
 INSERT INTO order_items (order_id, restaurant_id, menu_item_id, item_name_snapshot, unit_price_snapshot, quantity) VALUES
   ('f0000000-0000-4000-8000-00000000000a', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'e0000000-0000-4000-8000-00000000000a', 'شاورما دجاج', 2.50, 2),
