@@ -233,12 +233,14 @@ export type OpeningDay = (typeof OPENING_DAYS)[number];
 export type OpeningWindow = { open: string; close: string };
 
 /**
- * `restaurants.business_hours` as the dashboard writes it. A day that is
- * missing, or present with `[]`, is closed that day. `{ days: {} }` defines no
- * day at all, which the engine reads as always open.
+ * `restaurants.business_hours` as the dashboard writes it: all seven days,
+ * always, a closed day as `[]` (D-6.1). The engine reads a week in which it
+ * recognises no day — `{}`, `{ days: {} }` — as always open, so the dashboard
+ * never writes one. A window whose `close` is before its `open` runs past
+ * midnight.
  */
 export type OpeningHours = {
-  days: Partial<Record<OpeningDay, OpeningWindow[]>>;
+  days: Record<OpeningDay, OpeningWindow[]>;
 };
 
 /** `GET /restaurant/settings` — brief D §3.5. The restaurant is the guard's. */
@@ -267,8 +269,11 @@ export type RestaurantSettings = {
 export type UpdateRestaurantSettingsRequest = {
   /** Western digits, zero allowed, at most two decimals: `"1.50"`. */
   deliveryFee?: string;
-  /** E.164: `"+962791234567"`. */
-  contactPhone?: string;
+  /**
+   * 7 to 15 Western digits, optional leading `+`: `"0790000099"`,
+   * `"+962790000099"`. `null` clears it — the handoff then sends nothing.
+   */
+  contactPhone?: string | null;
   /** The whole week, replaced at once. */
   openingHours?: OpeningHours;
 };

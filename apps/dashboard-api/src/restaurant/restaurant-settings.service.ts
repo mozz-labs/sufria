@@ -64,6 +64,7 @@ export class RestaurantSettingsService {
     const sets: SQL[] = [sql`updated_at = now()`];
     if (change.deliveryFee !== undefined)
       sets.push(sql`delivery_fee = ${change.deliveryFee}::numeric(12,2)`);
+    // `null` passes this check on purpose: it clears the number (D-6.1).
     if (change.contactPhone !== undefined)
       sets.push(sql`contact_phone = ${change.contactPhone}`);
     if (change.openingHours !== undefined)

@@ -4,8 +4,12 @@ import { z } from "zod";
 /** Brief D §3.5's `deliveryFee`, verbatim. Zero is a real fee: free delivery. */
 export const DELIVERY_FEE_PATTERN = /^\d{1,6}(?:\.\d{1,2})?$/;
 
-/** Brief D §3.5's `contactPhone`, verbatim: E.164. */
-export const CONTACT_PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
+/**
+ * D-6.1: the local form (`07…`, `059…`) and the international one alike, as
+ * restaurants actually write their number — the seed holds `0790000099`. No
+ * spaces, no dashes, and `[0-9]` spelt out: Arabic-Indic digits are a 400.
+ */
+export const CONTACT_PHONE_PATTERN = /^\+?[0-9]{7,15}$/;
 
 /**
  * `"HH:MM"` with two digits each, always. The engine's `TIME_RE` also takes
@@ -19,10 +23,18 @@ const WindowSchema = z.strictObject({
   close: z.string().regex(HHMM, 'close must be "HH:MM", e.g. "23:00"'),
 });
 
-const DaySchema = WindowSchema.array().optional();
+/**
+ * 🔴 Required, every day, in every PATCH (D-6.1). A closed day is `[]`, never
+ *    a missing key. The engine reads a week in which it recognises no day as
+ *    always open — `{}`, `{ days: {} }`, or keys it does not know — so the
+ *    dashboard is never allowed to write one.
+ */
+const DaySchema = WindowSchema.array();
 
 /**
  * The canonical shape alone: the seven short day keys and `{open, close}`.
+ * A window whose `close` is earlier than its `open` runs past midnight
+ * (`18:00` → `02:00`); the engine reads its tail on the next day.
  * `strictObject` at every level, so `"sunday"`, `"0"`, `{from, to}` and a
  * `timezone` key (moved to its own column by 0008) are a 400 instead of a row
  * the engine reads some other way, or not at all.
@@ -56,12 +68,14 @@ const UpdateRestaurantSettingsSchema = z
         "deliveryFee must be Western digits with at most two decimals",
       )
       .optional(),
+    // `null` clears the number: the handoff message then sends nothing (0009).
     contactPhone: z
       .string()
       .regex(
         CONTACT_PHONE_PATTERN,
-        "contactPhone must be E.164, e.g. +962791234567",
+        "contactPhone must be 7 to 15 Western digits, with an optional leading +",
       )
+      .nullable()
       .optional(),
     openingHours: OpeningHoursSchema.optional(),
   })

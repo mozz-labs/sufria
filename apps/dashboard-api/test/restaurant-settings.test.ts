@@ -11,7 +11,8 @@
  *    straight from the database and compared, literally, with the very shapes
  *    the engine's own tests feed `decideHours` in
  *    `conversation-session.test.ts` — where each one is asserted open or closed
- *    at a fixed hour. Equal to those, the engine decides on them what its tests
+ *    at a fixed hour — completed to seven days where they name Sunday alone,
+ *    since every PATCH now carries the whole week (D-6.1). Equal to those, the engine decides on them what its tests
  *    say it decides. A writer that stored anything else — numeric day keys,
  *    `{from, to}` — would still read its own write back through GET if it
  *    mapped it back, which is why the round trip through the API alone proves
@@ -83,34 +84,57 @@ type SettingsRow = {
   updated_at: string;
 };
 
+/** Every day closed — the base every week below is built on. */
+const CLOSED_DAYS = {
+  sun: [],
+  mon: [],
+  tue: [],
+  wed: [],
+  thu: [],
+  fri: [],
+  sat: [],
+};
+
+/**
+ * A full week (D-6.1: all seven days, every time): `days` over a closed week.
+ * Loosely typed on purpose, so a test can put one defect into an otherwise
+ * valid week and the 400 has that one cause.
+ */
+const week = (days: Record<string, unknown>) => ({
+  days: { ...CLOSED_DAYS, ...days },
+});
+
 /**
  * The shapes the engine's tests feed `decideHours`, copied literally from
  * `apps/conversation-engine/test/conversation-session.test.ts`, with what
  * those tests assert about each.
+ *
+ * Those that name Sunday alone are completed to seven days with `[]` (D-6.1).
+ * The engine reads a missing day and `[]` alike — `hours.days[day] ?? []` —
+ * and `decideHours`, run by hand for D-6.1 on each shape with and without the
+ * padding, gave the same decision at every minute of a week.
  */
 const ENGINE_TESTED_HOURS: [string, object][] = [
   [
     "one day, 10:00–23:00 (open Sunday 12:00, closed outside)",
-    { days: { sun: [{ open: "10:00", close: "23:00" }] } },
+    week({ sun: [{ open: "10:00", close: "23:00" }] }),
   ],
   [
     "past midnight, 22:00–02:00 (open Sunday 23:00 and Monday 01:00, closed Monday 03:00)",
-    { days: { sun: [{ open: "22:00", close: "02:00" }] } },
+    week({ sun: [{ open: "22:00", close: "02:00" }] }),
   ],
   [
     "a split shift (open 12:00 and 20:00, closed 16:00 in the gap)",
-    {
-      days: {
-        sun: [
-          { open: "10:00", close: "14:00" },
-          { open: "18:00", close: "23:00" },
-        ],
-      },
-    },
+    week({
+      sun: [
+        { open: "10:00", close: "14:00" },
+        { open: "18:00", close: "23:00" },
+      ],
+    }),
   ],
   [
     "a zero window, 00:00–00:00 (closed, not 24 hours)",
-    { days: { sun: [{ open: "00:00", close: "00:00" }] } },
+    week({ sun: [{ open: "00:00", close: "00:00" }] }),
   ],
   [
     "every day 00:00–23:59 (ALWAYS_OPEN_HOURS)",
@@ -479,22 +503,79 @@ describe("PATCH /restaurant/settings — the hours round trip", () => {
     expect(stored).toEqual(WEEK);
   });
 
-  it("the whole week is replaced at once, never merged day by day", async () => {
+  it("the whole week replaces what was stored — a hand-written legacy row keeps neither its timezone key nor its long day key", async () => {
+    // What a row written by hand before the settings screen may hold: forms
+    // only the engine's lenient reader accepts. A merge (`||`, or day by day)
+    // would keep them next to the new week.
+    await audit.query(
+      `UPDATE restaurants SET business_hours = $2::jsonb WHERE id = $1`,
+      [
+        shopX,
+        JSON.stringify({
+          timezone: "Asia/Amman",
+          days: { sunday: [{ open: "9:00", close: "23:00" }] },
+        }),
+      ],
+    );
+
     await patchXOk({ openingHours: WEEK });
 
-    await patchXOk({
-      openingHours: { days: { tue: [{ open: "11:00", close: "20:00" }] } },
-    });
-
-    expect((await rowOf(shopX)).business_hours).toEqual({
-      days: { tue: [{ open: "11:00", close: "20:00" }] },
-    });
+    expect((await rowOf(shopX)).business_hours).toEqual(WEEK);
   });
 
-  it("{ days: {} } is accepted and stored as sent — no day defined, which the engine reads as always open", async () => {
-    await patchXOk({ openingHours: { days: {} } });
+  // D-6.1 — the engine reads it as it should, and the writer takes it as is.
+  it("🔴 a window across midnight, 18:00 → 02:00, is accepted and stored as sent (the engine keeps it open to 01:59 on Monday)", async () => {
+    const hours = week({ sun: [{ open: "18:00", close: "02:00" }] });
 
-    expect((await rowOf(shopX)).business_hours).toEqual({ days: {} });
+    await patchXOk({ openingHours: hours });
+
+    expect((await rowOf(shopX)).business_hours).toEqual(hours);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 D-6.1 — all seven days, in every PATCH. The engine reads a week in which
+//    it recognises no day as always open; the dashboard may never write one.
+// ---------------------------------------------------------------------------
+describe("PATCH /restaurant/settings — all seven days", () => {
+  it.each([
+    [
+      "🔴 { days: {} } — no day at all, always open to the engine",
+      { days: {} },
+    ],
+    ["🔴 {} — the column default, always open to the engine", {}],
+    [
+      "Sunday alone — the other six missing, not closed",
+      { days: { sun: [{ open: "10:00", close: "23:00" }] } },
+    ],
+    ["a day that is null instead of []", week({ fri: null })],
+  ])("rejects %s with 400, and nothing is written", async (_label, hours) => {
+    const before = await rowOf(shopX);
+
+    await expectZod400(await patchX({ openingHours: hours }));
+
+    expect(await rowOf(shopX)).toEqual(before);
+  });
+
+  it.each(Object.keys(CLOSED_DAYS))(
+    "rejects a week without %s with 400 — every key is required, not only some",
+    async (day) => {
+      const before = await rowOf(shopX);
+      const days: Record<string, unknown> = { ...WEEK.days };
+      delete days[day];
+
+      await expectZod400(await patchX({ openingHours: { days } }));
+
+      expect(await rowOf(shopX)).toEqual(before);
+    },
+  );
+
+  it("a closed day is [] and is stored as []", async () => {
+    await patchXOk({ openingHours: WEEK });
+
+    expect(
+      ((await rowOf(shopX)).business_hours as typeof WEEK).days.tue,
+    ).toEqual([]);
   });
 });
 
@@ -503,24 +584,18 @@ describe("PATCH /restaurant/settings — the hours round trip", () => {
 //    out of tolerance is a 400 here, and nothing is written.
 // ---------------------------------------------------------------------------
 describe("PATCH /restaurant/settings — strict hours", () => {
-  const sunday = (w: unknown) => ({ openingHours: { days: { sun: [w] } } });
+  // One defect inside an otherwise valid week, so the 400 has that one cause
+  // and not the missing days (D-6.1).
+  const sunday = (w: unknown) => ({ openingHours: week({ sun: [w] }) });
+  const extraDay = (key: string) => ({
+    openingHours: week({ [key]: [{ open: "09:00", close: "23:00" }] }),
+  });
 
   it.each([
     ['🔴 "9:00" — one-digit hour', sunday({ open: "9:00", close: "23:00" })],
-    [
-      '🔴 "sunday" — the long day key',
-      {
-        openingHours: { days: { sunday: [{ open: "09:00", close: "23:00" }] } },
-      },
-    ],
-    [
-      '"Sun" — a capital',
-      { openingHours: { days: { Sun: [{ open: "09:00", close: "23:00" }] } } },
-    ],
-    [
-      'a numeric day key "0"',
-      { openingHours: { days: { "0": [{ open: "09:00", close: "23:00" }] } } },
-    ],
+    ['🔴 "sunday" — the long day key', extraDay("sunday")],
+    ['"Sun" — a capital', extraDay("Sun")],
+    ['a numeric day key "0"', extraDay("0")],
     [
       "{from, to} instead of {open, close}",
       sunday({ from: "09:00", to: "23:00" }),
@@ -542,15 +617,14 @@ describe("PATCH /restaurant/settings — strict hours", () => {
       {
         openingHours: {
           timezone: "Asia/Amman",
-          days: { sun: [{ open: "09:00", close: "23:00" }] },
+          ...week({ sun: [{ open: "09:00", close: "23:00" }] }),
         },
       },
     ],
-    ["hours without days — the column default {}", { openingHours: {} }],
     ["days that is an array", { openingHours: { days: [] } }],
     [
       "a day that is one window, not a list",
-      { openingHours: { days: { sun: { open: "09:00", close: "23:00" } } } },
+      { openingHours: week({ sun: { open: "09:00", close: "23:00" } }) },
     ],
     ["null hours", { openingHours: null }],
   ])("rejects %s with 400, and nothing is written", async (_label, body) => {
@@ -615,13 +689,30 @@ describe("PATCH /restaurant/settings — input", () => {
     ["a fee in exponent notation", { deliveryFee: "1e2" }],
     ["a fee of seven integer digits", { deliveryFee: "1234567" }],
     ["a null fee", { deliveryFee: null }],
-    ["a local phone number, not E.164", { contactPhone: "0790000099" }],
-    ["a phone starting +0", { contactPhone: "+0790000099" }],
     ["a phone with spaces", { contactPhone: "+962 79 000 0099" }],
-    ["a phone too short", { contactPhone: "+9627900" }],
-    ["a phone too long", { contactPhone: "+9627900000991234" }],
-    ["a phone in Arabic-Indic digits", { contactPhone: "+٩٦٢٧٩٠٠٠٠٠٩٩" }],
-    ["a null phone", { contactPhone: null }],
+    ["a local phone with spaces", { contactPhone: "079 000 0099" }],
+    ["a phone with dashes", { contactPhone: "079-000-0099" }],
+    ["a phone with a space at the end", { contactPhone: "0790000099 " }],
+    ["a phone with two pluses", { contactPhone: "++962790000099" }],
+    ["a plus that is not at the start", { contactPhone: "0790+000099" }],
+    ["a plus alone", { contactPhone: "+" }],
+    ["an empty phone", { contactPhone: "" }],
+    ["a phone of six digits", { contactPhone: "079000" }],
+    ["a phone of six digits after the plus", { contactPhone: "+962790" }],
+    ["a phone of sixteen digits", { contactPhone: "+9627900000991234" }],
+    ["a phone that is a number, not text", { contactPhone: 790000099 }],
+    [
+      "🔴 a phone in Arabic-Indic digits, international form",
+      { contactPhone: "+٩٦٢٧٩٠٠٠٠٠٩٩" },
+    ],
+    [
+      "🔴 a phone in Arabic-Indic digits, local form",
+      { contactPhone: "٠٧٩٠٠٠٠٠٩٩" },
+    ],
+    [
+      "a phone mixing Western and Arabic-Indic digits",
+      { contactPhone: "07٩0000099" },
+    ],
   ])("rejects %s with 400, and nothing is written", async (_label, body) => {
     const before = await rowOf(shopX);
 
@@ -636,6 +727,41 @@ describe("PATCH /restaurant/settings — input", () => {
       { restaurantId: shopX },
     );
     expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-6.1 — contactPhone: local and international forms, and null clears it.
+// ---------------------------------------------------------------------------
+describe("PATCH /restaurant/settings — contactPhone", () => {
+  it.each([
+    ["0790000099", "a Jordanian mobile, local form — as the seed holds it"],
+    ["0599123456", "a Palestinian mobile, local form"],
+    ["+962790000099", "international form"],
+    ["+970599123456", "international form, Palestine"],
+    ["1234567", "seven digits, the shortest"],
+    ["+123456789012345", "fifteen digits after the plus, the longest"],
+  ])("accepts %s (%s) and stores it exactly as sent", async (phone) => {
+    const body = await patchXOk({ contactPhone: phone });
+
+    expect(body.contactPhone).toBe(phone);
+    expect((await rowOf(shopX)).contact_phone).toBe(phone);
+  });
+
+  it("🔴 null clears the number — stored NULL, GET says null, nothing else touched", async () => {
+    const before = await rowOf(shopX);
+    expect(before.contact_phone).not.toBeNull();
+
+    const body = await patchXOk({ contactPhone: null });
+
+    const after = await rowOf(shopX);
+    expect(after).toEqual({
+      ...before,
+      contact_phone: null,
+      updated_at: after.updated_at,
+    });
+    expect(body.contactPhone).toBeNull();
+    expect((await settingsOk(staffX, shopX)).contactPhone).toBeNull();
   });
 });
 
