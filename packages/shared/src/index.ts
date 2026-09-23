@@ -9,3 +9,4 @@ export * from "./schema.js";
 export * from "./domain.js";
 export * from "./normalize.js";
 export * from "./item-parser.js";
+export * from "./dashboard-api.js";
