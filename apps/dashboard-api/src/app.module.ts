@@ -7,9 +7,10 @@ import { DbModule } from "./db/db.module.js";
 import { HealthController } from "./health/health.controller.js";
 import { MenuModule } from "./menu/menu.module.js";
 import { OrdersModule } from "./orders/orders.module.js";
+import { RestaurantModule } from "./restaurant/restaurant.module.js";
 
 @Module({
-  imports: [DbModule, AuthModule, OrdersModule, MenuModule],
+  imports: [DbModule, AuthModule, OrdersModule, MenuModule, RestaurantModule],
   controllers: [HealthController],
   providers: [
     // التحقق من المدخلات بـZod على مستوى التطبيق كله (ADR-003 §3).
