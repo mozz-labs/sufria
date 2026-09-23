@@ -5,9 +5,10 @@ import { AuthModule } from "./auth/auth.module.js";
 import { JwtAuthGuard } from "./auth/guards/jwt-auth.guard.js";
 import { DbModule } from "./db/db.module.js";
 import { HealthController } from "./health/health.controller.js";
+import { OrdersModule } from "./orders/orders.module.js";
 
 @Module({
-  imports: [DbModule, AuthModule],
+  imports: [DbModule, AuthModule, OrdersModule],
   controllers: [HealthController],
   providers: [
     // التحقق من المدخلات بـZod على مستوى التطبيق كله (ADR-003 §3).
