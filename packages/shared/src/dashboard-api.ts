@@ -94,3 +94,88 @@ export type OrderDetail = {
   /** بالترتيب الزمني. */
   history: OrderHistoryEntry[];
 };
+
+/**
+ * الحالات اللي بتكون وجهة من اللوحة — بريف د §2.6. `pending_acceptance`
+ * و`expired` مش منها أبدا: الأولى حالة الإنشاء، والتانية بيحطّها النظام
+ * (Sprint 2). وجهة منهم بالطلب ← 400 (§3.3 فحص 1).
+ */
+export const STAFF_TARGET_STATUSES = [
+  "accepted",
+  "preparing",
+  "ready",
+  "completed",
+  "cancelled",
+] as const;
+export type StaffTargetStatus = (typeof STAFF_TARGET_STATUSES)[number];
+
+/**
+ * انتقالات الموظف من اللوحة — جدول بريف د §2.6 حرفيا، وجزء من
+ * `ALLOWED_TRANSITIONS` (اختبار `shared` بيفرضها).
+ *
+ * 🔴 مش `canTransition`: فيها `ready ← expired`، وهاي للنظام وحده. الشاشة
+ *    بتعطّل أزرارها حسب هالجدول، والـAPI بيرفض أي انتقال برّاه بـ409
+ *    `transition_not_allowed`.
+ */
+export const STAFF_TRANSITIONS: Record<
+  OrderStatus,
+  readonly StaffTargetStatus[]
+> = {
+  pending_acceptance: ["accepted", "cancelled"],
+  accepted: ["preparing", "cancelled"],
+  // `ready` اختيارية: `preparing ← completed` مباشرة مسموح.
+  preparing: ["ready", "completed", "cancelled"],
+  ready: ["completed", "cancelled"],
+  completed: [],
+  cancelled: [],
+  expired: [],
+};
+
+export function canStaffTransition(
+  from: OrderStatus,
+  to: StaffTargetStatus,
+): boolean {
+  return STAFF_TRANSITIONS[from].includes(to);
+}
+
+/** جسم `PATCH /orders/:id/status` — بريف د §3.3. */
+export type UpdateOrderStatusRequest = {
+  /**
+   * الحالة اللي **شافها الموظف** على شاشته، مش الحالية بالقاعدة (§2.7):
+   * لو تغيّرت بالأثناء، الرد 409 والموظف بيشوف الحقيقية — بدل ما ينلغى طلب
+   * بالمطبخ بناءً على شاشة قديمة.
+   */
+  from: OrderStatus;
+  to: StaffTargetStatus;
+  /** مع `to: "cancelled"` وحدها. بيتقصّ من الطرفين، والفاضي بعد القصّ NULL. */
+  cancellationReason?: string;
+};
+
+/** الرد 200 من `PATCH /orders/:id/status`: الطلب بشكل عنصر `GET /orders`. */
+export type UpdateOrderStatusResponse = OrderListItem;
+
+export type OrderStatusConflictCode =
+  "transition_not_allowed" | "status_conflict" | "payment_not_settled";
+
+/**
+ * جسم الـ409 من `PATCH /orders/:id/status` — بريف د §8.7: شكل Nest
+ * الافتراضي ومعه `code`. و`currentStatus` مع `status_conflict` وحدها.
+ *
+ * الشاشة بتقرأ `code` لا `message`: `message` إنجليزي للمطوّر، والنص العربي
+ * للموظف مكانه بريف الشاشة.
+ */
+export type OrderStatusConflictBody =
+  | {
+      statusCode: 409;
+      error: "Conflict";
+      code: "status_conflict";
+      message: string;
+      /** الحالة الحقيقية بالقاعدة، عشان الشاشة تعرضها. */
+      currentStatus: OrderStatus;
+    }
+  | {
+      statusCode: 409;
+      error: "Conflict";
+      code: Exclude<OrderStatusConflictCode, "status_conflict">;
+      message: string;
+    };
