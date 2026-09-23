@@ -5,8 +5,8 @@
  * 🔴 المال نص هون، دايما (`"13.50"`) — زي ما بترجعه القاعدة. ولا `number`:
  *    `13.5` بتعرض غير الفاتورة (بريف د §0).
  */
-import type { OrderStatus } from "./domain.js";
-import type { fulfillmentType } from "./schema.js";
+import type { OrderStatus, PaymentStatus } from "./domain.js";
+import type { actorKind, fulfillmentType, paymentMethod } from "./schema.js";
 
 export type FulfillmentType = (typeof fulfillmentType.enumValues)[number];
 
@@ -47,4 +47,50 @@ export type OrderListResponse = {
   page: number;
   /** مع `active` دايما false. */
   hasMore: boolean;
+};
+
+export type PaymentMethod = (typeof paymentMethod.enumValues)[number];
+export type HistoryActor = (typeof actorKind.enumValues)[number];
+
+/**
+ * سطر من `GET /orders/:id`. الاسم والسعر من الـsnapshot لحظة الطلب، لا من
+ * `menu_items`: الزبون دفع القديم (بريف د §3.2).
+ */
+export type OrderDetailItem = {
+  name: string;
+  quantity: number;
+  unitPrice: string;
+  /** `quantity * unitPrice`، محسوب بـSQL. */
+  lineTotal: string;
+};
+
+export type OrderHistoryEntry = {
+  /** `null` بسطر الإنشاء وحده. */
+  from: OrderStatus | null;
+  to: OrderStatus;
+  actor: HistoryActor;
+  /** ISO 8601 بتوقيت UTC. */
+  at: string;
+};
+
+/** `GET /orders/:id` — بريف د §3.2. */
+export type OrderDetail = {
+  id: string;
+  orderNumber: number;
+  status: OrderStatus;
+  fulfillmentType: FulfillmentType;
+  subtotal: string;
+  /** `"0.00"` للاستلام. */
+  deliveryFee: string;
+  total: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  /** `null` للاستلام. */
+  deliveryAddress: string | null;
+  cancellationReason: string | null;
+  createdAt: string;
+  customer: { name: string | null; phone: string };
+  items: OrderDetailItem[];
+  /** بالترتيب الزمني. */
+  history: OrderHistoryEntry[];
 };
