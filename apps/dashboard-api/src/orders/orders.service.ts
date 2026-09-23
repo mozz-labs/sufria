@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import {
   ORDER_TAB_STATUSES,
+  canStaffTransition,
   type FulfillmentType,
   type HistoryActor,
   type OrderDetail,
@@ -11,6 +12,8 @@ import {
   type OrderTab,
   type PaymentMethod,
   type PaymentStatus,
+  type StaffTargetStatus,
+  type UpdateOrderStatusRequest,
 } from "@sufria/shared";
 import { TenantDbService } from "../db/tenant-db.service.js";
 
@@ -22,6 +25,31 @@ const isoUtc = (column: string) =>
   sql.raw(
     `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
   );
+
+/**
+ * إسقاط عنصر §3.1 — واحد لـ`GET /orders` ولرد `PATCH /orders/:id/status`
+ * (بريف د §3.3 خطوة 4: «بنفس الاستعلام لا بإسقاط ثانٍ»). بيفترض `orders o`
+ * و`customers c` بالاستعلام اللي بيحطّه، وبيطلع `OrderListRow`.
+ */
+const orderListColumns = () => sql`
+  o.id,
+  o.order_number,
+  o.status,
+  o.fulfillment_type,
+  o.total::text AS total,
+  (SELECT count(*)::int FROM order_items oi WHERE oi.order_id = o.id)
+    AS item_count,
+  ${isoUtc("o.created_at")} AS created_at,
+  c.name AS customer_name,
+  c.phone_number AS customer_phone`;
+
+/** نتيجة تغيير الحالة — الكنترولر بيحوّلها لرد HTTP (بريف د §3.3 و§8.7). */
+export type StatusChangeOutcome =
+  | { kind: "changed"; order: OrderListItem }
+  | { kind: "transition_not_allowed" }
+  | { kind: "not_found" }
+  | { kind: "status_conflict"; currentStatus: OrderStatus }
+  | { kind: "payment_not_settled" };
 
 /** بريف د §2.5: 20 بالصفحة بتبويب `history`، وبلا صفحات بـ`active`. */
 export const HISTORY_PAGE_SIZE = 20;
@@ -96,16 +124,7 @@ export class OrdersService {
 
     const res = await this.tenantDb.runInTenant(restaurantId, (tx) =>
       tx.execute<OrderListRow>(sql`
-        SELECT o.id,
-               o.order_number,
-               o.status,
-               o.fulfillment_type,
-               o.total::text AS total,
-               (SELECT count(*)::int FROM order_items oi WHERE oi.order_id = o.id)
-                 AS item_count,
-               ${isoUtc("o.created_at")} AS created_at,
-               c.name AS customer_name,
-               c.phone_number AS customer_phone
+        SELECT ${orderListColumns()}
           FROM orders o
           JOIN customers c ON c.id = o.customer_id
          WHERE o.restaurant_id = ${restaurantId}::uuid
@@ -207,6 +226,118 @@ export class OrdersService {
       history: r.history,
     };
   }
+
+  /**
+   * `PATCH /orders/:id/status` — بريف د §3.3 مع §8.2 و§8.6، بترتيب الفحص.
+   *
+   * @param restaurantId    من RestaurantContextGuard وحده (§8.1).
+   * @param staffAccountId  من التوكن، لـ`actor_staff_id`.
+   *
+   * 🔴 الـCAS هو `AND o.status = from` **جوّا نفس الـUPDATE**، مش قراءة قبله.
+   *    `from` هي الحالة اللي شافها الموظف (§2.7)، والخادم ما بيقرأ الحالية
+   *    ليبني عليها. وبـREAD COMMITTED، UPDATE واقف على قفل الصف بيعيد فحص
+   *    شرطه على النسخة الجديدة لما يتحرّر القفل: فمن طلبين بنفس اللحظة وبنفس
+   *    `from`، التاني بيلاقي صفر صفوف.
+   *
+   * 🔴 ترانزاكشن وحدة: سطر التاريخ بعد الـUPDATE وبنفس الترانزاكشن، فأي فشل
+   *    فيه بيرجّع الحالة معه. ولا طلب تغيّرت حالته بلا سطر تاريخ.
+   *
+   * ولا رسالة واتساب من هون: `notified = false` هي الإشارة الوحيدة، والمُراقِب
+   * (FR-11) هو اللي بيقرّر ويبعت.
+   */
+  async changeStatus(
+    restaurantId: string,
+    staffAccountId: string,
+    orderId: string,
+    change: UpdateOrderStatusRequest,
+  ): Promise<StatusChangeOutcome> {
+    const { from, to } = change;
+    // فحص 2: الانتقال نفسه ممنوع أيّا كان الطلب، فقبل أي استعلام.
+    if (!canStaffTransition(from, to))
+      return { kind: "transition_not_allowed" };
+    // مقصوص بالـDTO. الفاضي بعد القصّ NULL (§2.8)، وبغير الإلغاء NULL (§8.6).
+    const reason =
+      to === "cancelled" ? change.cancellationReason || null : null;
+
+    return this.tenantDb.runInTenant(restaurantId, async (tx) => {
+      const updated = await tx.execute<OrderListRow>(sql`
+        UPDATE orders o
+           SET status = ${to}::order_status,
+               notified = false,
+               updated_at = now()${extraSets(to, reason)}
+          FROM customers c
+         WHERE o.id = ${orderId}::uuid
+           AND o.restaurant_id = ${restaurantId}::uuid
+           AND o.status = ${from}::order_status${paymentSettled(to)}
+           AND c.id = o.customer_id
+        RETURNING ${orderListColumns()}`);
+      const row = updated.rows[0];
+
+      if (!row) {
+        // فحص 3 و4. السبب الوحيد لقراءة الحالة هون هو التفريق بين 404 و409،
+        // مش بناء الـUPDATE عليها (§2.7). وبنفس الترانزاكشن.
+        const found = await tx.execute<{ status: OrderStatus }>(sql`
+          SELECT status
+            FROM orders
+           WHERE id = ${orderId}::uuid
+             AND restaurant_id = ${restaurantId}::uuid`);
+        const current = found.rows[0];
+        if (!current) return { kind: "not_found" };
+        if (current.status !== from)
+          return { kind: "status_conflict", currentStatus: current.status };
+        // الحالة هي `from`، فالشرط الوحيد الباقي بالـWHERE هو شرط الدفع. ومش
+        // سباق: الانتقالات لقدّام بس، فحالة انتركت ما بترجع.
+        return { kind: "payment_not_settled" };
+      }
+
+      await tx.execute(sql`
+        INSERT INTO order_status_history
+               (order_id, restaurant_id, from_status, to_status,
+                actor, actor_staff_id, reason)
+        VALUES (${orderId}::uuid, ${restaurantId}::uuid, ${from}::order_status,
+                ${to}::order_status, 'staff', ${staffAccountId}::uuid, ${reason})`);
+
+      return { kind: "changed", order: toListItem(row) };
+    });
+  }
+}
+
+/**
+ * اللي بيتغيّر فوق الحالة، حسب الوجهة — بنفس الـUPDATE (بريف د §3.3 و§8.6).
+ * قيود القاعدة شبكة الأمان ومش بديل: مكتمل ⇒ محصَّل أو مدفوع، و`cancelled_by`
+ * موجود ⟺ ملغى، و`ready_at` بس لطلب وصل `ready`.
+ */
+function extraSets(to: StaffTargetStatus, reason: string | null): SQL {
+  switch (to) {
+    case "ready":
+      // مهلة الـ24 ساعة (Sprint 2) بتقرأه. `preparing ← completed` بيتركه NULL.
+      return sql`, ready_at = now()`;
+    case "completed":
+      // `collected` للنقدي وحده. الأونلاين بيوصل هون `paid` (شرط الـWHERE)
+      // وبيضل `paid`: `collected` حالة نقدية بس (orders_collected_is_cash).
+      return sql`,
+               payment_status = CASE WHEN o.payment_method = 'cash'
+                                     THEN 'collected'::payment_status
+                                     ELSE o.payment_status END`;
+    case "cancelled":
+      // §8.2: الإلغاء من اللوحة `restaurant`، مفتاح `ORDER_STATUS_MESSAGE_AR.cancelled`.
+      return sql`,
+               cancelled_by = 'restaurant',
+               cancellation_reason = ${reason}`;
+    default:
+      return sql``;
+  }
+}
+
+/**
+ * §8.6: طلب غير نقدي ما بيكتمل قبل ما ينقبض. بلا هالشرط، القيد
+ * `orders_completed_payment_settled` بيرفضه بـ500 بدل 409 مفهومة.
+ */
+function paymentSettled(to: StaffTargetStatus): SQL {
+  return to === "completed"
+    ? sql`
+           AND (o.payment_method = 'cash' OR o.payment_status = 'paid')`
+    : sql``;
 }
 
 function toListItem(r: OrderListRow): OrderListItem {
