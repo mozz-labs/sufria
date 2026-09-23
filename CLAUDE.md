@@ -21,7 +21,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | Path | Package | What it is |
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
-| `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard |
+| `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
 | `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
@@ -232,6 +232,11 @@ RLS.
   money without knowing, while one that receives a message out of hours sees it
   and acts. The empty field is "always open" by product decision; malformed gets
   the same treatment plus an error log.
+  **The dashboard therefore writes the canonical shape alone** (brief D §8.8:
+  strict writer, lenient reader): all seven short day keys in every PATCH, a
+  closed day as `[]`, `"HH:MM"` with two digits. A week in which the engine
+  recognises no day — `{}`, numeric keys, `{from, to}` windows — reads as always
+  open, so a near-miss shape makes a closed restaurant take orders, silently.
   - **The 0008 backfill branch has never actually run.** Every seeded row had
   `business_hours = {}`, so the `UPDATE` matched zero rows: the SQL passed, but its
   behaviour on a row that really carries a legacy `timezone` key is unverified.
@@ -242,6 +247,18 @@ RLS.
   is on its way" reply and no way to ask about an order that was just placed.
   Deliberate for now — recorded as a product decision for Mohammed before the
   pilot (`docs/12-after-cart-brief.md` §16.8), not as a bug to fix in code.
+- **A status change from the dashboard sends nothing.** `PATCH
+  /orders/:id/status` sets `notified = false` and stops there; the poller that
+  would read it does not exist, so after «استلمنا» the customer hears nothing
+  — not «accepted», not «ready», not «cancelled». SRS FR-11 deviation, recorded
+  in `docs/12-after-cart-brief.md` §12.
+- **Nothing updates the customer's statistics on `completed`.** `total_orders`,
+  `total_spend`, `last_order_at` and `is_vip` keep their defaults: no code and
+  no trigger writes them. SRS FR-14 via FR-13; found in D-7, **undecided** —
+  a product call for Mohammed, not a bug to fix in passing.
+- **The customer's menu order is written twice** — the ORDER BY in the engine's
+  `readMenu` and in `dashboard-api`'s `MenuService.list`. Changing one does not
+  fail the other.
 - **A failed «استلمنا طلبك» is never retried.** It is logged, and the order is
   already in the dashboard, so the restaurant still sees it — but the customer
   gets silence after «أكّد». Retrying belongs with the notify poller, which does
@@ -326,9 +343,12 @@ RLS.
   للحقن بالنوع. بدونه **الحقن يصير `undefined` بصمت** — وقد حصل فعلا.
 - **Meta Cloud API مباشرة** — لا BSP ولا 360dialog.
 - **الهجرات إضافة فقط.** ممنوع تعديل هجرة مطبَّقة. أي تغيير بهجرة جديدة.
-- **الأرقام غربية فقط** (0-9)، بوابة `check:numerals`. ممنوع الخلط.
+- **الأرقام غربية فقط** (0-9). ممنوع الخلط. **القاعدة مقفولة، والبوابة `check:numerals` غير موجودة بعد** —
+  لا سكربت ولا قاعدة ESLint ولا خطوة CI (`docs/11-cart-brief.md` §11.5). الحارس القائم الوحيد
+  اختبار في `packages/shared/test/cart-texts.test.mts` على نصوص الزبون في `domain.ts`. ما عداها: افحص يدويا.
 - **الخطوط:** IBM Plex Sans Arabic للنص · IBM Plex Mono للأرقام. Almarai مشطوب.
-- **لون البراند:** سُمّاق `#75284A` فاتح / `#B54874` غامق. بعد أي تبديل: `pnpm check:contrast`.
+- **لون البراند:** سُمّاق `#75284A` فاتح / `#B54874` غامق. **`check:contrast` و`check:motion` غير موجودتين بعد**
+  — لا سكربت في أي `package.json`. بعد أي تبديل لون: افحص التباين يدويا. كتابتهما أو شطبهما مع بريف الشاشة.
 - **قاعدة رد الـwebhook — لا تُعكس أبدا:**
   `200` = خُزّنت بأمان، أو تُجوهلت بقصد ونهائيا (JSON مشوّه، نوع غير مدعوم).
   **غير `200`** = لم أستطع — أعِد الإرسال.
