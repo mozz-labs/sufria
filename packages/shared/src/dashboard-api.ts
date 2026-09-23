@@ -179,3 +179,33 @@ export type OrderStatusConflictBody =
       code: Exclude<OrderStatusConflictCode, "status_conflict">;
       message: string;
     };
+
+/**
+ * An item of `GET /menu-items` — brief D §3.4 with §8.3. Unavailable items are
+ * included, so staff can turn them back on; items of an inactive category are
+ * not, because the engine treats them as unavailable whatever `isAvailable`
+ * says.
+ */
+export type MenuItemListItem = {
+  id: string;
+  name: string;
+  /** Text as the database holds it: `"2.50"`. */
+  price: string;
+  /** `menu_items.is_available` — the very column the engine reads at «أكّد». */
+  isAvailable: boolean;
+};
+
+/** `GET /menu-items`, in the order the customer sees the menu. */
+export type MenuItemListResponse = {
+  items: MenuItemListItem[];
+};
+
+/** Body of `PATCH /menu-items/:id` — at least one of the two. */
+export type UpdateMenuItemRequest = {
+  isAvailable?: boolean;
+  /** Western digits only, greater than zero, at most two decimals: `"3.00"`. */
+  price?: string;
+};
+
+/** The 200 of `PATCH /menu-items/:id`: the item after the change. */
+export type UpdateMenuItemResponse = MenuItemListItem;
