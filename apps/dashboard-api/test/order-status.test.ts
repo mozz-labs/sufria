@@ -590,8 +590,17 @@ describe("PATCH /orders/:id/status — the CAS", () => {
     const rival = await startApi();
     const holder = await audit.connect();
     const inFlight: Promise<{ status: number; body: unknown }>[] = [];
+    // Text first: a 200 with no body has to fail the status check below, not
+    // crash here parsing JSON — a test that falls for another reason proves
+    // nothing.
     const settle = (res: Promise<Response>) =>
-      res.then(async (r) => ({ status: r.status, body: await r.json() }));
+      res.then(async (r) => {
+        const text = await r.text();
+        return {
+          status: r.status,
+          body: text ? (JSON.parse(text) as unknown) : undefined,
+        };
+      });
     let results: { status: number; body: unknown }[];
     let loserWaitedOnWinner: boolean;
     try {
