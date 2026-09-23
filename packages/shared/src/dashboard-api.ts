@@ -5,7 +5,7 @@
  * 🔴 المال نص هون، دايما (`"13.50"`) — زي ما بترجعه القاعدة. ولا `number`:
  *    `13.5` بتعرض غير الفاتورة (بريف د §0).
  */
-import type { OrderStatus, PaymentStatus } from "./domain.js";
+import type { Currency, OrderStatus, PaymentStatus } from "./domain.js";
 import type { actorKind, fulfillmentType, paymentMethod } from "./schema.js";
 
 export type FulfillmentType = (typeof fulfillmentType.enumValues)[number];
@@ -209,3 +209,69 @@ export type UpdateMenuItemRequest = {
 
 /** The 200 of `PATCH /menu-items/:id`: the item after the change. */
 export type UpdateMenuItemResponse = MenuItemListItem;
+
+/**
+ * The day keys the settings screen writes into `restaurants.business_hours` —
+ * the short form of `docs/10-عقد-ساعات-الدوام.md`, which is also the form the
+ * engine's own tests use.
+ *
+ * 🔴 The writer is strict and the reader lenient (brief D §8.8). The engine
+ *    also reads `"sunday"` and `"9:00"`; the dashboard never writes them.
+ */
+export const OPENING_DAYS = [
+  "sun",
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+] as const;
+export type OpeningDay = (typeof OPENING_DAYS)[number];
+
+/** `"HH:MM"`, 24-hour, two digits each, Western digits: `"09:00"`, never `"9:00"`. */
+export type OpeningWindow = { open: string; close: string };
+
+/**
+ * `restaurants.business_hours` as the dashboard writes it. A day that is
+ * missing, or present with `[]`, is closed that day. `{ days: {} }` defines no
+ * day at all, which the engine reads as always open.
+ */
+export type OpeningHours = {
+  days: Partial<Record<OpeningDay, OpeningWindow[]>>;
+};
+
+/** `GET /restaurant/settings` — brief D §3.5. The restaurant is the guard's. */
+export type RestaurantSettings = {
+  /** Read-only: set when the restaurant is onboarded (§2.2). */
+  currency: Currency;
+  /** Read-only from the dashboard (§2.10). */
+  offersDelivery: boolean;
+  /** Text as the database holds it: `"1.50"`, `"0.00"`. */
+  deliveryFee: string;
+  /** `null` = the handoff message sends nothing, by decision (0009). */
+  contactPhone: string | null;
+  /**
+   * Stored as is, never rewritten on the way out. `{}` is the column's
+   * default and means always open. A row written by hand before the settings
+   * screen may carry a form only the engine's lenient reader accepts.
+   */
+  openingHours: OpeningHours | Record<string, never>;
+};
+
+/**
+ * Body of `PATCH /restaurant/settings` — at least one field. `currency`,
+ * `offersDelivery` and `timezone` are not writable from here: sending any of
+ * them is a 400.
+ */
+export type UpdateRestaurantSettingsRequest = {
+  /** Western digits, zero allowed, at most two decimals: `"1.50"`. */
+  deliveryFee?: string;
+  /** E.164: `"+962791234567"`. */
+  contactPhone?: string;
+  /** The whole week, replaced at once. */
+  openingHours?: OpeningHours;
+};
+
+/** The 200 of `PATCH /restaurant/settings`: the settings after the change. */
+export type UpdateRestaurantSettingsResponse = RestaurantSettings;
