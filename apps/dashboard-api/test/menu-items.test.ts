@@ -631,6 +631,13 @@ describe("PATCH /menu-items/:id — price", () => {
   );
 
   it("both fields at once", async () => {
+    // A known starting point: a leftover `false` from an earlier test would
+    // let this pass without the PATCH writing anything.
+    await audit.query(
+      `UPDATE menu_items SET is_available = true, price = 2.50 WHERE id = $1`,
+      [target],
+    );
+
     const body = await patchOk(target, { isAvailable: false, price: "4.25" });
 
     expect(body).toMatchObject({ price: "4.25", isAvailable: false });
