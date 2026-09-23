@@ -20,8 +20,9 @@
  *     the order at its new status, and counts itself on a sequence, which a
  *     rollback does not undo: a 500 from anything earlier cannot pass it.
  *
- *   - restaurant B's online order from the seed is moved to `preparing` for
- *     one test and put back exactly as it was: other suites read the seed.
+ *   - restaurant B's online order from the seed is patched by three tests
+ *     (completed, accepted, cancelled) and put back exactly as it was by
+ *     `onSeedOrderB`, pass or fail: other suites read the seed.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -32,7 +33,9 @@ import { Test } from "@nestjs/testing";
 import { Pool, type PoolClient } from "pg";
 import {
   ORDER_STATUSES,
+  PAYMENT_STATUSES,
   STAFF_TRANSITIONS,
+  canAcceptOrder,
   type OrderListResponse,
   type OrderStatus,
   type OrderStatusConflictCode,
@@ -746,27 +749,61 @@ describe("PATCH /orders/:id/status — forbidden transitions", () => {
 // ---------------------------------------------------------------------------
 // 🔴 A non-cash order — brief §8.6, on the seed's own online order.
 // ---------------------------------------------------------------------------
+/**
+ * Runs `body` on restaurant B's seed order and puts the order and its history
+ * back exactly as they were, whatever `body` did to them: other suites read
+ * the seed.
+ */
+async function onSeedOrderB(body: () => Promise<void>): Promise<void> {
+  const seeded = await stateOf(SEED_ORDER_B);
+  const seededHistory = await historyOf(SEED_ORDER_B);
+  expect(seeded).toMatchObject({
+    payment_status: "pending_online",
+    status: "pending_acceptance",
+  });
+
+  try {
+    await body();
+  } finally {
+    await audit.query(
+      `DELETE FROM order_status_history
+        WHERE order_id = $1 AND actor = 'staff'`,
+      [SEED_ORDER_B],
+    );
+    await audit.query(
+      `UPDATE orders
+          SET status = $2::order_status,
+              payment_status = $3::payment_status,
+              notified = $4,
+              ready_at = $5::timestamptz,
+              updated_at = $6::timestamptz,
+              cancelled_by = $7::cancelled_by,
+              cancellation_reason = $8
+        WHERE id = $1`,
+      [
+        SEED_ORDER_B,
+        seeded.status,
+        seeded.payment_status,
+        seeded.notified,
+        seeded.ready_at,
+        seeded.updated_at,
+        seeded.cancelled_by,
+        seeded.cancellation_reason,
+      ],
+    );
+  }
+  expect(await stateOf(SEED_ORDER_B)).toEqual(seeded);
+  expect(await historyOf(SEED_ORDER_B)).toEqual(seededHistory);
+}
+
 describe("PATCH /orders/:id/status — payment", () => {
   it("🔴 restaurant B's online order from the seed cannot be completed unpaid: 409 payment_not_settled, and nothing changes", async () => {
     // The seed holds it in pending_acceptance, where `completed` is not a
     // staff transition at all — that would be transition_not_allowed and
-    // prove nothing about payment. Move it to preparing, and put it back
-    // exactly as it was: other suites read the seed.
-    const { rows } = await audit.query<OrderState>(
-      `SELECT status, payment_status, notified,
-              ready_at::text AS ready_at, updated_at::text AS updated_at,
-              cancelled_by, cancellation_reason
-         FROM orders WHERE id = $1`,
-      [SEED_ORDER_B],
-    );
-    const seeded = rows[0]!;
-    const seededHistory = await historyOf(SEED_ORDER_B);
-    expect(seeded).toMatchObject({
-      payment_status: "pending_online",
-      status: "pending_acceptance",
-    });
-
-    try {
+    // prove nothing about payment. Move it to preparing; onSeedOrderB puts
+    // it back.
+    await onSeedOrderB(async () => {
+      const seededHistory = await historyOf(SEED_ORDER_B);
       await audit.query(
         `UPDATE orders SET status = 'preparing' WHERE id = $1`,
         [SEED_ORDER_B],
@@ -782,36 +819,101 @@ describe("PATCH /orders/:id/status — payment", () => {
       await expectConflict(res, { code: "payment_not_settled" });
       expect(await stateOf(SEED_ORDER_B)).toEqual(before);
       expect(await historyOf(SEED_ORDER_B)).toEqual(seededHistory);
-    } finally {
-      await audit.query(
-        `DELETE FROM order_status_history
-          WHERE order_id = $1 AND actor = 'staff'`,
-        [SEED_ORDER_B],
+    });
+  });
+
+  // D-4.1 — the acceptance gate (FR-13, `canAcceptOrder`).
+  it("🔴 restaurant B's online order from the seed cannot be accepted unpaid: 409 payment_not_settled, and nothing changes", async () => {
+    // Already in pending_acceptance: no fixture change before the request.
+    await onSeedOrderB(async () => {
+      const before = await stateOf(SEED_ORDER_B);
+      const historyBefore = await historyOf(SEED_ORDER_B);
+
+      const res = await patchStatus(
+        SEED_ORDER_B,
+        { from: "pending_acceptance", to: "accepted" },
+        { staff: staffOnlyB, restaurantId: RESTAURANT_B },
       );
-      await audit.query(
-        `UPDATE orders
-            SET status = $2::order_status,
-                payment_status = $3::payment_status,
-                notified = $4,
-                ready_at = $5::timestamptz,
-                updated_at = $6::timestamptz,
-                cancelled_by = $7::cancelled_by,
-                cancellation_reason = $8
-          WHERE id = $1`,
-        [
-          SEED_ORDER_B,
-          seeded.status,
-          seeded.payment_status,
-          seeded.notified,
-          seeded.ready_at,
-          seeded.updated_at,
-          seeded.cancelled_by,
-          seeded.cancellation_reason,
-        ],
+
+      await expectConflict(res, { code: "payment_not_settled" });
+      expect(await stateOf(SEED_ORDER_B)).toEqual(before);
+      expect(await historyOf(SEED_ORDER_B)).toEqual(historyBefore);
+    });
+  });
+
+  it("restaurant B's unpaid online order from the seed can still be cancelled: cancelling is the one action open to it", async () => {
+    await onSeedOrderB(async () => {
+      const res = await patchStatus(
+        SEED_ORDER_B,
+        { from: "pending_acceptance", to: "cancelled" },
+        { staff: staffOnlyB, restaurantId: RESTAURANT_B },
       );
-    }
-    expect(await stateOf(SEED_ORDER_B)).toEqual(seeded);
-    expect(await historyOf(SEED_ORDER_B)).toEqual(seededHistory);
+
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as UpdateOrderStatusResponse).status).toBe(
+        "cancelled",
+      );
+      expect(await stateOf(SEED_ORDER_B)).toMatchObject({
+        status: "cancelled",
+        payment_status: "pending_online",
+        cancelled_by: "restaurant",
+      });
+      expect(staffRows(await historyOf(SEED_ORDER_B))).toEqual([
+        expect.objectContaining({
+          from_status: "pending_acceptance",
+          to_status: "cancelled",
+          actor_staff_id: staffOnlyB,
+        }),
+      ]);
+    });
+  });
+
+  // Every pair the constraints allow — `collected` is cash-only
+  // (orders_collected_is_cash). The expectation is shared's own function, so
+  // the SQL gate and `canAcceptOrder` cannot drift apart unnoticed.
+  const paymentPairs = (["cash", "online"] as const).flatMap((method) =>
+    PAYMENT_STATUSES.filter(
+      (status) => !(status === "collected" && method === "online"),
+    ).map((status) => [method, status] as const),
+  );
+
+  it.each(paymentPairs)(
+    "accepting a %s order with payment %s agrees with canAcceptOrder",
+    async (method, paymentStatus) => {
+      const order = await createOrder({
+        status: "pending_acceptance",
+        paymentMethod: method,
+        paymentStatus,
+      });
+      const before = await stateOf(order.id);
+
+      const res = await move(order.id, {
+        from: "pending_acceptance",
+        to: "accepted",
+      });
+
+      if (canAcceptOrder({ paymentMethod: method, paymentStatus })) {
+        expect(res.status).toBe(200);
+        expect((await stateOf(order.id)).status).toBe("accepted");
+      } else {
+        await expectConflict(res, { code: "payment_not_settled" });
+        expect(await stateOf(order.id)).toEqual(before);
+        expect(staffRows(await historyOf(order.id))).toEqual([]);
+      }
+    },
+  );
+
+  it("an unpaid online order is cancelled from accepted too — the gate is on the way in, not on the way out", async () => {
+    // Accepted before the gate existed, or by a payment later refunded.
+    const order = await createOrder({
+      status: "accepted",
+      paymentMethod: "online",
+      paymentStatus: "refunded",
+    });
+
+    await moveOk(order.id, { from: "accepted", to: "cancelled" });
+
+    expect((await stateOf(order.id)).status).toBe("cancelled");
   });
 });
 

@@ -332,9 +332,16 @@ function extraSets(to: StaffTargetStatus, reason: string | null): SQL {
 /**
  * §8.6: طلب غير نقدي ما بيكتمل قبل ما ينقبض. بلا هالشرط، القيد
  * `orders_completed_payment_settled` بيرفضه بـ500 بدل 409 مفهومة.
+ *
+ * D-4.1: the same gate on `accepted` — `canAcceptOrder` in shared (FR-13), in
+ * SQL. No constraint backs this one: without the condition an unpaid online
+ * order is accepted with a 200. Cancelling stays open to it: `canAcceptOrder`
+ * names it the one action before payment.
  */
+const PAYMENT_GATED: readonly StaffTargetStatus[] = ["accepted", "completed"];
+
 function paymentSettled(to: StaffTargetStatus): SQL {
-  return to === "completed"
+  return PAYMENT_GATED.includes(to)
     ? sql`
            AND (o.payment_method = 'cash' OR o.payment_status = 'paid')`
     : sql``;

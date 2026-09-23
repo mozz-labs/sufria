@@ -96,7 +96,7 @@ export class OrdersController {
       case "payment_not_settled":
         throw conflict({
           code: "payment_not_settled",
-          message: "only a cash order, or a paid one, can be completed",
+          message: `only a cash order, or a paid one, can be ${body.to}`,
         });
     }
   }
