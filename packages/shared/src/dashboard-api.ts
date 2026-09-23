@@ -1,9 +1,10 @@
 /**
- * عقود API اللوحة — بريف د §3. الشاشة بتستورد نفس الأنواع اللي بيرجعها
- * `dashboard-api`، فلو تغيّر شكل رد بطرف وما تغيّر بالتاني، الـtypecheck بيوقع.
+ * The dashboard API contracts — brief D §3, as built in §9. The screen imports
+ * the very types `dashboard-api` returns, so a response shape that changes on
+ * one side and not the other fails typecheck.
  *
- * 🔴 المال نص هون، دايما (`"13.50"`) — زي ما بترجعه القاعدة. ولا `number`:
- *    `13.5` بتعرض غير الفاتورة (بريف د §0).
+ * 🔴 Money is text here, always (`"13.50"`), as the database returns it.
+ *    Never `number`: `13.5` shows something other than the bill (brief D §0).
  */
 import type { Currency, OrderStatus, PaymentStatus } from "./domain.js";
 import type { actorKind, fulfillmentType, paymentMethod } from "./schema.js";
@@ -11,11 +12,11 @@ import type { actorKind, fulfillmentType, paymentMethod } from "./schema.js";
 export type FulfillmentType = (typeof fulfillmentType.enumValues)[number];
 
 /**
- * تبويبا لوحة الطلبات — بريف د §2.5. كل حالة بتبويب واحد بالضبط، واختبار
- * `shared` بيفرض هالتقسيم على `ORDER_STATUSES` كلها: حالة جديدة بلا تبويب
- * معناها طلب ما بيشوفه الموظف أبدا.
+ * The two tabs of the orders board — brief D §2.5. Every status is in exactly
+ * one tab, and a `shared` test holds that split over all of `ORDER_STATUSES`:
+ * a new status with no tab is an order staff never see.
  *
- * `active` هي نفس مجموعة الفهرس الجزئي `idx_orders_board` (0002).
+ * `active` is the same set as the partial index `idx_orders_board` (0002).
  */
 export const ORDER_TABS = ["active", "history"] as const;
 export type OrderTab = (typeof ORDER_TABS)[number];
@@ -25,27 +26,33 @@ export const ORDER_TAB_STATUSES: Record<OrderTab, readonly OrderStatus[]> = {
   history: ["completed", "cancelled", "expired"],
 };
 
-/** عنصر `GET /orders` — بريف د §3.1. بلا أصناف وبلا تاريخ: المسار بيُسأل كل 3-5 ثوان. */
+/**
+ * An item of `GET /orders` — brief D §3.1. No lines and no history: the route
+ * is polled every 3-5 seconds.
+ */
 export type OrderListItem = {
   id: string;
   orderNumber: number;
   status: OrderStatus;
   fulfillmentType: FulfillmentType;
-  /** نص كما في القاعدة: `"13.50"`. */
+  /** Text as the database holds it: `"13.50"`. */
   total: string;
-  /** عدد أسطر الطلب، مش مجموع الكميات. */
+  /** The number of order lines, not the sum of quantities. */
   itemCount: number;
-  /** ISO 8601 بتوقيت UTC. */
+  /** ISO 8601 in UTC. */
   createdAt: string;
-  /** `name` فاضي عمليا لكل زبون حقيقي — المحرّك ما بيكتبه (بريف د §8.9). */
+  /**
+   * `name` is empty in practice for every real customer — the engine never
+   * writes it (brief D §8.9).
+   */
   customer: { name: string | null; phone: string };
 };
 
 export type OrderListResponse = {
   orders: OrderListItem[];
-  /** مع `active` دايما 1. */
+  /** Always 1 with `active`. */
   page: number;
-  /** مع `active` دايما false. */
+  /** Always false with `active`. */
   hasMore: boolean;
 };
 
@@ -53,52 +60,54 @@ export type PaymentMethod = (typeof paymentMethod.enumValues)[number];
 export type HistoryActor = (typeof actorKind.enumValues)[number];
 
 /**
- * سطر من `GET /orders/:id`. الاسم والسعر من الـsnapshot لحظة الطلب، لا من
- * `menu_items`: الزبون دفع القديم (بريف د §3.2).
+ * A line of `GET /orders/:id`. Name and price are the snapshot taken when the
+ * order was placed, not `menu_items`: the customer paid the old price
+ * (brief D §3.2).
  */
 export type OrderDetailItem = {
   name: string;
   quantity: number;
   unitPrice: string;
-  /** `quantity * unitPrice`، محسوب بـSQL. */
+  /** `quantity * unitPrice`, computed in SQL. */
   lineTotal: string;
 };
 
 export type OrderHistoryEntry = {
-  /** `null` بسطر الإنشاء وحده. */
+  /** `null` on the creation row alone. */
   from: OrderStatus | null;
   to: OrderStatus;
   actor: HistoryActor;
-  /** ISO 8601 بتوقيت UTC. */
+  /** ISO 8601 in UTC. */
   at: string;
 };
 
-/** `GET /orders/:id` — بريف د §3.2. */
+/** `GET /orders/:id` — brief D §3.2. */
 export type OrderDetail = {
   id: string;
   orderNumber: number;
   status: OrderStatus;
   fulfillmentType: FulfillmentType;
   subtotal: string;
-  /** `"0.00"` للاستلام. */
+  /** `"0.00"` for pickup. */
   deliveryFee: string;
   total: string;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
-  /** `null` للاستلام. */
+  /** `null` for pickup. */
   deliveryAddress: string | null;
   cancellationReason: string | null;
   createdAt: string;
   customer: { name: string | null; phone: string };
   items: OrderDetailItem[];
-  /** بالترتيب الزمني. */
+  /** In chronological order. */
   history: OrderHistoryEntry[];
 };
 
 /**
- * الحالات اللي بتكون وجهة من اللوحة — بريف د §2.6. `pending_acceptance`
- * و`expired` مش منها أبدا: الأولى حالة الإنشاء، والتانية بيحطّها النظام
- * (Sprint 2). وجهة منهم بالطلب ← 400 (§3.3 فحص 1).
+ * The statuses the dashboard can move an order to — brief D §2.6.
+ * `pending_acceptance` and `expired` never are: the first is the creation
+ * status, the second is set by the system (Sprint 2). Either as a destination
+ * in the request → 400 (§3.3 check 1).
  */
 export const STAFF_TARGET_STATUSES = [
   "accepted",
@@ -110,11 +119,12 @@ export const STAFF_TARGET_STATUSES = [
 export type StaffTargetStatus = (typeof STAFF_TARGET_STATUSES)[number];
 
 /**
- * انتقالات الموظف من اللوحة — جدول بريف د §2.6 حرفيا، وجزء من
- * `ALLOWED_TRANSITIONS` (اختبار `shared` بيفرضها).
+ * Staff transitions from the dashboard — the table of brief D §2.6 verbatim,
+ * and a subset of `ALLOWED_TRANSITIONS` (a `shared` test holds it to that).
  *
- * 🔴 مش `canTransition`: فيها `ready ← expired`، وهاي للنظام وحده. الشاشة
- *    بتعطّل أزرارها حسب هالجدول، والـAPI بيرفض أي انتقال برّاه بـ409
+ * 🔴 Not `canTransition`: it includes `ready → expired`, which is the
+ *    system's alone. The screen disables its buttons by this table, and the
+ *    API rejects any transition outside it with a 409
  *    `transition_not_allowed`.
  */
 export const STAFF_TRANSITIONS: Record<
@@ -123,7 +133,7 @@ export const STAFF_TRANSITIONS: Record<
 > = {
   pending_acceptance: ["accepted", "cancelled"],
   accepted: ["preparing", "cancelled"],
-  // `ready` اختيارية: `preparing ← completed` مباشرة مسموح.
+  // `ready` is optional: `preparing → completed` directly is allowed.
   preparing: ["ready", "completed", "cancelled"],
   ready: ["completed", "cancelled"],
   completed: [],
@@ -138,31 +148,35 @@ export function canStaffTransition(
   return STAFF_TRANSITIONS[from].includes(to);
 }
 
-/** جسم `PATCH /orders/:id/status` — بريف د §3.3. */
+/** Body of `PATCH /orders/:id/status` — brief D §3.3. */
 export type UpdateOrderStatusRequest = {
   /**
-   * الحالة اللي **شافها الموظف** على شاشته، مش الحالية بالقاعدة (§2.7):
-   * لو تغيّرت بالأثناء، الرد 409 والموظف بيشوف الحقيقية — بدل ما ينلغى طلب
-   * بالمطبخ بناءً على شاشة قديمة.
+   * The status the staff member **saw** on their screen, not the current one
+   * in the database (§2.7): if it changed meanwhile, the reply is a 409 and
+   * they see the real one — instead of an order in the kitchen being
+   * cancelled on the strength of a stale screen.
    */
   from: OrderStatus;
   to: StaffTargetStatus;
-  /** مع `to: "cancelled"` وحدها. بيتقصّ من الطرفين، والفاضي بعد القصّ NULL. */
+  /**
+   * With `to: "cancelled"` alone. Trimmed at both ends; empty after trimming
+   * is NULL.
+   */
   cancellationReason?: string;
 };
 
-/** الرد 200 من `PATCH /orders/:id/status`: الطلب بشكل عنصر `GET /orders`. */
+/** The 200 of `PATCH /orders/:id/status`: the order as a `GET /orders` item. */
 export type UpdateOrderStatusResponse = OrderListItem;
 
 export type OrderStatusConflictCode =
   "transition_not_allowed" | "status_conflict" | "payment_not_settled";
 
 /**
- * جسم الـ409 من `PATCH /orders/:id/status` — بريف د §8.7: شكل Nest
- * الافتراضي ومعه `code`. و`currentStatus` مع `status_conflict` وحدها.
+ * The 409 body of `PATCH /orders/:id/status` — brief D §8.7: Nest's default
+ * shape plus `code`, and `currentStatus` with `status_conflict` alone.
  *
- * الشاشة بتقرأ `code` لا `message`: `message` إنجليزي للمطوّر، والنص العربي
- * للموظف مكانه بريف الشاشة.
+ * The screen reads `code`, not `message`: `message` is English, for the
+ * developer, and the Arabic text for staff belongs in the screen's brief.
  */
 export type OrderStatusConflictBody =
   | {
@@ -170,7 +184,7 @@ export type OrderStatusConflictBody =
       error: "Conflict";
       code: "status_conflict";
       message: string;
-      /** الحالة الحقيقية بالقاعدة، عشان الشاشة تعرضها. */
+      /** The real status in the database, for the screen to show. */
       currentStatus: OrderStatus;
     }
   | {

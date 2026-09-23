@@ -25,10 +25,11 @@ import { UpdateOrderStatusDto } from "./dto/update-order-status.dto.js";
 import { OrdersService } from "./orders.service.js";
 
 /**
- * 🔴 المطعم من RestaurantContextGuard (هيدر `x-restaurant-id` بعد التحقّق من
- *    العضوية)، مش من المسار ولا الـquery. وممنوع باراميتر مسار اسمه
- *    `restaurantId`: الحارس بيقرأ `req.params.restaurantId` قبل الهيدر، فهيك
- *    باراميتر بيغيّر مصدر المطعم بصمت (بريف د §8.1).
+ * 🔴 The restaurant is RestaurantContextGuard's (the `x-restaurant-id` header
+ *    after the membership check), never the path or the query. And no path
+ *    parameter may be named `restaurantId`: the guard reads
+ *    `req.params.restaurantId` before the header, so such a parameter would
+ *    silently change where the restaurant comes from (brief D §8.1).
  */
 @Controller("orders")
 @UseGuards(RestaurantContextGuard)
@@ -44,8 +45,9 @@ export class OrdersController {
   }
 
   /**
-   * غير موجود ولمطعم تاني نفس الـ404 بنفس الجسم (بريف د §2.9): ما منقول
-   * للمطعم التاني إن الطلب موجود. وRLS أصلا ما بتفرّق بينهم.
+   * A non-existent order and another restaurant's get the same 404 with the
+   * same body (brief D §2.9): the other restaurant is not told the order
+   * exists. RLS cannot tell the two apart anyway.
    */
   @Get(":id")
   async detail(
@@ -58,11 +60,12 @@ export class OrdersController {
   }
 
   /**
-   * بريف د §3.3 بترتيب الفحص: 400 (الـDTO) ← 409 `transition_not_allowed` ←
-   * 404 ← 409 `status_conflict` أو `payment_not_settled`. والـ200 هو الطلب
-   * بشكل عنصر `GET /orders`.
+   * Brief D §3.3, in check order: 400 (the DTO) → 409 `transition_not_allowed`
+   * → 404 → 409 `status_conflict` or `payment_not_settled`. The 200 is the
+   * order in the shape of a `GET /orders` item.
    *
-   * `actor_staff_id` من التوكن (`CurrentUser`)، والمطعم من الحارس.
+   * `actor_staff_id` comes from the token (`CurrentUser`), the restaurant from
+   * the guard.
    */
   @Patch(":id/status")
   async changeStatus(
@@ -109,8 +112,8 @@ type ConflictDetail = OrderStatusConflictBody extends infer B
   : never;
 
 /**
- * 409 بشكل Nest الافتراضي ومعه `code` — بريف د §8.7. الشاشة بتقرأ `code`،
- * و`message` إنجليزي للمطوّر.
+ * A 409 in Nest's default shape plus `code` — brief D §8.7. The screen reads
+ * `code`; `message` is English, for the developer.
  */
 function conflict(detail: ConflictDetail): ConflictException {
   const body: OrderStatusConflictBody = {

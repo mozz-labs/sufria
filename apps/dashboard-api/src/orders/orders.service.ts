@@ -18,8 +18,8 @@ import {
 import { TenantDbService } from "../db/tenant-db.service.js";
 
 /**
- * timestamptz ← ISO 8601 بتوقيت UTC، بـSQL: مشغّل drizzle بيرجع timestamptz
- * نصا خاما بـexecute، مش `Date`.
+ * timestamptz → ISO 8601 in UTC, in SQL: the drizzle driver returns a
+ * timestamptz from `execute` as raw text, not as a `Date`.
  */
 const isoUtc = (column: string) =>
   sql.raw(
@@ -27,9 +27,10 @@ const isoUtc = (column: string) =>
   );
 
 /**
- * إسقاط عنصر §3.1 — واحد لـ`GET /orders` ولرد `PATCH /orders/:id/status`
- * (بريف د §3.3 خطوة 4: «بنفس الاستعلام لا بإسقاط ثانٍ»). بيفترض `orders o`
- * و`customers c` بالاستعلام اللي بيحطّه، وبيطلع `OrderListRow`.
+ * The §3.1 item projection — one for `GET /orders` and for the reply of
+ * `PATCH /orders/:id/status` (brief D §3.3 step 4: "the same query, not a
+ * second projection"). Assumes `orders o` and `customers c` in the query that
+ * embeds it, and yields an `OrderListRow`.
  */
 const orderListColumns = () => sql`
   o.id,
@@ -43,7 +44,10 @@ const orderListColumns = () => sql`
   c.name AS customer_name,
   c.phone_number AS customer_phone`;
 
-/** نتيجة تغيير الحالة — الكنترولر بيحوّلها لرد HTTP (بريف د §3.3 و§8.7). */
+/**
+ * The outcome of a status change — the controller maps it to HTTP (brief D
+ * §3.3 and §8.7).
+ */
 export type StatusChangeOutcome =
   | { kind: "changed"; order: OrderListItem }
   | { kind: "transition_not_allowed" }
@@ -51,7 +55,7 @@ export type StatusChangeOutcome =
   | { kind: "status_conflict"; currentStatus: OrderStatus }
   | { kind: "payment_not_settled" };
 
-/** بريف د §2.5: 20 بالصفحة بتبويب `history`، وبلا صفحات بـ`active`. */
+/** Brief D §2.5: 20 per page in the `history` tab, no pages in `active`. */
 export const HISTORY_PAGE_SIZE = 20;
 
 type OrderListRow = {
@@ -100,10 +104,11 @@ export class OrdersService {
   constructor(private readonly tenantDb: TenantDbService) {}
 
   /**
-   * @param restaurantId من RestaurantContextGuard وحده (بريف د §8.1).
+   * @param restaurantId from RestaurantContextGuard alone (brief D §8.1).
    *
-   * العزل الفعلي هو RLS عبر سياق `runInTenant`. شرط `restaurant_id` الصريح
-   * دفاع إضافي، مش هو الحماية: بدونه الاستعلام بيرجع نفس الصفوف.
+   * The actual isolation is RLS, through the `runInTenant` context. The
+   * explicit `restaurant_id` filter is defence in depth, not the protection:
+   * without it the query returns the same rows.
    */
   async list(
     restaurantId: string,
@@ -114,8 +119,9 @@ export class OrdersService {
       ORDER_TAB_STATUSES[tab].map((s) => sql`${s}::order_status`),
       sql`, `,
     );
-    // `active`: الأقدم أولا وبلا صفحات. `history`: الأحدث أولا، 21 لنعرف
-    // `hasMore` بلا COUNT. و`id` كاسر تعادل بنفس الاتجاه دايما.
+    // `active`: oldest first, no pages. `history`: newest first, reading 21
+    // to know `hasMore` without a COUNT. `id` breaks ties, always in the same
+    // direction.
     const isHistory = tab === "history";
     const direction = sql.raw(isHistory ? "DESC" : "ASC");
     const window = isHistory
@@ -145,14 +151,17 @@ export class OrdersService {
   }
 
   /**
-   * طلب واحد بأسطره وتاريخه — بريف د §3.2. `null` = غير موجود تحت سياق
-   * المطعم، سواء ما في طلب بهالمعرّف أو هو لمطعم تاني: ما منفرّق بينهم (§2.9).
+   * One order with its lines and history — brief D §3.2. `null` = not found
+   * under the restaurant's context, whether no order has this id or it belongs
+   * to another restaurant: the two are not told apart (§2.9).
    *
-   * جملة وحدة لا ثلاث: كل جملة بـREAD COMMITTED إلها snapshot، فتلات جمل
-   * ممكن تعطي حالة `accepted` مع تاريخ فيه `preparing` لو تغيّرت بينهم.
+   * One statement, not three: under READ COMMITTED each statement has its own
+   * snapshot, so three statements could return status `accepted` with a
+   * history that already holds `preparing`, had it changed between them.
    *
-   * 🔴 الاسم والسعر من الـsnapshot، ولا ربط مع `menu_items`: الطلب بيبقى
-   *    باسمه وسعره لحظة الطلب، والزبون دفع القديم. و`line_total` بـSQL.
+   * 🔴 Name and price come from the snapshot, with no join to `menu_items`:
+   *    the order keeps its name and price from the moment it was placed, and
+   *    the customer paid the old one. `line_total` is computed in SQL.
    */
   async detail(
     restaurantId: string,
@@ -207,7 +216,7 @@ export class OrdersService {
       orderNumber: r.order_number,
       status: r.status,
       fulfillmentType: r.fulfillment_type,
-      // 🔴 المال كما رجع من القاعدة، نصا. ولا `Number()`.
+      // 🔴 Money as the database returned it, as text. Never `Number()`.
       subtotal: r.subtotal,
       deliveryFee: r.delivery_fee,
       total: r.total,
@@ -228,22 +237,25 @@ export class OrdersService {
   }
 
   /**
-   * `PATCH /orders/:id/status` — بريف د §3.3 مع §8.2 و§8.6، بترتيب الفحص.
+   * `PATCH /orders/:id/status` — brief D §3.3 with §8.2 and §8.6, in check
+   * order.
    *
-   * @param restaurantId    من RestaurantContextGuard وحده (§8.1).
-   * @param staffAccountId  من التوكن، لـ`actor_staff_id`.
+   * @param restaurantId    from RestaurantContextGuard alone (§8.1).
+   * @param staffAccountId  from the token, for `actor_staff_id`.
    *
-   * 🔴 الـCAS هو `AND o.status = from` **جوّا نفس الـUPDATE**، مش قراءة قبله.
-   *    `from` هي الحالة اللي شافها الموظف (§2.7)، والخادم ما بيقرأ الحالية
-   *    ليبني عليها. وبـREAD COMMITTED، UPDATE واقف على قفل الصف بيعيد فحص
-   *    شرطه على النسخة الجديدة لما يتحرّر القفل: فمن طلبين بنفس اللحظة وبنفس
-   *    `from`، التاني بيلاقي صفر صفوف.
+   * 🔴 The CAS is `AND o.status = from` **inside the UPDATE itself**, not a
+   *    read before it. `from` is the status the staff member saw (§2.7); the
+   *    server never reads the current one to build on. Under READ COMMITTED an
+   *    UPDATE waiting on the row lock re-checks its condition against the new
+   *    row version once the lock is released: of two requests at the same
+   *    moment with the same `from`, the second finds zero rows.
    *
-   * 🔴 ترانزاكشن وحدة: سطر التاريخ بعد الـUPDATE وبنفس الترانزاكشن، فأي فشل
-   *    فيه بيرجّع الحالة معه. ولا طلب تغيّرت حالته بلا سطر تاريخ.
+   * 🔴 One transaction: the history row comes after the UPDATE, in the same
+   *    transaction, so any failure there rolls the status back with it. No
+   *    order ever changes status without a history row.
    *
-   * ولا رسالة واتساب من هون: `notified = false` هي الإشارة الوحيدة، والمُراقِب
-   * (FR-11) هو اللي بيقرّر ويبعت.
+   * No WhatsApp message from here: `notified = false` is the only signal, and
+   * the poller (FR-11) is what decides and sends.
    */
   async changeStatus(
     restaurantId: string,
@@ -252,10 +264,12 @@ export class OrdersService {
     change: UpdateOrderStatusRequest,
   ): Promise<StatusChangeOutcome> {
     const { from, to } = change;
-    // فحص 2: الانتقال نفسه ممنوع أيّا كان الطلب، فقبل أي استعلام.
+    // Check 2: the transition itself is forbidden whatever the order, so it
+    // comes before any query.
     if (!canStaffTransition(from, to))
       return { kind: "transition_not_allowed" };
-    // مقصوص بالـDTO. الفاضي بعد القصّ NULL (§2.8)، وبغير الإلغاء NULL (§8.6).
+    // Trimmed by the DTO. Empty after trimming is NULL (§2.8), and so is
+    // anything that is not a cancellation (§8.6).
     const reason =
       to === "cancelled" ? change.cancellationReason || null : null;
 
@@ -274,8 +288,9 @@ export class OrdersService {
       const row = updated.rows[0];
 
       if (!row) {
-        // فحص 3 و4. السبب الوحيد لقراءة الحالة هون هو التفريق بين 404 و409،
-        // مش بناء الـUPDATE عليها (§2.7). وبنفس الترانزاكشن.
+        // Checks 3 and 4. The only reason to read the status here is to tell
+        // 404 from 409, never to build the UPDATE on it (§2.7). In the same
+        // transaction.
         const found = await tx.execute<{ status: OrderStatus }>(sql`
           SELECT status
             FROM orders
@@ -285,8 +300,9 @@ export class OrdersService {
         if (!current) return { kind: "not_found" };
         if (current.status !== from)
           return { kind: "status_conflict", currentStatus: current.status };
-        // الحالة هي `from`، فالشرط الوحيد الباقي بالـWHERE هو شرط الدفع. ومش
-        // سباق: الانتقالات لقدّام بس، فحالة انتركت ما بترجع.
+        // The status is `from`, so the only condition left in the WHERE is
+        // the payment one. Not a race: transitions only move forward, so a
+        // status once left never comes back.
         return { kind: "payment_not_settled" };
       }
 
@@ -303,24 +319,28 @@ export class OrdersService {
 }
 
 /**
- * اللي بيتغيّر فوق الحالة، حسب الوجهة — بنفس الـUPDATE (بريف د §3.3 و§8.6).
- * قيود القاعدة شبكة الأمان ومش بديل: مكتمل ⇒ محصَّل أو مدفوع، و`cancelled_by`
- * موجود ⟺ ملغى، و`ready_at` بس لطلب وصل `ready`.
+ * What changes besides the status, by destination — in the same UPDATE
+ * (brief D §3.3 and §8.6). The database constraints are the safety net, not a
+ * substitute: completed ⇒ collected or paid, `cancelled_by` set ⟺ cancelled,
+ * and `ready_at` only for an order that reached `ready`.
  */
 function extraSets(to: StaffTargetStatus, reason: string | null): SQL {
   switch (to) {
     case "ready":
-      // مهلة الـ24 ساعة (Sprint 2) بتقرأه. `preparing ← completed` بيتركه NULL.
+      // The 24-hour timeout (Sprint 2) reads it. `preparing → completed`
+      // leaves it NULL.
       return sql`, ready_at = now()`;
     case "completed":
-      // `collected` للنقدي وحده. الأونلاين بيوصل هون `paid` (شرط الـWHERE)
-      // وبيضل `paid`: `collected` حالة نقدية بس (orders_collected_is_cash).
+      // `collected` for cash alone. An online order arrives here `paid` (the
+      // WHERE condition) and stays `paid`: `collected` is a cash-only status
+      // (orders_collected_is_cash).
       return sql`,
                payment_status = CASE WHEN o.payment_method = 'cash'
                                      THEN 'collected'::payment_status
                                      ELSE o.payment_status END`;
     case "cancelled":
-      // §8.2: الإلغاء من اللوحة `restaurant`، مفتاح `ORDER_STATUS_MESSAGE_AR.cancelled`.
+      // §8.2: a cancellation from the dashboard is `restaurant`, the key of
+      // `ORDER_STATUS_MESSAGE_AR.cancelled`.
       return sql`,
                cancelled_by = 'restaurant',
                cancellation_reason = ${reason}`;
@@ -330,8 +350,9 @@ function extraSets(to: StaffTargetStatus, reason: string | null): SQL {
 }
 
 /**
- * §8.6: طلب غير نقدي ما بيكتمل قبل ما ينقبض. بلا هالشرط، القيد
- * `orders_completed_payment_settled` بيرفضه بـ500 بدل 409 مفهومة.
+ * §8.6: a non-cash order is not completed before it is paid. Without this
+ * condition the constraint `orders_completed_payment_settled` rejects it with
+ * a 500 instead of an intelligible 409.
  *
  * D-4.1: the same gate on `accepted` — `canAcceptOrder` in shared (FR-13), in
  * SQL. No constraint backs this one: without the condition an unpaid online
@@ -353,7 +374,7 @@ function toListItem(r: OrderListRow): OrderListItem {
     orderNumber: r.order_number,
     status: r.status,
     fulfillmentType: r.fulfillment_type,
-    // 🔴 كما رجع من القاعدة. `Number()` هون بتقلب "13.50" لـ"13.5".
+    // 🔴 As the database returned it. `Number()` here turns "13.50" into "13.5".
     total: r.total,
     itemCount: r.item_count,
     createdAt: r.created_at,

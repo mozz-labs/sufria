@@ -2,13 +2,15 @@ import { createZodDto } from "nestjs-zod";
 import { z } from "zod";
 
 /**
- * `:id` بـ`/orders/:id`. معرّف مش UUID ← 400 قبل ما يوصل القاعدة (بريف د §3.2).
+ * `:id` in `/orders/:id`. Not a UUID → 400 before it reaches the database
+ * (brief D §3.2).
  *
- * `z.guid()` لا `z.uuid()`: الأخيرة بتفحص خانتي الإصدار والـvariant، فبترفض
- * معرّفا بتقبله Postgres. نفس الشكل اللي بيفحصه RestaurantContextGuard.
+ * `z.guid()`, not `z.uuid()`: the latter checks the version and variant
+ * digits, so it rejects ids Postgres accepts. The same shape
+ * RestaurantContextGuard checks.
  *
- * 🔴 اسم الباراميتر `id`، وممنوع يصير `restaurantId`: الحارس بيقرأ
- *    `req.params.restaurantId` قبل الهيدر (بريف د §8.1).
+ * 🔴 The parameter is `id` and must never become `restaurantId`: the guard
+ *    reads `req.params.restaurantId` before the header (brief D §8.1).
  */
 const OrderIdParamSchema = z.object({
   id: z.guid(),

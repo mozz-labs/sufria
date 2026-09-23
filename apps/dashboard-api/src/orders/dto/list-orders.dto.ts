@@ -3,11 +3,12 @@ import { z } from "zod";
 import { ORDER_TABS } from "@sufria/shared";
 
 /**
- * `GET /orders?tab=active|history&page=N` — بريف د §3.1.
+ * `GET /orders?tab=active|history&page=N` — brief D §3.1.
  *
- * `page` نص من الـquery، فبينفحص بنمط لا بتحويل: `z.coerce` بتقبل `""` و`" 1"`
- * و`1.0`. ويُتحقَّق منه كلما أُرسل، حتى مع `active` اللي بتلغي أثره.
- * سقف تسع خانات عشان الإزاحة تبقى عدد صحيح دقيق بجافاسكربت.
+ * `page` is query text, so it is checked by a pattern, not by conversion:
+ * `z.coerce` accepts `""`, `" 1"` and `1.0`. It is validated whenever it is
+ * sent, even with `active`, which ignores it. Capped at nine digits so the
+ * offset stays an exact integer in JavaScript.
  */
 const ListOrdersQuerySchema = z.object({
   tab: z.enum(ORDER_TABS),

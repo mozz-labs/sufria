@@ -132,8 +132,14 @@ export const ORDER_STATUS_MESSAGE_AR = {
 } as const;
 
 /**
- * الانتقالات المسموحة. مصدر الحقيقة الوحيد — الباك اند بيتحقق منها
- * والفرونت اند بيعطّل الأزرار حسبها. FR-13.
+ * The whole order state machine — staff and system transitions together
+ * (FR-13), including `ready → expired`, which only the system makes.
+ *
+ * 🔴 Not what the dashboard uses. `dashboard-api` validates against
+ *    `STAFF_TRANSITIONS` (`dashboard-api.ts`), and the screen must disable its
+ *    buttons by that table too; a `shared` test holds it to be a subset of
+ *    this one. Nothing validates against this table today — it is the full
+ *    map the system-side transitions (`expired`, Sprint 2) will check.
  */
 export const ALLOWED_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> =
   {
