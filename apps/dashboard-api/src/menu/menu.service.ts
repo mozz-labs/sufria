@@ -32,7 +32,7 @@ export class MenuService {
    *   isolation; the explicit `restaurant_id` filter is defence in depth.
    *
    * 🔴 The order is the customer's, to the letter: the ORDER BY of the
-   *    engine's `readMenu` (`conversation-engine/src/restaurant/menu.ts`).
+   *    engine's `readMenu` (the engine's `restaurant/menu.ts`).
    *    Unavailable items keep their place — staff need them to turn them back
    *    on — while items of an inactive category are left out: the engine calls
    *    them unavailable whatever `is_available` says, so showing them would let
