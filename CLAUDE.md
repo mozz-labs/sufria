@@ -39,6 +39,8 @@ paths — except `tests/`, which imports `packages/shared/src/*` directly.
 pnpm db:up            # start PostgreSQL (Docker) and wait for it
 pnpm db:migrate       # apply migrations
 pnpm db:seed          # load dev fixtures
+# After ANY database rebuild, recreate the demo restaurant (brief E) — prints its staff password once:
+node --env-file-if-exists=.env --import @swc-node/register/esm-register apps/dashboard-api/src/scripts/setup-restaurant.ts db/restaurants/demo.json
 pnpm dev              # run all services in parallel
 pnpm test:security    # chain-isolation gate — 12 assertions + 3 negative controls
 pnpm test:db          # critical primitives + schema drift
