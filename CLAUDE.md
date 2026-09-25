@@ -42,7 +42,7 @@ pnpm db:seed          # load dev fixtures
 # After ANY database rebuild, recreate the demo restaurant (brief E) — prints its staff password once:
 node --env-file-if-exists=.env --import @swc-node/register/esm-register apps/dashboard-api/src/scripts/setup-restaurant.ts db/restaurants/demo.json
 pnpm dev              # run all services in parallel
-pnpm test:security    # chain-isolation gate — 12 assertions + 3 negative controls
+pnpm test:security    # chain-isolation gate — 15 assertions + 4 negative controls
 pnpm test:db          # critical primitives + schema drift
 pnpm verify           # format:check + lint + typecheck + test — run before any push
 pnpm --filter @sufria/dashboard-web dev    # single package
