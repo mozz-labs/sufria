@@ -70,3 +70,9 @@ process.env["PG_POOL_MAX"] = "1";
  * القيمة موجودة عشان env() تمر بس، لأنها بتفحص كل المتغيّرات عند أول import.
  */
 fallback("WHATSAPP_ACCESS_TOKEN", "test-only-access-token-never-sent-anywhere");
+
+/**
+ * 🔴 مُراقِب الإشعارات مطفأ بالاختبارات (بريف و §1.5). الاختبارات بتنادي
+ * `tick()` مباشرة — مؤقّت شغّال كان بيلتقط طلبات سويتات تانية بالتوقيت.
+ */
+process.env["NOTIFY_POLL_MS"] = "0";

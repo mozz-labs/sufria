@@ -69,6 +69,32 @@ export function assertWithinTextLimit(body: string): void {
   }
 }
 
+/**
+ * ميتا ردّت بغير 2xx. `metaCode` هو `error.code` من جسم الرد لو انقرأ — هو
+ * اللي بيفرّق «خارج نافذة 24 ساعة» (131047) عن توكن منتهي عن رقم غلط، والسجل
+ * بيحتاجه بلا ما ينسخ جسم الرد كله.
+ */
+export class WhatsAppSendError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly metaCode: number | null,
+  ) {
+    super(message);
+    this.name = "WhatsAppSendError";
+  }
+}
+
+function metaErrorCode(detail: string): number | null {
+  try {
+    const code = (JSON.parse(detail) as { error?: { code?: unknown } }).error
+      ?.code;
+    return typeof code === "number" ? code : null;
+  } catch {
+    return null;
+  }
+}
+
 /** تنفيذ حقيقي عبر Meta Cloud API. */
 export class MetaWhatsAppSender implements WhatsAppSender {
   constructor(
@@ -108,8 +134,10 @@ export class MetaWhatsAppSender implements WhatsAppSender {
       // 🔴 نص الخطأ من ميتا بينسجّل، ونص الرسالة لأ: الأول تشخيص، والتاني
       //    محتوى محادثة زبون. شوف logger.ts.
       const detail = await res.text().catch(() => "");
-      throw new Error(
+      throw new WhatsAppSendError(
         `ميتا رفضت الإرسال: ${res.status} ${res.statusText} ${detail.slice(0, 500)}`,
+        res.status,
+        metaErrorCode(detail),
       );
     }
 

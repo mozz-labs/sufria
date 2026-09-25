@@ -45,6 +45,12 @@ const EnvSchema = z.object({
    */
   WHATSAPP_SEND_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
 
+  /**
+   * دورة مُراقِب الإشعارات (FR-11، بريف و §1.5). `0` يطفئه — والاختبارات
+   * بتطفيه وبتنادي `tick()` مباشرة.
+   */
+  NOTIFY_POLL_MS: z.coerce.number().int().nonnegative().default(5000),
+
   ENGINE_PORT: z.coerce.number().int().positive().default(3001),
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
 
