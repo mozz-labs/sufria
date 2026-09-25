@@ -90,6 +90,7 @@ test("رسائل الزبون مش نفس نصوص الشارات", () => {
     ORDER_STATUS_MESSAGE_AR.ready.pickup,
     ORDER_STATUS_MESSAGE_AR.ready.delivery,
     ORDER_STATUS_MESSAGE_AR.cancelled.restaurant,
+    ORDER_STATUS_MESSAGE_AR.cancelled.restaurant_no_reason,
     ORDER_STATUS_MESSAGE_AR.cancelled.customer,
   ];
   for (const message of messages) {
