@@ -793,8 +793,8 @@ describe("writing nothing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 🔴 All or nothing — §2.6. The failure is forced on the fifth item, after the
-//    restaurant, both categories and four items are already written.
+// 🔴 All or nothing — §2.6. The failure is forced on the sixth item, after the
+//    restaurant, both categories and five items are already written.
 // ---------------------------------------------------------------------------
 describe("a failure on a late item", () => {
   const MARKER = `بند يفشل ${RUN}`;
