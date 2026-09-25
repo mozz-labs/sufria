@@ -186,22 +186,36 @@ const passwordIn = (stdout: string): string => {
 };
 
 type Counts = Record<string, number>;
-const COUNTED = [
-  "restaurants",
-  "menu_categories",
-  "menu_items",
-  "staff_accounts",
-  "restaurant_staff",
-];
+
+/**
+ * The rows this suite could have written — never a global count.
+ *
+ * 🔴 `pnpm -r test` runs the engine's suites at the same time as this one, and
+ *    they create and delete restaurants and menus of their own. A global
+ *    `count(*)` moved under this suite's feet in a full verify run (4 → 12 →
+ *    23 → 4 restaurants) while passing alone. Everything the script writes
+ *    carries the config's name, the phone number id from PHONE_VAR or the
+ *    staff email, and all three carry RUN here — so this counts exactly what
+ *    the script could have added, and categories, items and memberships only
+ *    through the restaurant or account they belong to.
+ */
 async function counts(): Promise<Counts> {
-  const out: Counts = {};
-  for (const table of COUNTED) {
-    const { rows } = await audit.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM ${table}`,
-    );
-    out[table] = rows[0]!.n;
-  }
-  return out;
+  const { rows } = await audit.query<Counts>(
+    `WITH r AS (SELECT id FROM restaurants
+                 WHERE name LIKE $1 OR whatsapp_phone_id = ANY($2::text[])),
+          s AS (SELECT id FROM staff_accounts WHERE phone_or_email LIKE $3)
+     SELECT (SELECT count(*) FROM r)::int AS restaurants,
+            (SELECT count(*) FROM menu_categories
+              WHERE restaurant_id IN (SELECT id FROM r))::int AS menu_categories,
+            (SELECT count(*) FROM menu_items
+              WHERE restaurant_id IN (SELECT id FROM r))::int AS menu_items,
+            (SELECT count(*) FROM s)::int AS staff_accounts,
+            (SELECT count(*) FROM restaurant_staff
+              WHERE staff_account_id IN (SELECT id FROM s)
+                 OR restaurant_id IN (SELECT id FROM r))::int AS restaurant_staff`,
+    [`%${RUN}%`, usedPhoneIds, `%-${RUN}-%@sufria.test`],
+  );
+  return rows[0]!;
 }
 
 async function restaurantByPhone(phoneId: string) {
