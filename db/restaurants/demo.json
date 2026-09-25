@@ -1,0 +1,71 @@
+{
+  "name": "سُفريا — مطعم العرض",
+  "currency": "ILS",
+  "timezone": "Asia/Gaza",
+  "offersDelivery": true,
+  "deliveryFee": "5.00",
+  "contactPhone": null,
+  "openingHours": {
+    "days": {
+      "sun": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ],
+      "mon": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ],
+      "tue": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ],
+      "wed": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ],
+      "thu": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ],
+      "fri": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ],
+      "sat": [
+        { "open": "00:00", "close": "12:00" },
+        { "open": "12:00", "close": "00:00" }
+      ]
+    }
+  },
+  "whatsappPhoneIdEnv": "WHATSAPP_PHONE_NUMBER_ID",
+  "menu": [
+    {
+      "name": "سندويشات",
+      "items": [
+        { "name": "شاورما دجاج", "price": "15.00", "isAvailable": true },
+        { "name": "شاورما لحمة", "price": "20.00", "isAvailable": true },
+        { "name": "فلافل", "price": "5.00", "isAvailable": true }
+      ]
+    },
+    {
+      "name": "وجبات",
+      "items": [
+        { "name": "وجبة شاورما دجاج", "price": "25.00", "isAvailable": true },
+        { "name": "وجبة شاورما لحمة", "price": "32.00", "isAvailable": true }
+      ]
+    },
+    {
+      "name": "جانبي ومشروبات",
+      "items": [
+        { "name": "بطاطا", "price": "8.00", "isAvailable": true },
+        { "name": "حمّص", "price": "7.00", "isAvailable": true },
+        { "name": "مشروب غازي", "price": "4.00", "isAvailable": true }
+      ]
+    }
+  ],
+  "staff": {
+    "email": "demo@sufria.local",
+    "name": "موظف العرض",
+    "role": "owner"
+  }
+}

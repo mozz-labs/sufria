@@ -1,7 +1,11 @@
 import { createZodDto } from "nestjs-zod";
 import { z } from "zod";
 
-/** Brief D §3.5's `deliveryFee`, verbatim. Zero is a real fee: free delivery. */
+/**
+ * Brief D §3.5's `deliveryFee`, verbatim. Zero is a real fee: free delivery.
+ * This pattern, `CONTACT_PHONE_PATTERN` and `OpeningHoursSchema` are also what
+ * the setup script validates against (brief E §2.2).
+ */
 export const DELIVERY_FEE_PATTERN = /^\d{1,6}(?:\.\d{1,2})?$/;
 
 /**
@@ -38,8 +42,11 @@ const DaySchema = WindowSchema.array();
  * `strictObject` at every level, so `"sunday"`, `"0"`, `{from, to}` and a
  * `timezone` key (moved to its own column by 0008) are a 400 instead of a row
  * the engine reads some other way, or not at all.
+ *
+ * Exported for `setup/restaurant-config.ts` (brief E §2.2): the setup script
+ * writes hours through this same schema, so the two writers cannot drift.
  */
-const OpeningHoursSchema = z.strictObject({
+export const OpeningHoursSchema = z.strictObject({
   days: z.strictObject({
     sun: DaySchema,
     mon: DaySchema,
