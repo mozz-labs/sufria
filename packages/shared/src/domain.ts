@@ -127,6 +127,11 @@ export const ORDER_STATUS_MESSAGE_AR = {
   /** بيتفرّع حسب `cancelled_by` — مين ألغى بيغيّر الجملة، مش بس السبب. */
   cancelled: {
     restaurant: `ألغينا طلبك — ${ORDER_CANCELLATION_REASON_SLOT}.`,
+    /**
+     * إلغاء المطعم **بلا سبب** (بريف و §1.1، قرار 26 سبتمبر). `restaurant`
+     * بخانة فارغة كانت بتطلع «ألغينا طلبك — .» أو الخانة نفسها للزبون.
+     */
+    restaurant_no_reason: "ألغينا طلبك.",
     customer: "ألغينا الطلب حسب طلبك.",
   },
 } as const;
@@ -526,6 +531,7 @@ export const ORDER_STATUS_TEXTS_AR: readonly string[] = [
   ORDER_STATUS_MESSAGE_AR.ready.pickup,
   ORDER_STATUS_MESSAGE_AR.ready.delivery,
   ORDER_STATUS_MESSAGE_AR.cancelled.restaurant,
+  ORDER_STATUS_MESSAGE_AR.cancelled.restaurant_no_reason,
   ORDER_STATUS_MESSAGE_AR.cancelled.customer,
 ];
 
@@ -842,6 +848,56 @@ export function fulfillmentAskAr(feeMinor: number, currency: Currency): string {
  */
 export function readyMessageAr(fulfillmentType: "pickup" | "delivery"): string {
   return ORDER_STATUS_MESSAGE_AR.ready[fulfillmentType];
+}
+
+/** ما يحتاجه اختيار رسالة الحالة من صف الطلب — لا أكثر (بريف و §3). */
+export interface StatusNotificationInput {
+  status: OrderStatus;
+  fulfillmentType: "pickup" | "delivery";
+  /** `orders.cancellation_reason` كما خزّنه الموظف. فارغ أو مسافات = بلا سبب. */
+  cancellationReason: string | null;
+}
+
+/**
+ * رسالة الزبون لحالة طلب التقطها المُراقِب (FR-11، بريف و §1.1) — أو `null`
+ * حين يكون **الصمت هو القرار**.
+ *
+ * 🔴 `null` ليست «لا أعرف»: المُراقِب يعلّم الطلب `notified = true` عليها
+ *    بلا إرسال. لذلك التفرّع شامل على `OrderStatus`، وحالة جديدة تُضاف
+ *    للاتحاد تكسر الترجمة هنا بدل أن تمرّ صامتة.
+ *
+ * - `pending_acceptance` — «استلمنا» يرسلها المحرّك عند الإنشاء (ج §15.3).
+ * - `preparing` · `completed` — صمت مقصود، شوف تعليق `ORDER_STATUS_MESSAGE_AR`.
+ * - `expired` — مؤجّلة (Sprint 2)، والحالة لا تُنتَج اليوم.
+ * - `cancelled` — نص المطعم دائما: الإلغاء من الزبون غير ممكن في البايلوت
+ *   (`cancelled_by = 'restaurant'`، د §8.2)، فلا يُبنى له مسار هنا.
+ */
+export function statusNotificationAr(
+  order: StatusNotificationInput,
+): string | null {
+  switch (order.status) {
+    case "pending_acceptance":
+    case "preparing":
+    case "completed":
+    case "expired":
+      return null;
+    case "accepted":
+      return ORDER_STATUS_MESSAGE_AR.accepted;
+    case "ready":
+      return readyMessageAr(order.fulfillmentType);
+    case "cancelled": {
+      const reason = order.cancellationReason?.trim() ?? "";
+      return reason === ""
+        ? ORDER_STATUS_MESSAGE_AR.cancelled.restaurant_no_reason
+        : fillSlots(ORDER_STATUS_MESSAGE_AR.cancelled.restaurant, {
+            [ORDER_CANCELLATION_REASON_SLOT]: reason,
+          });
+    }
+    default: {
+      const unreachable: never = order.status;
+      throw new Error(`حالة طلب غير معروفة: ${String(unreachable)}`);
+    }
+  }
 }
 
 /**

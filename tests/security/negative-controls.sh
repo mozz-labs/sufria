@@ -3,7 +3,7 @@
 # Negative controls for the chain-isolation gate.
 #
 # A security test that passes is worth nothing until you have watched it fail.
-# This script deliberately breaks tenant isolation three ways and asserts that
+# This script deliberately breaks tenant isolation four ways and asserts that
 # chain-isolation.sql catches each one, then restores the database.
 #
 # Run it in CI alongside the gate itself. If a refactor ever makes the gate pass
@@ -77,6 +77,15 @@ if echo "$leak" | tail -1 | grep -qx "0"; then
 else
   echo "  ✓ session-scoped context leaks as expected (this is why A4 exists)"
 fi
+
+# ---------------------------------------------------------------------------
+# 4. The notification poller's bypass (0012) granted to the API role.
+#    The realistic version is a later migration that "fixes a permission
+#    error" by granting EXECUTE broadly. A13 must go red.
+# ---------------------------------------------------------------------------
+psql -q "$DB" -c "GRANT EXECUTE ON FUNCTION app.restaurants_with_unnotified_orders() TO sufria_dashboard;" >/dev/null
+expect_gate_to_fail "restaurants_with_unnotified_orders() executable by the API role"
+psql -q "$DB" -c "REVOKE ALL ON FUNCTION app.restaurants_with_unnotified_orders() FROM sufria_dashboard;" >/dev/null
 
 # ---------------------------------------------------------------------------
 echo ""

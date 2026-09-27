@@ -22,7 +22,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C) |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -42,10 +42,13 @@ pnpm db:seed          # load dev fixtures
 # After ANY database rebuild, recreate the demo restaurant (brief E) — prints its staff password once:
 node --env-file-if-exists=.env --import @swc-node/register/esm-register apps/dashboard-api/src/scripts/setup-restaurant.ts db/restaurants/demo.json
 pnpm dev              # run all services in parallel
-pnpm test:security    # chain-isolation gate — 12 assertions + 3 negative controls
+pnpm test:security    # chain-isolation gate — 15 assertions + 4 negative controls
 pnpm test:db          # critical primitives + schema drift
 pnpm verify           # format:check + lint + typecheck + test — run before any push
 pnpm --filter @sufria/dashboard-web dev    # single package
+# Dev only, never a real restaurant: change an order's status through the API,
+# as the dashboard button will (brief F §5). Needs DEMO_STAFF_EMAIL/PASSWORD in .env:
+node --env-file=.env scripts/demo-order-status.mjs 101 accepted
 ```
 
 `pnpm verify` needs a live database: `test:security` and `test:db` connect using
@@ -161,6 +164,21 @@ and nowhere else. It needs `ENGINE_DATABASE_URL` (role `sufria_engine`) and uses
 "was a row written to some *other* tenant?", which cannot be asked from inside
 RLS.
 
+`conversation-engine/test/notifier.test.ts` covers the notification poller
+(brief F §4). Four of its tests are guarded by breaking the code: building the
+message from the listing instead of the claim's `RETURNING` drops only the race
+test (7); dropping `AND notified = false` from the claim drops only the
+two-pollers test (8); dropping the 24-hour window drops only test 11; letting
+`pending_acceptance` speak drops only test 6. Test 8 uses two notifier
+instances held at a barrier after both listed the order — a single instance
+skips its own overlapping tick, and a plain `Promise.all` race passes or fails
+by timing. Each notifier in the suite is scoped to the restaurants the test
+created (`restaurantScope`, test-only).
+
+🔴 **Never count a whole table in a test** (`SELECT count(*) FROM orders`).
+The engine and API suites run in parallel under `pnpm -r test`; count only the
+rows of the order or restaurant the test itself created.
+
 ## Known gaps
 
 - **`pnpm db:reset` assumes Docker and does nothing useful on a native
@@ -214,8 +232,9 @@ RLS.
   `false` means "the poller must send" — the notify loop is part هـ of blueprint
   §6.4, and `idx_orders_unnotified` is built for it — and the engine already sent
   the message itself.
-  Deviation recorded in `docs/12-after-cart-brief.md` §12. **The poller, when it
-  is built, must send nothing for an order in `pending_acceptance`.**
+  Deviation recorded in `docs/12-after-cart-brief.md` §12. The poller sends
+  nothing for an order in `pending_acceptance` — `statusNotificationAr` returns
+  `null` for it, and test 6 of `notifier.test.ts` guards it.
 - **`business_hours` has no schema in the database — its contract is
   `docs/10-عقد-ساعات-الدوام.md`.** Migration 0001 declared the column and
   nothing ever wrote a shape into it; the shape is still defined by
@@ -249,11 +268,22 @@ RLS.
   is on its way" reply and no way to ask about an order that was just placed.
   Deliberate for now — recorded as a product decision for Mohammed before the
   pilot (`docs/12-after-cart-brief.md` §16.8), not as a bug to fix in code.
-- **A status change from the dashboard sends nothing.** `PATCH
-  /orders/:id/status` sets `notified = false` and stops there; the poller that
-  would read it does not exist, so after «استلمنا» the customer hears nothing
-  — not «accepted», not «ready», not «cancelled». SRS FR-11 deviation, recorded
-  in `docs/12-after-cart-brief.md` §12.
+- **A status change reaches the customer through the poller, at most once.**
+  `PATCH /orders/:id/status` sets `notified = false` and sends nothing; the
+  engine's `OrderNotifier` (`src/notify/order-notifier.ts`, brief F) picks it
+  up every `NOTIFY_POLL_MS` (default `5000`, `0` turns it off, off in tests) and
+  sends one message by status — or none, when silence is the decision
+  (`preparing`, `completed`). The claim is `UPDATE … SET notified = true WHERE
+  notified = false RETURNING` and the message is built from that row only. It
+  commits **before** the send: a crash in between loses the message, by design
+  (a duplicate is worse). A failed send is retried twice (2 s, 6 s) and then
+  logged at `error` — `notified` stays `true`. Orders older than 23h50m are
+  marked without sending: free-form messages need the 24-hour window and there
+  are no approved templates. Two statuses between ticks send only the last.
+  The engine has no tenant context here, so it lists restaurants through
+  `app.restaurants_with_unnotified_orders()` (0012, Bypass #4: `SETOF uuid`,
+  `sufria_engine` alone, gate A13–A15) and does everything else in
+  `runInTenant`.
 - **Nothing updates the customer's statistics on `completed`.** `total_orders`,
   `total_spend`, `last_order_at` and `is_vip` keep their defaults: no code and
   no trigger writes them. SRS FR-14 via FR-13; found in D-7, **undecided** —
@@ -263,8 +293,8 @@ RLS.
   fail the other.
 - **A failed «استلمنا طلبك» is never retried.** It is logged, and the order is
   already in the dashboard, so the restaurant still sees it — but the customer
-  gets silence after «أكّد». Retrying belongs with the notify poller, which does
-  not exist yet.
+  gets silence after «أكّد». The notify poller does not retry it either: the
+  order is written `notified = true`, so the poller never sees it.
 - **A closed restaurant answers every message with the closing text.** No session
   is opened by design, so nothing remembers that the customer was already told.
   Rate-limiting that repeat belongs with the state machine.

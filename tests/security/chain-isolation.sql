@@ -5,7 +5,7 @@
 -- إلزامي بنهاية Sprint 0 / بداية Sprint 1، قبل أي فيتشر يُبنى فوق الـguard."
 --
 -- Run:  psql -v ON_ERROR_STOP=1 -f tests/security/chain-isolation.sql
--- Any failing assertion raises and aborts. Silence + "ALL 12 ASSERTIONS PASSED"
+-- Any failing assertion raises and aborts. Silence + "ALL 15 ASSERTIONS PASSED"
 -- is the only passing output. No feature may be built on the Guard until this
 -- prints that line in CI.
 -- =============================================================================
@@ -268,4 +268,121 @@ BEGIN;
   RESET ROLE;
 ROLLBACK;
 
-DO $$ BEGIN RAISE NOTICE 'ALL 12 ASSERTIONS PASSED — chain isolation gate is green'; END $$;
+-- =============================================================================
+-- A13. app.restaurants_with_unnotified_orders — Bypass #4 (0012), the
+--      notification poller's only privileged call. The engine alone may run
+--      it: not the API role, not PUBLIC. SECURITY DEFINER with a pinned
+--      search_path, or a caller could shadow `orders`.
+-- =============================================================================
+BEGIN;
+  DO $$
+  DECLARE fn regprocedure := 'app.restaurants_with_unnotified_orders()'::regprocedure;
+  BEGIN
+    IF has_function_privilege('sufria_dashboard', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'A13 FAILED: the API role can execute restaurants_with_unnotified_orders()';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a
+                WHERE p.oid = fn AND a.grantee = 0) THEN
+      RAISE EXCEPTION 'A13 FAILED: PUBLIC can execute restaurants_with_unnotified_orders()';
+    END IF;
+    IF NOT has_function_privilege('sufria_engine', fn, 'EXECUTE') THEN
+      RAISE EXCEPTION 'A13 FAILED: the engine role cannot execute restaurants_with_unnotified_orders()';
+    END IF;
+    IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = fn) THEN
+      RAISE EXCEPTION 'A13 FAILED: restaurants_with_unnotified_orders() is not SECURITY DEFINER';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_proc p, unnest(p.proconfig) c
+                    WHERE p.oid = fn AND c LIKE 'search_path=%') THEN
+      RAISE EXCEPTION 'A13 FAILED: restaurants_with_unnotified_orders() has no pinned search_path';
+    END IF;
+  END $$;
+  -- And the call itself, not only the catalogue: the API role is refused.
+  SET ROLE sufria_dashboard;
+  DO $$
+  BEGIN
+    BEGIN
+      PERFORM app.restaurants_with_unnotified_orders();
+      RAISE EXCEPTION 'A13 FAILED: the API role called restaurants_with_unnotified_orders()';
+    EXCEPTION WHEN insufficient_privilege THEN
+      NULL;  -- expected: permission denied for function
+    END;
+  END $$;
+  RESET ROLE;
+ROLLBACK;
+
+-- =============================================================================
+-- A14. A restaurant whose orders are all notified = true does not appear.
+--      Set up explicitly inside the transaction, so rows other suites leave
+--      behind cannot make it pass: every order notified, then branch B's one
+--      order put back to notified = false.
+-- =============================================================================
+BEGIN;
+  UPDATE orders SET notified = true;
+  UPDATE orders SET notified = false
+   WHERE restaurant_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  SET ROLE sufria_engine;
+  DO $$
+  DECLARE got text;
+  BEGIN
+    SELECT string_agg(r::text, ',' ORDER BY r) INTO got
+      FROM app.restaurants_with_unnotified_orders() r;
+    IF got IS DISTINCT FROM 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' THEN
+      RAISE EXCEPTION 'A14 FAILED: expected only branch B, got [%]', got;
+    END IF;
+  END $$;
+  RESET ROLE;
+  -- Nothing unnotified anywhere => nothing at all.
+  UPDATE orders SET notified = true;
+  SET ROLE sufria_engine;
+  DO $$
+  DECLARE n int;
+  BEGIN
+    SELECT count(*) INTO n FROM app.restaurants_with_unnotified_orders();
+    IF n <> 0 THEN
+      RAISE EXCEPTION 'A14 FAILED: % restaurants returned with every order notified', n;
+    END IF;
+  END $$;
+  RESET ROLE;
+ROLLBACK;
+
+-- =============================================================================
+-- A15. The function returns no order data. The declared result is a bare
+--      SETOF uuid (no OUT columns to widen later without this failing), and
+--      every value it returns is a restaurant id — never an order id.
+-- =============================================================================
+BEGIN;
+  DO $$
+  DECLARE result text;
+  BEGIN
+    SELECT pg_get_function_result('app.restaurants_with_unnotified_orders()'::regprocedure)
+      INTO result;
+    IF result <> 'SETOF uuid' THEN
+      RAISE EXCEPTION 'A15 FAILED: result type is [%], must be exactly SETOF uuid', result;
+    END IF;
+  END $$;
+  UPDATE orders SET notified = false;
+  SET ROLE sufria_engine;
+  DO $$
+  DECLARE total int;
+  BEGIN
+    SELECT count(*) INTO total FROM app.restaurants_with_unnotified_orders();
+    IF total = 0 THEN
+      RAISE EXCEPTION 'A15 FAILED: nothing returned — the check below would be vacuous';
+    END IF;
+  END $$;
+  RESET ROLE;
+  -- Compared as the owner: the engine cannot see orders to compare against.
+  CREATE TEMP TABLE a15_returned ON COMMIT DROP AS
+    SELECT r AS id FROM app.restaurants_with_unnotified_orders() r;
+  DO $$
+  DECLARE n int;
+  BEGIN
+    SELECT count(*) INTO n FROM a15_returned x JOIN orders o ON o.id = x.id;
+    IF n <> 0 THEN RAISE EXCEPTION 'A15 FAILED: % order ids returned', n; END IF;
+    SELECT count(*) INTO n FROM a15_returned x
+     WHERE NOT EXISTS (SELECT 1 FROM restaurants r WHERE r.id = x.id);
+    IF n <> 0 THEN RAISE EXCEPTION 'A15 FAILED: % values that are not restaurant ids', n; END IF;
+  END $$;
+ROLLBACK;
+
+DO $$ BEGIN RAISE NOTICE 'ALL 15 ASSERTIONS PASSED — chain isolation gate is green'; END $$;

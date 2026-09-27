@@ -46,7 +46,7 @@ pnpm test:security  # 🔴 لحظة الحقيقة
 
 **النتيجة المتوقعة:**
 ```
-NOTICE:  ALL 12 ASSERTIONS PASSED — chain isolation gate is green
+NOTICE:  ALL 15 ASSERTIONS PASSED — chain isolation gate is green
 ✓ البوابة الأمنية خضرا
 ```
 
