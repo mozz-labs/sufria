@@ -62,13 +62,19 @@ export function browserSessionStore(): SessionStore {
       return null;
     }
   };
+  // The same object for the same stored text, so that React's
+  // useSyncExternalStore sees a stable snapshot between two reads.
+  let lastRaw: string | null = null;
+  let last: Session | null = null;
   return {
     get() {
       try {
-        const raw = storage()?.getItem(KEY);
-        if (!raw) return null;
-        const parsed: unknown = JSON.parse(raw);
-        return isSession(parsed) ? parsed : null;
+        const raw = storage()?.getItem(KEY) ?? null;
+        if (raw === lastRaw) return last;
+        lastRaw = raw;
+        const parsed: unknown = raw ? JSON.parse(raw) : null;
+        last = isSession(parsed) ? parsed : null;
+        return last;
       } catch {
         return null;
       }
