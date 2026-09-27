@@ -31,6 +31,12 @@ const isoUtc = (column: string) =>
  * `PATCH /orders/:id/status` (brief D §3.3 step 4: "the same query, not a
  * second projection"). Assumes `orders o` and `customers c` in the query that
  * embeds it, and yields an `OrderListRow`.
+ *
+ * Brief G §3 (G-4) adds three fields for the card: the lines (name and
+ * quantity, in the order of `GET /orders/:id`), the time of the last status
+ * change, and the cancellation reason. `status_changed_at` is the last
+ * history row, or `created_at` for an order that has none (the seeded order
+ * of restaurant C) — never a time the screen makes up.
  */
 const orderListColumns = () => sql`
   o.id,
@@ -42,7 +48,20 @@ const orderListColumns = () => sql`
     AS item_count,
   ${isoUtc("o.created_at")} AS created_at,
   c.name AS customer_name,
-  c.phone_number AS customer_phone`;
+  c.phone_number AS customer_phone,
+  COALESCE(
+    (SELECT json_agg(json_build_object(
+              'name', oi.item_name_snapshot,
+              'quantity', oi.quantity)
+            ORDER BY oi.item_name_snapshot, oi.id)
+       FROM order_items oi
+      WHERE oi.order_id = o.id),
+    '[]'::json) AS items,
+  ${isoUtc(
+    `COALESCE((SELECT max(h.changed_at) FROM order_status_history h
+                WHERE h.order_id = o.id), o.created_at)`,
+  )} AS status_changed_at,
+  o.cancellation_reason`;
 
 /**
  * The outcome of a status change — the controller maps it to HTTP (brief D
@@ -68,6 +87,9 @@ type OrderListRow = {
   created_at: string;
   customer_name: string | null;
   customer_phone: string;
+  items: { name: string; quantity: number }[];
+  status_changed_at: string;
+  cancellation_reason: string | null;
 };
 
 type OrderDetailRow = {
@@ -284,10 +306,9 @@ export class OrdersService {
            AND o.restaurant_id = ${restaurantId}::uuid
            AND o.status = ${from}::order_status${paymentSettled(to)}
            AND c.id = o.customer_id
-        RETURNING ${orderListColumns()}`);
-      const row = updated.rows[0];
+        RETURNING o.id`);
 
-      if (!row) {
+      if (!updated.rows[0]) {
         // Checks 3 and 4. The only reason to read the status here is to tell
         // 404 from 409, never to build the UPDATE on it (§2.7). In the same
         // transaction.
@@ -313,7 +334,17 @@ export class OrdersService {
         VALUES (${orderId}::uuid, ${restaurantId}::uuid, ${from}::order_status,
                 ${to}::order_status, 'staff', ${staffAccountId}::uuid, ${reason})`);
 
-      return { kind: "changed", order: toListItem(row) };
+      // Read back after the history row, in the same transaction, so that
+      // `statusChangedAt` is this change and not the one before it — a
+      // `RETURNING` on the UPDATE runs before the INSERT exists.
+      const changed = await tx.execute<OrderListRow>(sql`
+        SELECT ${orderListColumns()}
+          FROM orders o
+          JOIN customers c ON c.id = o.customer_id
+         WHERE o.id = ${orderId}::uuid
+           AND o.restaurant_id = ${restaurantId}::uuid`);
+
+      return { kind: "changed", order: toListItem(changed.rows[0]!) };
     });
   }
 }
@@ -379,5 +410,8 @@ function toListItem(r: OrderListRow): OrderListItem {
     itemCount: r.item_count,
     createdAt: r.created_at,
     customer: { name: r.customer_name, phone: r.customer_phone },
+    items: r.items,
+    statusChangedAt: r.status_changed_at,
+    cancellationReason: r.cancellation_reason,
   };
 }

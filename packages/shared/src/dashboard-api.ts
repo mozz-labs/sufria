@@ -27,8 +27,16 @@ export const ORDER_TAB_STATUSES: Record<OrderTab, readonly OrderStatus[]> = {
 };
 
 /**
- * An item of `GET /orders` — brief D §3.1. No lines and no history: the route
- * is polled every 3-5 seconds.
+ * A line of an order on the board — name and quantity only, from the
+ * snapshot taken when the order was placed. Brief G §3 (G-4), for the
+ * card's summary («شاورما ×2 · بطاطا»).
+ */
+export type OrderListLine = { name: string; quantity: number };
+
+/**
+ * An item of `GET /orders` — brief D §3.1, with the three fields brief G §3
+ * added for the card (`items`, `statusChangedAt`, `cancellationReason`). No
+ * prices and no history: the route is polled every 10 seconds (G-4).
  */
 export type OrderListItem = {
   id: string;
@@ -46,6 +54,15 @@ export type OrderListItem = {
    * writes it (brief D §8.9).
    */
   customer: { name: string | null; phone: string };
+  /** The order's lines, by name then id — the order of `GET /orders/:id`. */
+  items: OrderListLine[];
+  /**
+   * ISO 8601 in UTC: the last `order_status_history` row, or `createdAt` for
+   * an order without one. The card's pulse reads it (G-4).
+   */
+  statusChangedAt: string;
+  /** `null` unless cancelled with a reason. */
+  cancellationReason: string | null;
 };
 
 export type OrderListResponse = {

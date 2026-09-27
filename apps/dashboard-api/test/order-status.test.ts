@@ -206,7 +206,10 @@ async function createOrder(spec: {
   return { id, orderNumber, fulfillment, total, createdAt };
 }
 
-/** The §3.1 list item this fixture should come back as. */
+/**
+ * The §3.1 list item this fixture should come back as. `statusChangedAt` is
+ * asserted on its own, against the history row (brief G §3).
+ */
 const itemOf = (
   o: Fixture,
   status: OrderStatus,
@@ -219,6 +222,13 @@ const itemOf = (
   itemCount: 2,
   createdAt: o.createdAt,
   customer: { name: null, phone: CUSTOMER_PHONE },
+  // By name, then id — «حمص» sorts before «شاورما دجاج».
+  items: [
+    { name: "حمص", quantity: 1 },
+    { name: "شاورما دجاج", quantity: 1 },
+  ],
+  statusChangedAt: expect.any(String) as unknown as string,
+  cancellationReason: null,
 });
 
 /** The order as the database holds it — asked above RLS. Timestamps as text, to the microsecond. */
@@ -462,6 +472,40 @@ describe("PATCH /orders/:id/status — transitions", () => {
       expect(state.updated_at).toBe(last?.changed_at);
     },
   );
+
+  it("the reply's statusChangedAt is this change's history row, not the one before it (brief G §3)", async () => {
+    const order = await createOrder({ status: "pending_acceptance" });
+
+    const body = await moveOk(order.id, {
+      from: "pending_acceptance",
+      to: "accepted",
+    });
+
+    const { rows } = await audit.query<{ at: string }>(
+      `SELECT to_char(max(changed_at) AT TIME ZONE 'UTC',
+                      'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at
+         FROM order_status_history WHERE order_id = $1`,
+      [order.id],
+    );
+    // The fixture's creation row is stamped at a fixed minute in 2026-01-01,
+    // so the two can only be equal if the reply read this change.
+    expect(body.statusChangedAt).toBe(rows[0]!.at);
+    expect(body.statusChangedAt).not.toBe(order.createdAt);
+    expect(await listed(order.id, "active")).toEqual(body);
+  });
+
+  it("a cancellation's reason comes back on the item (brief G §3)", async () => {
+    const order = await createOrder({ status: "accepted" });
+
+    const body = await moveOk(order.id, {
+      from: "accepted",
+      to: "cancelled",
+      cancellationReason: "  نفد الخبز  ",
+    });
+
+    expect(body.cancellationReason).toBe("نفد الخبز");
+    expect(await listed(order.id, "history")).toEqual(body);
+  });
 
   it("entering ready stamps ready_at, in the same UPDATE", async () => {
     const order = await createOrder({ status: "preparing" });

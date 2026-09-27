@@ -4,6 +4,7 @@ import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
 import { env } from "./config/env.js";
+import { corsOptions } from "./cors.js";
 
 async function bootstrap(): Promise<void> {
   // بيرمي الآن لو أي متغيّر بيئة ناقص — قبل ما ينفتح أي منفذ.
@@ -12,10 +13,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
 
   // الفرونت اند بيشتغل على منفذ تاني بالتطوير.
-  app.enableCors({
-    origin: process.env.DASHBOARD_WEB_ORIGIN ?? "http://localhost:3000",
-    credentials: true,
-  });
+  app.enableCors(corsOptions());
 
   app.enableShutdownHooks();
 
