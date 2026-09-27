@@ -16,7 +16,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -219,11 +219,32 @@ test("ولا خريطة حالات محلية ولا نوع OrderStatus محلي
   }
 });
 
-test("الواجهة فعلا بتستورد النصوص من @sufria/shared", () => {
-  const page = readFileSync(join(APP_ROOT, "app/dashboard/page.tsx"), "utf8");
-  assert.match(page, /from\s+"@sufria\/shared"/);
-  assert.match(page, /\bORDER_STATUS_LABEL_AR\b/);
+test("الموك انشال، والأنواع من @sufria/shared لا نسخ محلية (بريف ز §3، ز-2)", () => {
+  assert.ok(
+    !existsSync(join(APP_ROOT, "lib/mock.ts")),
+    "lib/mock.ts رجع — الطلبات من الـAPI وبس",
+  );
+  const api = readFileSync(join(APP_ROOT, "lib/api.ts"), "utf8");
+  assert.match(api, /from\s+"@sufria\/shared"/);
 
-  const mock = readFileSync(join(APP_ROOT, "lib/mock.ts"), "utf8");
-  assert.match(mock, /from\s+"@sufria\/shared"/);
+  // أنواع ردود الـAPI معرّفة بـshared وحدها: نسخة محلية بتنحرف بصمت، زي ما
+  // انحرف الموك عن domain.ts.
+  const contracts = [
+    "OrderListItem",
+    "OrderListResponse",
+    "OrderStatusConflictBody",
+    "UpdateOrderStatusRequest",
+    "LoginResult",
+    "RestaurantSettings",
+    "OrderStatus",
+    "FulfillmentType",
+  ];
+  for (const file of sourceFiles()) {
+    const src = readFileSync(file, "utf8");
+    for (const name of contracts)
+      assert.ok(
+        !new RegExp(`\\b(type|interface)\\s+${name}\\b`).test(src),
+        `${relative(APP_ROOT, file)} بيعرّف ${name} محليا. استورده من @sufria/shared.`,
+      );
+  }
 });

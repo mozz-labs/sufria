@@ -311,3 +311,30 @@ export type UpdateRestaurantSettingsRequest = {
 
 /** The 200 of `PATCH /restaurant/settings`: the settings after the change. */
 export type UpdateRestaurantSettingsResponse = RestaurantSettings;
+
+/**
+ * `POST /auth/login` — brief D §9.8, unchanged since S0-08. Moved here from
+ * `dashboard-api/src/auth/auth.types.ts` for the screen (brief G §3, G-2).
+ */
+export type LoginRequest = { phoneOrEmail: string; password: string };
+
+/** A restaurant the staff account is an active member of. */
+export type RestaurantMembership = {
+  /** The value of `x-restaurant-id`. */
+  id: string;
+  name: string;
+  branch: string | null;
+  role: string;
+};
+
+/** The 200 of `POST /auth/login`. Any failure is a 401 with one body. */
+export type LoginResult = {
+  accessToken: string;
+  refreshToken: string;
+  staff: { id: string; name: string; role: string };
+  restaurants: RestaurantMembership[];
+};
+
+/** `POST /auth/refresh` — a stored, unexpired refresh token → a new access token. */
+export type RefreshRequest = { refreshToken: string };
+export type RefreshResult = { accessToken: string };

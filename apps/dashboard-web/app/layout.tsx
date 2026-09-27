@@ -1,34 +1,29 @@
-import type { Metadata } from "next";
-import { Almarai, IBM_Plex_Sans_Arabic } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans_Arabic } from "next/font/google";
+import { designTokensCss } from "@sufria/shared";
 import "./globals.css";
 
-const almarai = Almarai({
-  variable: "--font-heading",
+// Brief G §2: Plex Sans Arabic for text, Plex Mono for every number.
+const sans = IBM_Plex_Sans_Arabic({
+  variable: "--font-sans",
   subsets: ["arabic"],
-  weight: ["700", "800"],
+  weight: ["400", "600", "700"],
   display: "swap",
 });
 
-const plexArabic = IBM_Plex_Sans_Arabic({
-  variable: "--font-body",
-  subsets: ["arabic"],
-  weight: ["400", "500", "600"],
+const mono = IBM_Plex_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["500", "600"],
   display: "swap",
 });
-
-export const metadata: Metadata = {
-  title: "لوحة تحكم المطعم",
-  description: "استقبال وإدارة طلبات واتساب",
-};
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="ar"
-      dir="rtl"
-      data-theme="light"
-      className={`${almarai.variable} ${plexArabic.variable}`}
-    >
+    <html lang="ar" dir="rtl" className={`${sans.variable} ${mono.variable}`}>
+      <head>
+        {/* The colours, generated from packages/shared/src/design-tokens.ts. */}
+        <style dangerouslySetInnerHTML={{ __html: designTokensCss() }} />
+      </head>
       <body>{children}</body>
     </html>
   );

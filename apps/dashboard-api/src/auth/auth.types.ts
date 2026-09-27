@@ -17,16 +17,6 @@ export type AuthenticatedUser = {
   staffAccountId: string;
 };
 
-export type RestaurantMembership = {
-  id: string;
-  name: string;
-  branch: string | null;
-  role: string;
-};
-
-export type LoginResult = {
-  accessToken: string;
-  refreshToken: string;
-  staff: { id: string; name: string; role: string };
-  restaurants: RestaurantMembership[];
-};
+// The login reply is part of the screen's contract: it lives in shared
+// (brief G §3, G-2), and the API imports it from there.
+export type { LoginResult, RestaurantMembership } from "@sufria/shared";
