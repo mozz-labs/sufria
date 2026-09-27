@@ -1,8 +1,16 @@
+/* The orders screen — docs/design/orders-bench.html, density «متوسطة».
+   Brief G §2: colours are token variables only; 26 title · 19 · 15 text ·
+   13 labels and badges, nothing under 13; radius 12 surfaces · 8 controls ·
+   999px badge; row padding 12, gap 8, line-height 1.55; touch targets 44px.
+   Logical properties only (RTL). */
+
 .screen {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
+
+/* ---- header ---- */
 
 .top {
   background: var(--surface);
@@ -24,15 +32,23 @@
   font-weight: 700;
 }
 
+.live {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 .title {
   font-size: 26px;
   font-weight: 700;
   line-height: 1.25;
-  padding-block-end: 12px;
 }
 
 .logout {
-  margin-inline-start: auto;
   min-height: 44px;
   padding-inline: 12px;
   background: transparent;
@@ -42,4 +58,279 @@
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
+}
+
+/* The accent carries no status: the live dot and the card's pulse are the
+   accent's two dots (G §2). */
+.liveDot,
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+  flex: none;
+}
+
+.liveDot::after,
+.pulse::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+  animation: ping 2.4s ease-out infinite;
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  70%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* The pulse stays, without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .liveDot::after,
+  .pulse::after {
+    animation: none;
+    opacity: 0.35;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+/* The active tab: its accent underline. Its text stays primary — accent text
+   on the dark surface is 3.26:1 (design-tokens.ts). */
+.tab {
+  min-height: 44px;
+  padding: 9px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-inline-start: 6px;
+}
+
+/* ---- the strip, the list, the empty state ---- */
+
+.offline {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.list {
+  flex: 1;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.empty {
+  padding: 32px 0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.more {
+  align-self: center;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* ---- the card ---- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.number {
+  font-weight: 600;
+}
+
+.details {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  flex: none;
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.badge[data-status="pending_acceptance"] {
+  background: var(--badge-pending_acceptance-bg);
+  color: var(--badge-pending_acceptance-text);
+}
+
+.badge[data-status="accepted"] {
+  background: var(--badge-accepted-bg);
+  color: var(--badge-accepted-text);
+}
+
+.badge[data-status="preparing"] {
+  background: var(--badge-preparing-bg);
+  color: var(--badge-preparing-text);
+}
+
+.badge[data-status="ready"] {
+  background: var(--badge-ready-bg);
+  color: var(--badge-ready-text);
+}
+
+.badge[data-status="completed"] {
+  background: var(--badge-completed-bg);
+  color: var(--badge-completed-text);
+}
+
+.badge[data-status="cancelled"] {
+  background: var(--badge-cancelled-bg);
+  color: var(--badge-cancelled-text);
+}
+
+.badge[data-status="expired"] {
+  background: var(--badge-expired-bg);
+  color: var(--badge-expired-text);
+}
+
+.figs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.total {
+  font-size: 15px;
+}
+
+.since {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Same place and size as the bench's «اقبل»: 44px, accent. */
+.action {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action:disabled {
+  cursor: progress;
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+/* Keeps the columns aligned on a card without a button. */
+.actionSpace {
+  flex: none;
+  width: 0;
+}
+
+.line {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+@media (max-width: 560px) {
+  .row {
+    flex-wrap: wrap;
+  }
+  .who {
+    flex-basis: 100%;
+  }
+  .action {
+    margin-inline-start: auto;
+  }
 }

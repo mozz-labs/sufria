@@ -243,7 +243,8 @@ test("الموك انشال، والأنواع من @sufria/shared لا نسخ �
     const src = readFileSync(file, "utf8");
     for (const name of contracts)
       assert.ok(
-        !new RegExp(`\\b(type|interface)\\s+${name}\\b`).test(src),
+        // A declaration — not `import { type X }`.
+        !new RegExp(`\\b(type|interface)\\s+${name}\\s*[=<{]`).test(src),
         `${relative(APP_ROOT, file)} بيعرّف ${name} محليا. استورده من @sufria/shared.`,
       );
   }
