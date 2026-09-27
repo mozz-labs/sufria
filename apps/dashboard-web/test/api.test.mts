@@ -67,25 +67,25 @@ const ORDER: OrderListItem = {
 };
 
 test("changeStatus: from is the status the card showed, with token and restaurant headers", async () => {
-  const { calls, fetch } = recorder([
-    json(200, { ...ORDER, status: "accepted" }),
-  ]);
+  const { calls, fetch } = recorder([json(200, { ...ORDER, status: "ready" })]);
   const api = createApi({
     baseUrl: "http://api.test/",
     store: memorySessionStore(SESSION),
     fetch,
   });
 
-  const res = await api.changeStatus(ORDER, "accepted");
+  // A card showing `preparing`: not the first status, so a hard-coded
+  // `from` cannot pass by accident.
+  const res = await api.changeStatus(
+    { ...ORDER, status: "preparing" },
+    "ready",
+  );
 
   assert.equal(res.ok, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0]!.method, "PATCH");
   assert.equal(calls[0]!.url, `http://api.test/orders/${ORDER.id}/status`);
-  assert.deepEqual(calls[0]!.body, {
-    from: "pending_acceptance",
-    to: "accepted",
-  });
+  assert.deepEqual(calls[0]!.body, { from: "preparing", to: "ready" });
   assert.equal(calls[0]!.headers["Authorization"], "Bearer access-1");
   assert.equal(calls[0]!.headers["x-restaurant-id"], SESSION.restaurantId);
 });

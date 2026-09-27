@@ -23,7 +23,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
 | `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`) |
-| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
+| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login and the orders screen (task G, `docs/16-orders-screen-brief.md`). Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
 | `tests/security` | — | Chain-isolation gate (mandatory) |
@@ -95,7 +95,13 @@ All four packages run real suites — Jest for the backend apps, `node --test` f
 `shared` and `dashboard-web`. The web tests guard the *decision*, not the code:
 they fail if a status label is written inline, if a local status map or
 `OrderStatus` type reappears, or if `preparing`/`completed` gain a customer
-message.
+message. Since task G they also fail on **any** Arabic letter in the code of
+`app/` or `lib/` (every visible text comes from `DASHBOARD_UI_AR` in
+`packages/shared/src/dashboard-ui.ts`), and on a local copy of an API
+contract type. The screen's decisions — the card's text, the pulse, what the
+next-step button sends and what a 409 leads to — live in
+`apps/dashboard-web/lib/board.ts`, as plain TypeScript, because `node --test`
+cannot import JSX: components only render what it returns.
 
 | Package | `test` script | Real? |
 |---|---|---|
