@@ -19,9 +19,11 @@
     "lint": "eslint . --max-warnings 0 && pnpm --filter @sufria/dashboard-web lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:contrast": "tsc -b packages/shared && node scripts/check-contrast.mjs",
+    "check:numerals": "tsc -b packages/shared && node scripts/check-numerals.mjs",
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm check:numerals && pnpm test",
     "prepare": "husky || true"
   },
   "devDependencies": {
