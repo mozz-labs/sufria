@@ -27,8 +27,16 @@ export const ORDER_TAB_STATUSES: Record<OrderTab, readonly OrderStatus[]> = {
 };
 
 /**
- * An item of `GET /orders` — brief D §3.1. No lines and no history: the route
- * is polled every 3-5 seconds.
+ * A line of an order on the board — name and quantity only, from the
+ * snapshot taken when the order was placed. Brief G §3 (G-4), for the
+ * card's summary («شاورما ×2 · بطاطا»).
+ */
+export type OrderListLine = { name: string; quantity: number };
+
+/**
+ * An item of `GET /orders` — brief D §3.1, with the three fields brief G §3
+ * added for the card (`items`, `statusChangedAt`, `cancellationReason`). No
+ * prices and no history: the route is polled every 10 seconds (G-4).
  */
 export type OrderListItem = {
   id: string;
@@ -46,6 +54,15 @@ export type OrderListItem = {
    * writes it (brief D §8.9).
    */
   customer: { name: string | null; phone: string };
+  /** The order's lines, by name then id — the order of `GET /orders/:id`. */
+  items: OrderListLine[];
+  /**
+   * ISO 8601 in UTC: the last `order_status_history` row, or `createdAt` for
+   * an order without one. The card's pulse reads it (G-4).
+   */
+  statusChangedAt: string;
+  /** `null` unless cancelled with a reason. */
+  cancellationReason: string | null;
 };
 
 export type OrderListResponse = {
@@ -294,3 +311,30 @@ export type UpdateRestaurantSettingsRequest = {
 
 /** The 200 of `PATCH /restaurant/settings`: the settings after the change. */
 export type UpdateRestaurantSettingsResponse = RestaurantSettings;
+
+/**
+ * `POST /auth/login` — brief D §9.8, unchanged since S0-08. Moved here from
+ * `dashboard-api/src/auth/auth.types.ts` for the screen (brief G §3, G-2).
+ */
+export type LoginRequest = { phoneOrEmail: string; password: string };
+
+/** A restaurant the staff account is an active member of. */
+export type RestaurantMembership = {
+  /** The value of `x-restaurant-id`. */
+  id: string;
+  name: string;
+  branch: string | null;
+  role: string;
+};
+
+/** The 200 of `POST /auth/login`. Any failure is a 401 with one body. */
+export type LoginResult = {
+  accessToken: string;
+  refreshToken: string;
+  staff: { id: string; name: string; role: string };
+  restaurants: RestaurantMembership[];
+};
+
+/** `POST /auth/refresh` — a stored, unexpired refresh token → a new access token. */
+export type RefreshRequest = { refreshToken: string };
+export type RefreshResult = { accessToken: string };

@@ -1,126 +1,101 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { DEMO_CREDENTIALS, RESTAURANT } from "../lib/mock";
+import { DASHBOARD_UI_AR } from "@sufria/shared";
+import { api, sessionStore } from "../lib/client.ts";
+import { sessionFromLogin } from "../lib/session.ts";
+import { useSession } from "../lib/use-session.ts";
+import { BrandMark } from "./brand-mark.tsx";
 import styles from "./login.module.css";
 
+const T = DASHBOARD_UI_AR;
+
+/** Brief G §3 (G-3): two fields and a button. */
 export default function LoginPage() {
   const router = useRouter();
-  const [user, setUser] = useState("");
-  const [pass, setPass] = useState("");
-  const [show, setShow] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setFailed(false);
-    setBusy(true);
+  const session = useSession();
 
-    // محاكاة نداء الشبكة. بينستبدل بـPOST /auth/login عند S0-08.
-    window.setTimeout(() => {
-      const ok =
-        user.trim().toLowerCase() === DEMO_CREDENTIALS.user &&
-        pass === DEMO_CREDENTIALS.pass;
-      if (ok) {
-        router.push("/dashboard");
-      } else {
-        // نص واحد لكل أسباب الفشل — منعا لتعداد الحسابات.
-        setFailed(true);
-        setBusy(false);
-      }
-    }, 550);
+  // Already logged in in this tab: straight to the orders.
+  useEffect(() => {
+    if (session) router.replace("/orders");
+  }, [router, session]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    const res = await api.login({
+      phoneOrEmail: identifier.trim(),
+      password,
+    });
+    const session = res.ok ? sessionFromLogin(res.value) : null;
+    if (session) {
+      sessionStore.set(session);
+      router.replace("/orders");
+      return;
+    }
+    // A 401 is the API's one answer for every wrong credential. Anything else
+    // (no network, no restaurant on the account) is not the user's typing.
+    setError(
+      !res.ok && res.error.kind === "unauthorized"
+        ? T.login.failed
+        : T.errors.stepFailed,
+    );
+    setBusy(false);
   }
 
   return (
-    <div className={styles.page}>
-      <main className={styles.card}>
-        <div className={styles.brand}>
-          <div className={styles.mark} aria-hidden="true">
-            ش
-          </div>
-          <div className={styles.brandText}>
-            <span className={styles.brandName}>{RESTAURANT.name}</span>
-            <span className={styles.brandSub}>{RESTAURANT.branch}</span>
-          </div>
-        </div>
+    <main className={styles.page}>
+      <form className={styles.card} onSubmit={onSubmit} noValidate>
+        <h1 className={styles.title}>
+          <BrandMark />
+          {T.brand}
+        </h1>
 
-        <h1 className={styles.title}>تسجيل الدخول</h1>
-        <p className={styles.subtitle}>
-          ادخل ببيانات الموظف للوصول إلى لوحة الطلبات.
-        </p>
+        <label className={styles.field}>
+          <span className={styles.label}>{T.login.identifier}</span>
+          <input
+            className={styles.input}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            autoComplete="username"
+            dir="ltr"
+            required
+          />
+        </label>
 
-        <form onSubmit={onSubmit} noValidate>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="user">
-              البريد الإلكتروني أو رقم الهاتف
-            </label>
-            <div className={styles.inputWrap}>
-              <input
-                id="user"
-                className={`${styles.input} ${failed ? styles.invalid : ""}`}
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-                autoComplete="username"
-                dir="ltr"
-                placeholder="name@example.com"
-              />
-            </div>
-          </div>
+        <label className={styles.field}>
+          <span className={styles.label}>{T.login.password}</span>
+          <input
+            className={styles.input}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            dir="ltr"
+            required
+            aria-invalid={error !== null}
+            aria-describedby={error ? "login-error" : undefined}
+          />
+        </label>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="pass">
-              كلمة المرور
-            </label>
-            <div className={styles.inputWrap}>
-              <input
-                id="pass"
-                type={show ? "text" : "password"}
-                className={`${styles.input} ${styles.hasPassword} ${
-                  failed ? styles.invalid : ""
-                }`}
-                value={pass}
-                onChange={(e) => setPass(e.target.value)}
-                autoComplete="current-password"
-                dir="ltr"
-                aria-invalid={failed}
-                aria-describedby={failed ? "loginError" : undefined}
-              />
-              <button
-                type="button"
-                className={styles.reveal}
-                onClick={() => setShow((v) => !v)}
-                aria-label={show ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
-              >
-                {show ? "إخفاء" : "إظهار"}
-              </button>
-            </div>
+        {error && (
+          <p id="login-error" className={styles.error} role="alert">
+            {error}
+          </p>
+        )}
 
-            {failed && (
-              <p className={styles.error} id="loginError" role="alert">
-                <span aria-hidden="true">✕</span>
-                بيانات الدخول غير صحيحة
-              </p>
-            )}
-
-            <a className={styles.forgot} href="#">
-              نسيت كلمة المرور؟
-            </a>
-          </div>
-
-          <button className={styles.submit} type="submit" disabled={busy}>
-            {busy ? "جارٍ التحقق…" : "دخول"}
-          </button>
-        </form>
-
-        <div className={styles.hint}>
-          <span className={styles.hintTitle}>بيانات العرض التجريبي</span>
-          المستخدم: <code>{DEMO_CREDENTIALS.user}</code>
-          <br />
-          كلمة المرور: <code>{DEMO_CREDENTIALS.pass}</code>
-        </div>
-      </main>
-    </div>
+        {/* Disabled while sending, its text unchanged (G-4, same rule). */}
+        <button className={styles.submit} type="submit" disabled={busy}>
+          {T.login.submit}
+        </button>
+      </form>
+    </main>
   );
 }

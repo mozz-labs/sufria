@@ -1,129 +1,24 @@
-/* ============================================================================
-   Design tokens — PLACEHOLDER VALUES.
-   These are replaced wholesale by DESIGN.md §2 / §4 / §7 once it is finalised.
-   No Stitch output tokens (md-sys-*, --md-*) may ever appear in this file.
-   ========================================================================== */
-
-:root {
-  /* surfaces */
-  --bg: #f7f5f0;
-  --surface: #ffffff;
-  --surface-2: #f1eee7;
-  --surface-3: #e9e5db;
-  --border: #e2ddd1;
-  --border-strong: #cfc8b8;
-
-  /* ink */
-  --ink: #1b1a15;
-  --ink-2: #5f5c50;
-  --ink-3: #8c8878;
-
-  /* brand */
-  --brand: #56692f;
-  --brand-hover: #445226;
-  --brand-tint: #edf0e2;
-  --brand-ink: #ffffff;
-
-  /* status — always paired with a text label, never colour alone */
-  --warn: #a76a00;
-  --warn-tint: #fbf0dc;
-  --info: #1d6a72;
-  --info-tint: #e1f0f1;
-  --ok: #2a7247;
-  --ok-tint: #e2f1e7;
-  --crit: #a62f26;
-  --crit-tint: #fae6e4;
-
-  /* spacing scale — 4 / 8 / 12 / 16 / 24 / 32 / 48 */
-  --s1: 4px;
-  --s2: 8px;
-  --s3: 12px;
-  --s4: 16px;
-  --s5: 24px;
-  --s6: 32px;
-  --s7: 48px;
-
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 16px;
-
-  --shadow-1: 0 1px 2px rgba(27, 26, 21, 0.06);
-  --shadow-2: 0 4px 16px -4px rgba(27, 26, 21, 0.12);
-  --shadow-3: 0 24px 60px -20px rgba(27, 26, 21, 0.28);
-
-  --tap: 44px;
-  color-scheme: light;
-}
-
-[data-theme="dark"] {
-  --bg: #14140f;
-  --surface: #1c1c16;
-  --surface-2: #24241d;
-  --surface-3: #2c2b23;
-  --border: #33322a;
-  --border-strong: #46443a;
-
-  --ink: #f2efe6;
-  --ink-2: #ada898;
-  --ink-3: #7d7969;
-
-  --brand: #9cb463;
-  --brand-hover: #b0c77a;
-  --brand-tint: #262e1a;
-  --brand-ink: #14140f;
-
-  --warn: #e0a64b;
-  --warn-tint: #322611;
-  --info: #63b9c0;
-  --info-tint: #122c2e;
-  --ok: #62bc85;
-  --ok-tint: #142e1f;
-  --crit: #e4776c;
-  --crit-tint: #331916;
-
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
-  --shadow-3: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
-
-  color-scheme: dark;
-}
+/* Base styles. Every colour is a variable generated from
+   packages/shared/src/design-tokens.ts (injected by layout.tsx) — no hex here. */
 
 * {
   box-sizing: border-box;
-  padding: 0;
   margin: 0;
+  padding: 0;
 }
 
 html,
 body {
-  height: 100%;
-  max-width: 100vw;
-  overflow-x: hidden;
+  min-height: 100%;
 }
 
 body {
-  color: var(--ink);
   background: var(--bg);
-  font-family: var(--font-body), system-ui, sans-serif;
-  font-weight: 400;
-  line-height: 1.65;
+  color: var(--text-primary);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-h1,
-h2,
-h3,
-h4 {
-  font-family: var(--font-heading), system-ui, sans-serif;
-  font-weight: 700;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
 }
 
 button,
@@ -133,16 +28,15 @@ input {
 }
 
 :focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: var(--r-sm);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
+/* Every number: Plex Mono, tabular (brief G §2). Plex Mono has no Arabic
+   glyphs, so the words around a number («منذ», «د.أ») fall back to Plex Sans
+   Arabic, not to a system monospace. */
+.num {
+  font-family: var(--font-mono), var(--font-sans), system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }

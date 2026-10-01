@@ -572,7 +572,7 @@ ALTER TABLE orders
 
 ### 9.0 · مشترك لكل مسارات د
 
-**المضيف:** بلا بادئة عامة (لا `setGlobalPrefix`). المنفذ `DASHBOARD_API_PORT` (الافتراضي `3002`). الـCORS: `DASHBOARD_WEB_ORIGIN` (الافتراضي `http://localhost:3000`) مع `credentials: true`.
+**المضيف:** بلا بادئة عامة (لا `setGlobalPrefix`). المنفذ `DASHBOARD_API_PORT` (الافتراضي `3002`). الـCORS: `DASHBOARD_WEB_ORIGIN` (الافتراضي `http://localhost:3000`، وأكثر من أصل بفاصلة) مع `credentials: true` — **قائمة مطابقة منذ بريف ز**: أصل غريب يأخذ ردا بلا `Access-Control-Allow-Origin` إطلاقا (`apps/dashboard-api/src/cors.ts`).
 
 **الهيدران — إلزاميان في كل مسار من مسارات د:**
 
@@ -645,6 +645,10 @@ ALTER TABLE orders
 | `history` | `completed` · `cancelled` · `expired` | `created_at` ثم `id`، الأحدث أولا | 20 بالصفحة · يقرأ 21 ليعرف `hasMore`، بلا `COUNT` · صفحة بعد الأخيرة ← `orders: []` و`hasMore: false` |
 
 - `itemCount` = عدد أسطر الطلب، **لا مجموع الكميات**. قد يكون 0 (طلب المطعم ج في الـseed).
+- **أضاف بريف ز (27 سبتمبر) ثلاثة حقول للبطاقة، إضافة لا تعديل** — وردّ `PATCH /orders/:id/status` معها لأنه نفس الإسقاط:
+  `items` (`[{ name, quantity }]` من الـsnapshot، بالاسم ثم `id` كترتيب §9.2) ·
+  `statusChangedAt` (آخر سطر في `order_status_history`، أو `createdAt` لطلب بلا سطر) ·
+  `cancellationReason` (`null` إلا لطلب ملغى بسبب). النوع `OrderListLine` في `shared`.
 - `customer.name` `null` عمليا لكل زبون حقيقي (§8.9).
 - **الأخطاء:** 400 · 401 · 403 (§9.0).
 

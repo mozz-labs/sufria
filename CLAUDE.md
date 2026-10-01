@@ -23,7 +23,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
 | `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`) |
-| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI |
+| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login and the orders screen (task G, `docs/16-orders-screen-brief.md`). Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
 | `tests/security` | — | Chain-isolation gate (mandatory) |
@@ -95,7 +95,13 @@ All four packages run real suites — Jest for the backend apps, `node --test` f
 `shared` and `dashboard-web`. The web tests guard the *decision*, not the code:
 they fail if a status label is written inline, if a local status map or
 `OrderStatus` type reappears, or if `preparing`/`completed` gain a customer
-message.
+message. Since task G they also fail on **any** Arabic letter in the code of
+`app/` or `lib/` (every visible text comes from `DASHBOARD_UI_AR` in
+`packages/shared/src/dashboard-ui.ts`), and on a local copy of an API
+contract type. The screen's decisions — the card's text, the pulse, what the
+next-step button sends and what a 409 leads to — live in
+`apps/dashboard-web/lib/board.ts`, as plain TypeScript, because `node --test`
+cannot import JSX: components only render what it returns.
 
 | Package | `test` script | Real? |
 |---|---|---|
@@ -375,12 +381,15 @@ rows of the order or restaurant the test itself created.
   للحقن بالنوع. بدونه **الحقن يصير `undefined` بصمت** — وقد حصل فعلا.
 - **Meta Cloud API مباشرة** — لا BSP ولا 360dialog.
 - **الهجرات إضافة فقط.** ممنوع تعديل هجرة مطبَّقة. أي تغيير بهجرة جديدة.
-- **الأرقام غربية فقط** (0-9). ممنوع الخلط. **القاعدة مقفولة، والبوابة `check:numerals` غير موجودة بعد** —
-  لا سكربت ولا قاعدة ESLint ولا خطوة CI (`docs/11-cart-brief.md` §11.5). الحارس القائم الوحيد
-  اختبار في `packages/shared/test/cart-texts.test.mts` على نصوص الزبون في `domain.ts`. ما عداها: افحص يدويا.
+- **الأرقام غربية فقط** (0-9). ممنوع الخلط. البوابة `pnpm check:numerals` (`scripts/check-numerals.mjs`،
+  جزء من `pnpm verify` وخطوة CI): كل نص مصدَّر من `@sufria/shared` وكل ملف مكتوب باليد في `dashboard-web`.
+  **لا تفحص** مصدر `shared` نفسه — `normalize.ts` يحمل `٠-٩` بقصد لتطبيع مدخلات الزبون. ما عدا ذلك
+  (المحرّك، الـAPI): افحص يدويا.
 - **الخطوط:** IBM Plex Sans Arabic للنص · IBM Plex Mono للأرقام. Almarai مشطوب.
-- **لون البراند:** سُمّاق `#75284A` فاتح / `#B54874` غامق. **`check:contrast` و`check:motion` غير موجودتين بعد**
-  — لا سكربت في أي `package.json`. بعد أي تبديل لون: افحص التباين يدويا. كتابتهما أو شطبهما مع بريف الشاشة.
+- **لون البراند:** سُمّاق `#75284A` فاتح / `#B54874` غامق. الألوان كلها في `packages/shared/src/design-tokens.ts`
+  وحده، ومنه تتولّد متغيّرات CSS. البوابة `pnpm check:contrast` (جزء من `pnpm verify` وخطوة CI) تعدّد الأزواج
+  منه — كل نص فوق كل خلفية يقع عليها، وكل شارة، بالوضعين — بحدّ 4.5:1.
+  🔴 `text-muted` (فاتح) و`accent` (غامق) **ليسا لونَي نص**: 3.23:1 و3.26:1.
 - **قاعدة رد الـwebhook — لا تُعكس أبدا:**
   `200` = خُزّنت بأمان، أو تُجوهلت بقصد ونهائيا (JSON مشوّه، نوع غير مدعوم).
   **غير `200`** = لم أستطع — أعِد الإرسال.

@@ -421,6 +421,14 @@ describe("GET /orders — tabs and ordering", () => {
       itemCount: 3,
       createdAt: at(0),
       customer: { name: null, phone: "+962791234567" },
+      items: [
+        { name: "صنف 1", quantity: 1 },
+        { name: "صنف 2", quantity: 1 },
+        { name: "صنف 3", quantity: 1 },
+      ],
+      // No history row in this fixture: the creation time stands in.
+      statusChangedAt: at(0),
+      cancellationReason: null,
     });
     expect(rows[0]!.created_at).toBe(at(0));
   });
@@ -433,6 +441,52 @@ describe("GET /orders — tabs and ordering", () => {
     expect(count(o["pending"])).toBe(3);
     expect(count(o["preparing"])).toBe(1);
     expect(count(o["ready"])).toBe(0);
+  });
+
+  it("statusChangedAt is the latest history row, whatever order the rows were written in (brief G §3)", async () => {
+    // Written out of time order: the answer must be the max, not the last id.
+    for (const [from, to, minute] of [
+      [null, "pending_acceptance", 20],
+      ["accepted", "preparing", 27],
+      ["pending_acceptance", "accepted", 23],
+    ] as const) {
+      await audit.query(
+        `INSERT INTO order_status_history (order_id, restaurant_id, from_status,
+                                           to_status, actor, changed_at)
+         VALUES ($1, $2, $3::order_status, $4::order_status, 'system', $5::timestamptz)`,
+        [o["preparing"], shop.restaurantId, from, to, at(minute)],
+      );
+    }
+
+    const body = await listOk("?tab=active", staffTest, shop.restaurantId);
+    const item = body.orders.find((x) => x.id === o["preparing"]);
+    expect(item?.statusChangedAt).toBe(at(27));
+    expect(item?.createdAt).toBe(at(20));
+  });
+
+  it("items are the order's lines, name and quantity, by name (brief G §3)", async () => {
+    const id = await addToShop(shop, { status: "accepted", createdAt: at(40) });
+    // Inserted out of name order; ids are random UUIDs, so names are distinct.
+    for (const [name, qty] of [
+      ["شاورما", 2],
+      ["عصير", 3],
+      ["بطاطا", 1],
+    ] as const) {
+      await audit.query(
+        `INSERT INTO order_items (order_id, restaurant_id, item_name_snapshot,
+                                  unit_price_snapshot, quantity)
+         VALUES ($1, $2, $3, 1.00, $4)`,
+        [id, shop.restaurantId, name, qty],
+      );
+    }
+
+    const body = await listOk("?tab=active", staffTest, shop.restaurantId);
+    expect(body.orders.find((x) => x.id === id)?.items).toEqual([
+      { name: "بطاطا", quantity: 1 },
+      { name: "شاورما", quantity: 2 },
+      { name: "عصير", quantity: 3 },
+    ]);
+    expect(body.orders.find((x) => x.id === o["ready"])?.items).toEqual([]);
   });
 
   it("history keeps a trailing-zero total as text too", async () => {
