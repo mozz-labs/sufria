@@ -182,10 +182,11 @@ by timing. Each notifier in the suite is scoped to the restaurants the test
 created (`restaurantScope`, test-only).
 
 `conversation-engine/test/session-timeout.test.ts` covers the session timeout
-(brief H §3, tests 1–8, plus 9 for "idle time is the database's clock"). A
+(brief H §3, tests 1–8, plus 9 for "idle time is the database's clock" and 10
+for an expired session at a closed restaurant). A
 session is aged with `UPDATE … last_message_at = now() - interval` from the
 audit connection. Four breaks, each predicted before it ran: `>=` → `>` drops
-only test 3; disabling the expiry step drops 1 and 4–9; letting the new session
+only test 3; disabling the expiry step drops 1 and 4–10; letting the new session
 copy the abandoned one's `context` drops only 5; measuring idle time with the
 injected Node clock drops only 9. **The exact boundary is tested on the pure
 `isSessionExpired`, not through the database**: the DB clock moves between

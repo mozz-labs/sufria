@@ -2,7 +2,8 @@
  * ح-2 · مهلة الجلسة — على قاعدة حقيقية، بالمرسِل الوهمي.
  *
  * المواصفة: بريف ح (`docs/17-session-timeout-brief.md`) §2 و§3. الأرقام بأسماء
- * الاختبارات هي أرقام جدول §3، و9 زيادة: بيحرس قاعدة §0 «الوقت من القاعدة».
+ * الاختبارات هي أرقام جدول §3، و9 و10 زيادة: 9 بيحرس قاعدة §0 «الوقت من
+ * القاعدة»، و10 بيثبّت شو بيعني «المسار القائم حرفيا» لمطعم مسكّر.
  *
  * الجلسة بتنعمل بالمسار الحقيقي (`handleInbound`)، وبعدين بتنشاخ بـ`UPDATE`
  * على `last_message_at` من اتصال التدقيق: `now() - interval` بساعة القاعدة،
@@ -24,6 +25,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import {
+  CLOSED_AR,
   FULFILLMENT_PROMPT_AR,
   MENU_HEADER_AR,
   handoffMessageAr,
@@ -49,6 +51,10 @@ const nextCustomer = (): string =>
 
 /** `{}` = مفتوح دايما — المسار الموثّق الوحيد لمطعم 24 ساعة (شوف `fulfillment.test.ts`). */
 const ALWAYS_OPEN_HOURS = {};
+/** ولا يوم مفتوح — «مسكّر» بلا الاعتماد على الساعة. */
+const ALWAYS_CLOSED_HOURS = {
+  days: { sun: [], mon: [], tue: [], wed: [], thu: [], fri: [], sat: [] },
+};
 const PHONE = "0790000456";
 
 let db: TenantDb;
@@ -460,5 +466,22 @@ describe("الانتهاء — بريف ح §3", () => {
     await age((await early.active()).id, "10 minutes");
     expect(await early.say("مرحبا", futureClock)).toBe("browsing");
     expect(await early.sessions()).toHaveLength(1);
+  });
+
+  it("10. مطعم مسكّر وقت ما رجع الزبون: القديمة `abandoned` ورسالة الإغلاق، وولا جلسة جديدة", async () => {
+    // «المسار القائم لجلسة جديدة حرفيا» (§2) فيه بوابة الدوام. فجلسة منتهية
+    // بمطعم مسكّر بتنتهي، والرد رسالة الإغلاق — مش متابعة سلّة من مبارح.
+    const s = await atFulfillmentChoice("t10");
+    const old = await s.active();
+    await audit.query(
+      `UPDATE restaurants SET business_hours = $2::jsonb WHERE id = $1`,
+      [s.restaurantId, JSON.stringify(ALWAYS_CLOSED_HOURS)],
+    );
+    await age(old.id, "61 minutes");
+
+    expect(await s.say("مرحبا")).toBe("closed");
+
+    expect((await s.sessions()).map((x) => x.state)).toEqual(["abandoned"]);
+    expect(s.replies()).toEqual([CLOSED_AR]);
   });
 });
