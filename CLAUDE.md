@@ -22,7 +22,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`) |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login and the orders screen (task G, `docs/16-orders-screen-brief.md`). Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -181,6 +181,19 @@ skips its own overlapping tick, and a plain `Promise.all` race passes or fails
 by timing. Each notifier in the suite is scoped to the restaurants the test
 created (`restaurantScope`, test-only).
 
+`conversation-engine/test/session-timeout.test.ts` covers the session timeout
+(brief H §3, tests 1–8, plus 9 for "idle time is the database's clock"). A
+session is aged with `UPDATE … last_message_at = now() - interval` from the
+audit connection. Four breaks, each predicted before it ran: `>=` → `>` drops
+only test 3; disabling the expiry step drops 1 and 4–9; letting the new session
+copy the abandoned one's `context` drops only 5; measuring idle time with the
+injected Node clock drops only 9. **The exact boundary is tested on the pure
+`isSessionExpired`, not through the database**: the DB clock moves between
+setup and check, so a session aged "60:00" is read at 60:00.05 and expires under
+`>` too. Test 7 is ordered like the other concurrency tests — the winner holds
+its transaction open, the loser blocks on the expiry CAS. `setup-env.ts` pins
+`SESSION_IDLE_MINUTES=60`, so a temporary `1` in `.env` changes nothing here.
+
 🔴 **Never count a whole table in a test** (`SELECT count(*) FROM orders`).
 The engine and API suites run in parallel under `pnpm -r test`; count only the
 rows of the order or restaurant the test itself created.
@@ -274,6 +287,22 @@ rows of the order or restaurant the test itself created.
   is on its way" reply and no way to ask about an order that was just placed.
   Deliberate for now — recorded as a product decision for Mohammed before the
   pilot (`docs/12-after-cart-brief.md` §16.8), not as a bug to fix in code.
+- **An active session silent for `SESSION_IDLE_MINUTES` (default 60) or more
+  expires lazily, when the next message arrives** (brief H). `handleInbound`
+  reads the idle time with the session (`now() - last_message_at`, the
+  database's clock), CASes the row to `abandoned` on the state it read, and
+  the message continues down the new-session path unchanged — hours gate,
+  welcome and menu, empty cart. The old row keeps its `context` and
+  `last_message_at`; only `state` changes, which is why this is not
+  `advanceSessionState` (it rewrites the timestamp). There is no background
+  job: a silent session stays in its state until its customer writes again.
+  Consequences worth knowing: an expired session at a **closed** restaurant is
+  abandoned and gets the closing text, with no session after it; the timestamp
+  is *written* from the Node clock (the injected `now`, or `new Date()` in
+  `advanceSessionState`) but *read* against the database's, so the two hosts'
+  clocks must agree to within seconds; and two messages straddling the exact
+  60:00 mark can let the late one abandon a session the early one just touched
+  — the CAS checks the state, not the timestamp, as the brief specified.
 - **A status change reaches the customer through the poller, at most once.**
   `PATCH /orders/:id/status` sets `notified = false` and sends nothing; the
   engine's `OrderNotifier` (`src/notify/order-notifier.ts`, brief F) picks it
