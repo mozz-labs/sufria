@@ -23,7 +23,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
 | `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`) |
-| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login and the orders screen (task G, `docs/16-orders-screen-brief.md`). Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
+| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login, the orders screen (task G, `docs/16-orders-screen-brief.md`) and an order's details with its conversation (task I, `docs/brief-i-order-details.md`). Feature-based: `app/` (routes) · `features/<x>/` · `shared/` — see *Dashboard structure*. Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
 | `tests/security` | — | Chain-isolation gate (mandatory) |
@@ -45,6 +45,7 @@ node --env-file-if-exists=.env --import @swc-node/register/esm-register apps/das
 pnpm dev              # run all services in parallel
 pnpm test:security    # chain-isolation gate — 15 assertions + 4 negative controls
 pnpm test:db          # critical primitives + schema drift + the migration tool
+pnpm check:rtl        # dashboard-web: logical properties only, no reversing (in verify and CI)
 pnpm verify           # format:check + lint + typecheck + test — run before any push
 pnpm --filter @sufria/dashboard-web dev    # single package
 # Dev only, never a real restaurant: change an order's status through the API,
@@ -109,12 +110,17 @@ All four packages run real suites — Jest for the backend apps, `node --test` f
 they fail if a status label is written inline, if a local status map or
 `OrderStatus` type reappears, or if `preparing`/`completed` gain a customer
 message. Since task G they also fail on **any** Arabic letter in the code of
-`app/` or `lib/` (every visible text comes from `DASHBOARD_UI_AR` in
-`packages/shared/src/dashboard-ui.ts`), and on a local copy of an API
-contract type. The screen's decisions — the card's text, the pulse, what the
-next-step button sends and what a 409 leads to — live in
-`apps/dashboard-web/lib/board.ts`, as plain TypeScript, because `node --test`
-cannot import JSX: components only render what it returns.
+`app/`, `features/` or `shared/` (every visible text comes from
+`DASHBOARD_UI_AR` in `packages/shared/src/dashboard-ui.ts`), and on a local
+copy of an API contract type; since task I, on an import that breaks the
+structure (`test/boundaries.test.mts`). The screens' decisions — the card's
+text, the pulse, what the next-step button sends and what a 409 leads to, the
+details page's view, the cancel's body, `?next=` — live in
+`features/orders/lib/` (`board.ts`, `details.ts`) and `features/auth/lib/`, as
+plain TypeScript, because `node --test` cannot import JSX: components only
+render what they return. The card's "the button does not open the order" is
+held by reading the card's TSX and CSS (`test/orders/card.test.mts`): the
+press itself needs a browser.
 
 | Package | `test` script | Real? |
 |---|---|---|
@@ -126,6 +132,23 @@ cannot import JSX: components only render what it returns.
 `shared` holds the pure half — the command matchers, the item parser, the cart
 and order texts — so the parsing decisions are tested without a database, and
 the engine suites are free to test only what needs one.
+
+`conversation-engine/test/saving-sender.test.ts` covers the saving wrapper
+(brief I, I-4): a send that went out leaves one row, a failed send or a text
+over the limit none, a failed save neither throws nor logs the number, the row
+is its restaurant's alone, the notifier names its order — and a reply sent
+inside the inbound transaction arrives and is kept without hanging, while a
+save blocked by a row lock gives up at 2 s. Breaks, each dropping only its
+tests: saving before the send · letting a failed save throw · removing the 2 s
+timeouts (the held-row test then takes 10 s, the pool's own timeout).
+`dashboard-api/test/order-messages.test.ts` builds one customer's two orders
+minute by minute (a «جاهز» of 101 sent mid-conversation for 102, an image that
+anchors a reply, a message 25 h old, one after the last order, another customer,
+the same digits at another restaurant). Breaks: ignoring `order_id` drops the
+«جاهز» test; dropping the customer condition drops "another customer"; reading
+`restaurant_id` from the raw header instead of the guard drops **nothing** —
+on this route the guard verified that very header (no `restaurantId` param),
+so the protection is the guard, held by `tenant-context.test.ts`.
 
 **Jest, not Vitest, and never `tsx` — see `docs/ADR-004`.** Anything that boots
 Nest DI must be compiled by a toolchain that emits `design:paramtypes`. esbuild
@@ -197,6 +220,57 @@ created (`restaurantScope`, test-only).
 🔴 **Never count a whole table in a test** (`SELECT count(*) FROM orders`).
 The engine and API suites run in parallel under `pnpm -r test`; count only the
 rows of the order or restaurant the test itself created.
+
+## Dashboard structure and the RTL contract (brief I §1–§2, 5 October)
+
+`apps/dashboard-web` is feature-based (Mohammed's decision): `app/` holds the
+routes and only composes · `features/auth/`, `features/orders/` — each with its
+`components/`, `hooks/`, `api/`, `lib/` (pure functions) — · `shared/` (`ui/`,
+`layout/` — the header, given its count as a prop — and `api/` — the client,
+the token, `x-restaurant-id`, the error kinds). Tests in `test/<feature>/`.
+
+1. `app/` composes: it imports from `features/` and `shared/`, with no logic.
+2. **No feature imports another.** What two share belongs in `shared/`.
+3. `shared/` imports neither `features/` nor `app/`.
+4. Logic the API or the engine needs too lives in `packages/shared`.
+5. A CSS module sits next to its component; no empty folders.
+
+`test/boundaries.test.mts` fails on an import that breaks 1–3 (break: an
+import of `features/auth` inside `features/orders` → caught, by file and line).
+
+Routes: `/` → `/orders` or `/login` · `/login?next=` (a path of this site
+alone: `//host`, `https://…`, a backslash or whitespace → `/orders`) ·
+`/orders` · `/history` · `/orders/[id]` (`?from=history`). The dashboard pages
+share `app/(dashboard)/layout.tsx`: the guard (no session, or a 401 the
+refresh could not cure — the session store tells its subscribers — →
+`/login?next=<page>`), the header, and **one** poll of «الطلبات» feeding both
+the count and the list (`features/orders/hooks/live-orders.tsx`).
+
+**The RTL and width contract, on every file touched** — from 375px to 1440px,
+right to left by `dir="rtl"` on `<html>` alone, no horizontal scroll:
+- DOM order = reading order = the phone's column. **Never** `row-reverse`,
+  `column-reverse` or `order:` to fix a direction: `dir` already flips a row,
+  and reversing it on top shows only once the row becomes a column.
+- Logical properties only: `margin-inline-*`, `padding-inline-*`,
+  `inset-inline-*`, `border-inline-*`, `text-align: start/end`,
+  `border-start-start-radius`… — never `left`/`right` in any of them, `float`,
+  or the same in `style={{}}` (`marginLeft`…).
+- Space between elements is `gap`. Text that can grow inside flex or grid:
+  `min-width: 0` and `…`, or a wrap on purpose.
+- Numbers (`.num`, isolated), an amount with its currency, the masked number:
+  `<bdi>` or `unicode-bidi: isolate`. The customer's words (messages, a
+  cancellation reason, an address): `dir="auto"`.
+- An icon with a direction mirrors (`:dir(rtl)`): «back» points right.
+- **Breakpoints, fixed: 640** (the card: three rows below, one row from it up)
+  **· 768 · 1024** (the details: one column below, two from it up) — written
+  here and atop `globals.css`, because a CSS variable does not work in `@media`.
+- A layout that changes with the width uses `grid-template-areas`, never
+  `flex-wrap` and hope: the grid follows `dir`, the wrap follows text length.
+- Touch targets 44px at every width.
+
+`pnpm check:rtl` (`scripts/check-rtl.mjs`, in `verify` and a CI step) fails on
+the first two items by file and line; a rare exception carries
+`rtl-ok: <why>` on its line.
 
 ## Known gaps
 
@@ -311,6 +385,26 @@ rows of the order or restaurant the test itself created.
 - **The customer's menu order is written twice** — the ORDER BY in the engine's
   `readMenu` and in `dashboard-api`'s `MenuService.list`. Changing one does not
   fail the other.
+- **Every text the engine sends is kept in `outbound_messages` (0013), from the
+  day it shipped — nothing before it.** One wrapper, `SavingWhatsAppSender`
+  (`src/whatsapp/saving-sender.ts`, built in `main.ts`): after a successful
+  send, on a `TenantDb` of its own (most replies leave inside the inbound
+  transaction, which holds a connection of the engine's pool), with
+  `lock_timeout` and `statement_timeout` at 2 s; a failed save is an `error`
+  line with the number masked, never a failed reply. `orderId` is set by the
+  status notifier alone: no message sent while a transaction is open carries
+  one — that transaction's rows are not there for the wrapper's connection —
+  and «استلمنا…», sent after COMMIT, carries none either, by Mohammed's
+  decision (5 October). `GET /orders/:id/messages` attributes such messages by
+  the customer's last message before them. The rules, as built:
+  `docs/13-dashboard-api-brief.md` §9.9.
+- **`pnpm -r test` kills the other packages' suites when one fails** (it bails
+  on the first failure), so their `afterAll` never runs and their fixtures
+  stay in the database — `menu-items.test.ts`'s fixed-id categories then make
+  the next run fail on a duplicate key. Found in brief I (5 October): delete
+  the leftovers by the killed run's id (`d5-<pid>-<time>` in their names), as
+  the test's own `afterAll` would — and never the seed's (`both@`, `onlya@`,
+  `onlyz@sufria.test`).
 - **A failed «استلمنا طلبك» is never retried.** It is logged, and the order is
   already in the dashboard, so the restaurant still sees it — but the customer
   gets silence after «أكّد». The notify poller does not retry it either: the
