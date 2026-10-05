@@ -37,13 +37,14 @@ paths — except `tests/`, which imports `packages/shared/src/*` directly.
 
 ```bash
 pnpm db:up            # start PostgreSQL (Docker) and wait for it
-pnpm db:migrate       # apply migrations
+pnpm db:migrate       # apply the files not applied yet — safe on an existing database
 pnpm db:seed          # load dev fixtures
+# 🔴 Never `pnpm db:reset` on the demo restaurant's database: it wipes it, data and all.
 # After ANY database rebuild, recreate the demo restaurant (brief E) — prints its staff password once:
 node --env-file-if-exists=.env --import @swc-node/register/esm-register apps/dashboard-api/src/scripts/setup-restaurant.ts db/restaurants/demo.json
 pnpm dev              # run all services in parallel
 pnpm test:security    # chain-isolation gate — 15 assertions + 4 negative controls
-pnpm test:db          # critical primitives + schema drift
+pnpm test:db          # critical primitives + schema drift + the migration tool
 pnpm verify           # format:check + lint + typecheck + test — run before any push
 pnpm --filter @sufria/dashboard-web dev    # single package
 # Dev only, never a real restaurant: change an order's status through the API,
@@ -61,13 +62,25 @@ node --env-file=.env scripts/demo-order-status.mjs 101 accepted
 | Database | `sufria` |
 | Application roles | `sufria_dashboard`, `sufria_engine` — neither is superuser or BYPASSRLS |
 | Migration role | `postgres` (owns the tables; the app never connects as it) |
+| Migration ledger | `migrations.applied` (`name`, `applied_at`, `baselined`) — its own schema, out of `public`; no grant to the app roles |
 | Docker container / volume | `sufria-postgres` / `sufria-pgdata` |
 
-`migrate.mjs` keeps no tracking table and `0001` has bare `CREATE TYPE`, so
-migrations only ever run against a **clean** database — re-running against an
-existing one fails loudly at `0001` by design. The upgrade path is always
-`pnpm db:reset` (or drop and recreate the database on a native install; see
-`docs/02-تجهيز-البيئة.md`).
+**`pnpm db:migrate` is safe on an existing database** (since brief I, 5 October
+2026). `scripts/migrate.mjs` records every file it applies in
+`migrations.applied`, **in the same transaction as the file** — each file's own
+`BEGIN; … COMMIT;` (its first and last statements, refused otherwise) is
+replaced by the runner's — so a file and its row commit together or not at
+all, and a second run applies nothing. A database built before the ledger
+(the demo restaurant's) is recorded up to `0012` as `baselined` — only once it
+proves `0012` is there (`app.restaurants_with_unnotified_orders()`, SECURITY
+DEFINER); a database that cannot prove it stops before any file, with nothing
+changed. A session advisory lock keeps two runs apart. `tests/db/migrate.test.mjs`
+(in `test:db`) holds all of it on databases of its own, created and dropped
+per test — breaking the "applied?" check drops the second-run test.
+
+🔴 **`pnpm db:reset` stays forbidden on the demo restaurant's database** — it
+wipes it. A new migration reaches that database through `pnpm db:migrate` alone,
+after a `pg_dump` to a file outside the repo (it holds customers' phones).
 
 ## Rules that do not bend
 
@@ -194,9 +207,10 @@ rows of the order or restaurant the test itself created.
   DATABASE sufria`, recreate it with the same locale (`TEMPLATE template0
   ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'ar-JO' LOCALE 'C.UTF-8'`),
   then `pnpm db:migrate && pnpm db:seed` — is described in prose in
-  `docs/02-تجهيز-البيئة.md` but is not automated anywhere. Since migrations only
-  ever run against a clean database, this friction repeats on **every** new
-  migration. A `db:reset:native` script would remove it.
+  `docs/02-تجهيز-البيئة.md` but is not automated anywhere. It no longer repeats
+  on every new migration — `pnpm db:migrate` applies only the new file to an
+  existing database — so it matters only for rebuilding a dev database, and
+  never applies to the demo restaurant's.
 - **Every mirror lives in `packages/shared`, and `pnpm test:db` now enforces
   that.** It used to iterate the TS schema only, so a SQL table mirrored
   somewhere else was invisible to it — `inbound_messages` sat in
