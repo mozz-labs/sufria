@@ -54,7 +54,51 @@ node --env-file=.env scripts/demo-order-status.mjs 101 accepted
 ```
 
 `pnpm verify` needs a live database: `test:security` and `test:db` connect using
-`DATABASE_URL` / `MIGRATION_DATABASE_URL` from `.env` (copy `.env.example`).
+`DATABASE_URL` / `MIGRATION_DATABASE_URL`, and the Jest suites `ENGINE_DATABASE_URL`
+too.
+
+🔴 **On the laptop, the tests always run with `.env.test` — never without it**
+(Mohammed, 5 October 2026). `.env` points at the demo restaurant's real
+database; a test run without `.env.test` writes into it, and the security gate's
+negative controls flip `sufria_dashboard` to SUPERUSER and back on whatever
+instance they reach.
+
+The tests run on **a Postgres instance of their own**: `test`, on port **5434**
+(`pg_createcluster 16 test --port 5434`), next to `main` on 5432 that holds the
+demo. Its own roles — `postgres`, `sufria_dashboard`, `sufria_engine` — with
+their own passwords, and one database, `sufria_test`. Roles belong to an
+instance, so nothing a test does to a role reaches the demo's. `.env.test`
+(`/root/sufria/.env.test`, mode 600, gitignored by `.env.*`; a worktree links
+to it, as to `.env`) holds the three URLs. Exported, they win over `.env`
+everywhere: Node's `--env-file` and both Jest `setup-env.ts` files keep a
+variable that is already set. Every test command, then:
+
+```bash
+set -a && . ./.env.test && set +a && pnpm verify
+```
+
+`postgresql.service` starts both instances at boot, and so does
+`sudo service postgresql start` (the instance is `auto` in
+`/etc/postgresql/16/test/start.conf`). One stopped by hand while the service
+is up: `sudo service postgresql@16-test start`.
+
+On a new machine, once (as root; `<p0> <p1> <p2>` = three new passwords, e.g.
+`openssl rand -hex 24`, written into `.env.test` as
+`postgres://<role>:<p>@localhost:5434/sufria_test`):
+
+```bash
+pg_createcluster 16 test --port 5434 --encoding UTF8 --locale C.UTF-8 --start
+sudo -u postgres psql -p 5434 -c "ALTER ROLE postgres PASSWORD '<p0>'" -c "CREATE ROLE sufria_dashboard LOGIN PASSWORD '<p1>'" -c "CREATE ROLE sufria_engine LOGIN PASSWORD '<p2>'"
+set -a && . ./.env.test && set +a && createdb --maintenance-db="${MIGRATION_DATABASE_URL%/sufria_test}/postgres" -T template0 -E UTF8 --locale-provider=icu --icu-locale=ar-JO --locale=C.UTF-8 sufria_test
+set -a && . ./.env.test && set +a && pnpm db:migrate
+set -a && . ./.env.test && set +a && for f in chain-isolation-fixture dev-staff-passwords dev-contact-phone dev-delivery; do psql "$MIGRATION_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f db/seed/$f.sql; done
+```
+
+The roles are created by hand, with 0003's attributes (`LOGIN` alone), so they
+carry passwords of their own; 0003's `CREATE ROLE … IF NOT EXISTS` then finds
+them. Not `pnpm db:seed`: it starts with `dev-role-passwords.sql`, which would
+set them to the shared dev passwords. CI is unaffected: one fresh database, no
+`.env` at all.
 
 ## Database names
 
@@ -64,6 +108,7 @@ node --env-file=.env scripts/demo-order-status.mjs 101 accepted
 | Application roles | `sufria_dashboard`, `sufria_engine` — neither is superuser or BYPASSRLS |
 | Migration role | `postgres` (owns the tables; the app never connects as it) |
 | Migration ledger | `migrations.applied` (`name`, `applied_at`, `baselined`) — its own schema, out of `public`; no grant to the app roles |
+| Test instance (local) | Postgres `16/test` on port 5434, its own roles and passwords; database `sufria_test`; URLs in `.env.test` (see *Commands*) |
 | Docker container / volume | `sufria-postgres` / `sufria-pgdata` |
 
 **`pnpm db:migrate` is safe on an existing database** (since brief I, 5 October
@@ -398,6 +443,14 @@ the first two items by file and line; a rare exception carries
   decision (5 October). `GET /orders/:id/messages` attributes such messages by
   the customer's last message before them. The rules, as built:
   `docs/13-dashboard-api-brief.md` §9.9.
+- **The security gate's negative control 2 alters an application role.**
+  `tests/security/negative-controls.sh` runs `ALTER ROLE sufria_dashboard
+  SUPERUSER` and then `NOSUPERUSER`; roles belong to the Postgres instance, and
+  nothing restores the role if the script dies in between. Locally that is the
+  test instance's role now (5434, Mohammed's option B, 5 October); in CI it is a
+  throwaway instance. **For a later brief, not done (option C):** make the
+  control grant SUPERUSER to a role it creates for the run, so the gate never
+  alters an application role on any instance.
 - **`pnpm -r test` kills the other packages' suites when one fails** (it bails
   on the first failure), so their `afterAll` never runs and their fixtures
   stay in the database — `menu-items.test.ts`'s fixed-id categories then make
@@ -482,6 +535,10 @@ the first two items by file and line; a rare exception carries
 والتقارير كانت دقيقة وصحيحة، والشغل لم يكن على `main`.
 
 ## قرارات مقفولة — لا تُعاد مناقشتها
+
+- 🔴 **الاختبارات على اللاب دايما بـ`.env.test` — ممنوع تشغيلها بدونه.** `.env` بيأشّر على قاعدة مطعم
+  العرض الحقيقية، و`.env.test` على نسخة Postgres الاختبارات (منفذ 5434) بأدوارها وكلمات سرها
+  (قرار محمد، 5 أكتوبر). الأمر: `set -a && . ./.env.test && set +a && pnpm verify`.
 
 - **Drizzle** (ADR-001) · **Zod** (ADR-003)
 - **Jest + ts-jest** — لا Vitest ولا esbuild ولا SWC (ADR-004).
