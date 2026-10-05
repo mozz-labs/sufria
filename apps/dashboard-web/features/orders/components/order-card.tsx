@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import type { Currency, OrderListItem, OrderTab } from "@sufria/shared";
-import { api } from "../../lib/client.ts";
-import { advance, cardView, type AdvanceOutcome } from "../../lib/board.ts";
-import styles from "./orders.module.css";
+import { ordersApi } from "../api/orders-api.ts";
+import { advance, cardView, type AdvanceOutcome } from "../lib/board.ts";
+import styles from "./order-card.module.css";
 
 type Props = {
   order: OrderListItem;
@@ -29,7 +29,7 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
     setBusy(true);
     setLine(null);
     // `order` is the card as displayed: its status is the request's `from`.
-    const outcome = await advance(api, order, view.action);
+    const outcome = await advance(ordersApi, order, view.action);
     setBusy(false);
     if (outcome.kind === "refresh" || outcome.kind === "failed")
       setLine(outcome.line);

@@ -1,0 +1,53 @@
+/* The orders screen — docs/design/orders-bench.html, density «متوسطة».
+   Brief G §2: colours are token variables only; 15 text · 13 labels, nothing
+   under 13; radius 8 controls; row gap 8; touch targets 44px. Logical
+   properties only (RTL). */
+
+.screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- the strip, the list, the empty state ---- */
+
+.offline {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.list {
+  flex: 1;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.empty {
+  padding: 32px 0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.more {
+  align-self: center;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}

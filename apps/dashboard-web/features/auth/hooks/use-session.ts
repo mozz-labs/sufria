@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { sessionStore } from "./client.ts";
-import type { Session } from "./session.ts";
+import { sessionStore } from "../../../shared/api/client.ts";
+import type { Session } from "../../../shared/api/session-store.ts";
 
 const subscribe = () => () => {};
 

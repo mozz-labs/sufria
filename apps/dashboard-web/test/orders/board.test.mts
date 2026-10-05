@@ -7,15 +7,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { DASHBOARD_UI_AR, type OrderListItem } from "@sufria/shared";
-import { createApi } from "../lib/api.ts";
+import { createOrdersApi } from "../../features/orders/api/orders-api.ts";
 import {
   PULSE_MS,
   advance,
   cardView,
   pulses,
   replaceInActive,
-} from "../lib/board.ts";
-import { memorySessionStore } from "../lib/session.ts";
+} from "../../features/orders/lib/board.ts";
+import { createHttp } from "../../shared/api/http.ts";
+import { memorySessionStore } from "../../shared/api/session-store.ts";
 
 const NOW = Date.parse("2026-09-27T12:00:00.000Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -39,22 +40,24 @@ const ORDER: OrderListItem = {
 
 function apiReplying(status: number, body: unknown) {
   const sent: unknown[] = [];
-  const api = createApi({
-    baseUrl: "http://api.test",
-    store: memorySessionStore({
-      accessToken: "a",
-      refreshToken: "r",
-      restaurantId: "rid",
-      restaurantName: "مطعم",
+  const api = createOrdersApi(
+    createHttp({
+      baseUrl: "http://api.test",
+      store: memorySessionStore({
+        accessToken: "a",
+        refreshToken: "r",
+        restaurantId: "rid",
+        restaurantName: "مطعم",
+      }),
+      fetch: (async (_url: string, init: RequestInit = {}) => {
+        sent.push(JSON.parse(init.body as string));
+        return new Response(JSON.stringify(body), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch,
     }),
-    fetch: (async (_url: string, init: RequestInit = {}) => {
-      sent.push(JSON.parse(init.body as string));
-      return new Response(JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      });
-    }) as typeof fetch,
-  });
+  );
   return { api, sent };
 }
 

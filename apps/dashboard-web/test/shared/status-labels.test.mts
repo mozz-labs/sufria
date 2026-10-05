@@ -32,7 +32,7 @@ import {
 } from "@sufria/shared";
 
 const TEST_DIR = fileURLToPath(new URL(".", import.meta.url));
-const APP_ROOT = join(TEST_DIR, "..");
+const APP_ROOT = join(TEST_DIR, "../..");
 
 // --- 1. الشارات السبعة -------------------------------------------------------
 
@@ -224,8 +224,15 @@ test("الموك انشال، والأنواع من @sufria/shared لا نسخ �
     !existsSync(join(APP_ROOT, "lib/mock.ts")),
     "lib/mock.ts رجع — الطلبات من الـAPI وبس",
   );
-  const api = readFileSync(join(APP_ROOT, "lib/api.ts"), "utf8");
-  assert.match(api, /from\s+"@sufria\/shared"/);
+  for (const client of [
+    "shared/api/http.ts",
+    "features/orders/api/orders-api.ts",
+    "features/auth/api/auth-api.ts",
+  ])
+    assert.match(
+      readFileSync(join(APP_ROOT, client), "utf8"),
+      /from\s+"@sufria\/shared"/,
+    );
 
   // أنواع ردود الـAPI معرّفة بـshared وحدها: نسخة محلية بتنحرف بصمت، زي ما
   // انحرف الموك عن domain.ts.

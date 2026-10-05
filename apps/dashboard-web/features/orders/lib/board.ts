@@ -19,7 +19,7 @@ import {
   type OrderTab,
   type StaffAction,
 } from "@sufria/shared";
-import type { Api } from "./api.ts";
+import type { OrdersApi } from "../api/orders-api.ts";
 
 /** A status changed less than this long ago pulses (G-4). */
 export const PULSE_MS = 60_000;
@@ -105,7 +105,7 @@ export type AdvanceOutcome =
  * status read again before sending.
  */
 export async function advance(
-  api: Pick<Api, "changeStatus">,
+  api: Pick<OrdersApi, "changeStatus">,
   shown: OrderListItem,
   action: StaffAction,
 ): Promise<AdvanceOutcome> {

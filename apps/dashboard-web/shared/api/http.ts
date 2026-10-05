@@ -1,26 +1,18 @@
 /**
- * The dashboard's one API client (brief G §3, G-2): `fetch`, the token, the
+ * The dashboard's one HTTP client (brief G §3, G-2): `fetch`, the token, the
  * restaurant header, and the API's errors turned into a small closed set the
- * screen can switch on. The shapes are the API's own, from `@sufria/shared`.
+ * screens can switch on. Each feature builds its own calls on top of it
+ * (`features/<x>/api/`); the shapes are the API's own, from `@sufria/shared`.
  *
  * Every call resolves — to `{ ok: true, value }` or `{ ok: false, error }` —
  * so a screen never has an unhandled rejection to forget.
  */
 import type {
-  LoginRequest,
-  LoginResult,
-  OrderListItem,
-  OrderListResponse,
   OrderStatus,
   OrderStatusConflictBody,
-  OrderTab,
   RefreshResult,
-  RestaurantSettings,
-  StaffTargetStatus,
-  UpdateOrderStatusRequest,
-  UpdateOrderStatusResponse,
 } from "@sufria/shared";
-import type { SessionStore } from "./session.ts";
+import type { SessionStore } from "./session-store.ts";
 
 export type ApiError =
   /** 401 that a refresh could not cure — the screen goes back to login. */
@@ -40,46 +32,41 @@ export type ApiError =
 export type ApiResult<T> =
   { ok: true; value: T } | { ok: false; error: ApiError };
 
-export type Api = {
-  login(request: LoginRequest): Promise<ApiResult<LoginResult>>;
-  listOrders(
-    tab: OrderTab,
-    page?: number,
-  ): Promise<ApiResult<OrderListResponse>>;
-  /**
-   * 🔴 `from` is the status the card **showed** (brief D §2.7), taken from
-   *    the order the card holds — never re-read before sending.
-   */
-  changeStatus(
-    shown: Pick<OrderListItem, "id" | "status">,
-    to: StaffTargetStatus,
-  ): Promise<ApiResult<UpdateOrderStatusResponse>>;
-  restaurantSettings(): Promise<ApiResult<RestaurantSettings>>;
-  /** Revokes the refresh token when it can, and forgets the session always. */
-  logout(): Promise<void>;
+/**
+ * What a request carries: nothing, the token, or the token and the
+ * restaurant (`x-restaurant-id`).
+ */
+export type AuthMode = "none" | "token" | "restaurant";
+
+export type CallInit = {
+  method: string;
+  body?: unknown;
+  auth: AuthMode;
 };
 
-export type ApiOptions = {
+export type Http = {
+  /** One request, its 401 refreshed once, its answer turned into a result. */
+  call<T>(path: string, init: CallInit): Promise<ApiResult<T>>;
+  /** The raw request: no refresh, no error mapping. `null` without a session. */
+  send(path: string, init: CallInit): Promise<Response | null>;
+  /** The session the requests read their token and restaurant from. */
+  store: SessionStore;
+};
+
+export type HttpOptions = {
   baseUrl: string;
   store: SessionStore;
   fetch?: typeof fetch;
 };
 
-export function createApi({
+export function createHttp({
   baseUrl,
   store,
   fetch: doFetch = fetch,
-}: ApiOptions): Api {
+}: HttpOptions): Http {
   const url = (path: string) => `${baseUrl.replace(/\/+$/, "")}${path}`;
 
-  async function send(
-    path: string,
-    init: {
-      method: string;
-      body?: unknown;
-      auth: "none" | "token" | "restaurant";
-    },
-  ): Promise<Response | null> {
+  async function send(path: string, init: CallInit): Promise<Response | null> {
     const headers: Record<string, string> = {};
     if (init.body !== undefined) headers["Content-Type"] = "application/json";
     const session = store.get();
@@ -115,14 +102,7 @@ export function createApi({
     }
   }
 
-  async function call<T>(
-    path: string,
-    init: {
-      method: string;
-      body?: unknown;
-      auth: "none" | "token" | "restaurant";
-    },
-  ): Promise<ApiResult<T>> {
+  async function call<T>(path: string, init: CallInit): Promise<ApiResult<T>> {
     try {
       let res = await send(path, init);
       if (
@@ -145,39 +125,7 @@ export function createApi({
     }
   }
 
-  return {
-    login: (request) =>
-      call<LoginResult>("/auth/login", {
-        method: "POST",
-        body: request,
-        auth: "none",
-      }),
-    listOrders: (tab, page = 1) =>
-      call<OrderListResponse>(
-        `/orders?tab=${tab}${tab === "history" ? `&page=${page}` : ""}`,
-        { method: "GET", auth: "restaurant" },
-      ),
-    changeStatus: (shown, to) => {
-      const body: UpdateOrderStatusRequest = { from: shown.status, to };
-      return call<UpdateOrderStatusResponse>(
-        `/orders/${encodeURIComponent(shown.id)}/status`,
-        { method: "PATCH", body, auth: "restaurant" },
-      );
-    },
-    restaurantSettings: () =>
-      call<RestaurantSettings>("/restaurant/settings", {
-        method: "GET",
-        auth: "restaurant",
-      }),
-    logout: async () => {
-      try {
-        await send("/auth/logout", { method: "POST", auth: "token" });
-      } catch {
-        // Logging out works offline too: the session is forgotten below.
-      }
-      store.clear();
-    },
-  };
+  return { call, send, store };
 }
 
 async function conflictOf(res: Response): Promise<ApiError> {

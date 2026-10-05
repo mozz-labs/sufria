@@ -1,9 +1,9 @@
 /**
  * Brief G §0: every visible text comes from one dictionary exported by
  * `@sufria/shared` — no text inline in the components. Held here the only
- * way a script can: no Arabic letter in the code of `app/` and `lib/`,
- * comments aside. A string the screen shows in Arabic can then only have
- * come from shared.
+ * way a script can: no Arabic letter in the code of `app/`, `features/` and
+ * `shared/`, comments aside. A string the screen shows in Arabic can then
+ * only have come from shared.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const APP_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
+const APP_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "../..");
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -30,10 +30,11 @@ function withoutComments(src: string): string {
 
 const ARABIC_LETTER = /[ء-ي]/u;
 
-test("no Arabic text inline in app/ or lib/ — it comes from DASHBOARD_UI_AR", () => {
+test("no Arabic text inline in app/, features/ or shared/ — it comes from DASHBOARD_UI_AR", () => {
   const sources = [
     ...files(join(APP_ROOT, "app")),
-    ...files(join(APP_ROOT, "lib")),
+    ...files(join(APP_ROOT, "features")),
+    ...files(join(APP_ROOT, "shared")),
   ];
   assert.ok(sources.length >= 5, "the walk found nothing — it is broken");
   for (const file of sources) {

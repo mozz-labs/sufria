@@ -8,29 +8,28 @@ import {
   type OrderListItem,
   type OrderTab,
 } from "@sufria/shared";
-import { api } from "../../lib/client.ts";
-import {
-  POLL_MS,
-  replaceInActive,
-  type AdvanceOutcome,
-} from "../../lib/board.ts";
-import { useSession } from "../../lib/use-session.ts";
-import { BrandMark } from "../brand-mark.tsx";
+import { DashboardHeader } from "../../../shared/layout/dashboard-header.tsx";
+import { ordersApi } from "../api/orders-api.ts";
+import { POLL_MS, replaceInActive, type AdvanceOutcome } from "../lib/board.ts";
 import { OrderCard } from "./order-card.tsx";
-import styles from "./orders.module.css";
+import styles from "./order-board.module.css";
 
 const T = DASHBOARD_UI_AR;
 
 type History = { orders: OrderListItem[]; page: number; hasMore: boolean };
+
+type Props = {
+  restaurantName: string;
+  onLogout: () => void;
+};
 
 /**
  * The orders screen — `docs/design/orders-bench.html` at the «متوسطة»
  * density (brief G §3, G-4). «الطلبات» polls every 10 seconds while the tab
  * is visible; «السجل» loads on demand, 20 at a time.
  */
-export default function OrdersPage() {
+export function OrderBoard({ restaurantName, onLogout }: Props) {
   const router = useRouter();
-  const session = useSession();
 
   const [tab, setTab] = useState<OrderTab>("active");
   const [currency, setCurrency] = useState<Currency | null>(null);
@@ -45,7 +44,7 @@ export default function OrdersPage() {
   /** The restaurant's currency, read once; `false` when it could not be. */
   const ensureCurrency = useCallback(async (): Promise<boolean> => {
     if (currency) return true;
-    const s = await api.restaurantSettings();
+    const s = await ordersApi.restaurantSettings();
     if (s.ok) {
       setCurrency(s.value.currency);
       return true;
@@ -58,7 +57,7 @@ export default function OrdersPage() {
   /** One poll of «الطلبات». */
   const refreshActive = useCallback(async () => {
     if (!(await ensureCurrency())) return;
-    const res = await api.listOrders("active");
+    const res = await ordersApi.listOrders("active");
     setNow(Date.now());
     if (res.ok) {
       setActive(res.value.orders);
@@ -70,7 +69,7 @@ export default function OrdersPage() {
   const loadHistory = useCallback(
     async (page: number) => {
       if (!(await ensureCurrency())) return;
-      const res = await api.listOrders("history", page);
+      const res = await ordersApi.listOrders("history", page);
       setNow(Date.now());
       if (!res.ok) {
         if (res.error.kind === "unauthorized") toLogin();
@@ -90,15 +89,10 @@ export default function OrdersPage() {
     [ensureCurrency, toLogin],
   );
 
-  // No session in this tab: to login.
-  useEffect(() => {
-    if (session === null) toLogin();
-  }, [session, toLogin]);
-
   // «الطلبات»: now, then every 10 s, and never while the browser tab is
   // hidden — it catches up the moment it is shown again.
   useEffect(() => {
-    if (!session || tab !== "active") return;
+    if (tab !== "active") return;
     let timer: number | undefined;
     const tick = () => {
       if (document.visibilityState === "visible") void refreshActive();
@@ -115,7 +109,7 @@ export default function OrdersPage() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", start);
     };
-  }, [session, tab, refreshActive]);
+  }, [tab, refreshActive]);
 
   const onOutcome = useCallback(
     (outcome: AdvanceOutcome) => {
@@ -145,54 +139,17 @@ export default function OrdersPage() {
     loadingMore.current = false;
   }
 
-  async function logout() {
-    await api.logout();
-    toLogin();
-  }
-
-  if (!session) return null;
-
   const list = tab === "active" ? active : (history?.orders ?? null);
 
   return (
     <div className={styles.screen}>
-      <header className={styles.top}>
-        <div className={styles.topRow}>
-          <BrandMark />
-          <span className={styles.wordmark}>{T.brand}</span>
-          <span className={styles.live}>
-            <span className={styles.liveDot} aria-hidden="true" />
-            {T.live}
-          </span>
-          <button type="button" className={styles.logout} onClick={logout}>
-            {T.logout}
-          </button>
-        </div>
-        <h1 className={styles.title}>{session.restaurantName}</h1>
-        <div className={styles.tabs} role="tablist">
-          <button
-            type="button"
-            role="tab"
-            className={styles.tab}
-            aria-selected={tab === "active"}
-            onClick={() => openTab("active")}
-          >
-            {T.tabs.active}
-            {active && (
-              <span className={`num ${styles.count}`}>{active.length}</span>
-            )}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={styles.tab}
-            aria-selected={tab === "history"}
-            onClick={() => openTab("history")}
-          >
-            {T.tabs.history}
-          </button>
-        </div>
-      </header>
+      <DashboardHeader
+        restaurantName={restaurantName}
+        tab={tab}
+        activeCount={active ? active.length : null}
+        onTab={openTab}
+        onLogout={onLogout}
+      />
 
       {offline && (
         <div className={styles.offline} role="status">

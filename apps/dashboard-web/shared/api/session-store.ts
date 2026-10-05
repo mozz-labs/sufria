@@ -1,13 +1,14 @@
 /**
  * The logged-in session: the two tokens and the restaurant the screen works
- * in (brief G §3, G-3).
+ * in (brief G §3, G-3) — what every request reads its `Authorization` and
+ * `x-restaurant-id` from. `features/auth/lib/session.ts` makes one from a
+ * login.
  *
  * Kept in `sessionStorage` — the simplest store the API allows: it survives a
  * reload, dies with the tab, and never travels to the server by itself (the
  * token goes in `Authorization`, not a cookie). Not `localStorage`: a closed
  * tab at the counter should not leave a logged-in dashboard behind.
  */
-import type { LoginResult } from "@sufria/shared";
 
 export type Session = {
   accessToken: string;
@@ -23,22 +24,6 @@ export type SessionStore = {
   set(session: Session): void;
   clear(): void;
 };
-
-/**
- * The session a login opens: the **first** restaurant of the account.
- * The pilot is one restaurant; an account in two branches gets the first
- * (G-3, recorded as a decision). `null` for an account with none.
- */
-export function sessionFromLogin(result: LoginResult): Session | null {
-  const restaurant = result.restaurants[0];
-  if (!restaurant) return null;
-  return {
-    accessToken: result.accessToken,
-    refreshToken: result.refreshToken,
-    restaurantId: restaurant.id,
-    restaurantName: restaurant.name,
-  };
-}
 
 const KEY = "sufria.session";
 

@@ -1,0 +1,124 @@
+/* The dashboard's header — docs/design/orders-bench.html, density «متوسطة».
+   Brief G §2: colours are token variables only; 26 title · 19 · 15 text ·
+   13 labels; radius 8 controls; touch targets 44px. Logical properties only
+   (RTL). */
+
+.top {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wordmark {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.live {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.logout {
+  min-height: 44px;
+  padding-inline: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The accent carries no status: the live dot and the card's pulse are the
+   accent's two dots (G §2). */
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+  flex: none;
+}
+
+.liveDot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+  animation: ping 2.4s ease-out infinite;
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  70%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* The dot stays, without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .liveDot::after {
+    animation: none;
+    opacity: 0.35;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+/* The active tab: its accent underline. Its text stays primary — accent text
+   on the dark surface is 3.26:1 (design-tokens.ts). */
+.tab {
+  min-height: 44px;
+  padding: 9px 14px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-inline-start: 6px;
+}
