@@ -1,5 +1,14 @@
 /* Base styles. Every colour is a variable generated from
-   packages/shared/src/design-tokens.ts (injected by layout.tsx) — no hex here. */
+   packages/shared/src/design-tokens.ts (injected by layout.tsx) — no hex here.
+
+   Breakpoints, fixed (brief I §1.7) — written here and in CLAUDE.md because a
+   CSS variable does not work inside @media:
+     640px   the order card: three rows below it, one row from it up
+     768px   tablet
+     1024px  the order details: one column below it, two from it up
+   Every screen works from 375px to 1440px with no horizontal scroll. Right to
+   left by dir="rtl" alone: logical properties only, no reversing — held by
+   pnpm check:rtl. */
 
 * {
   box-sizing: border-box;
@@ -34,9 +43,11 @@ input {
 
 /* Every number: Plex Mono, tabular (brief G §2). Plex Mono has no Arabic
    glyphs, so the words around a number («منذ», «د.أ») fall back to Plex Sans
-   Arabic, not to a system monospace. */
+   Arabic, not to a system monospace. Isolated (brief I §1.5): a number, an
+   amount with its currency, never reorders the text around it. */
 .num {
   font-family: var(--font-mono), var(--font-sans), system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  unicode-bidi: isolate;
 }

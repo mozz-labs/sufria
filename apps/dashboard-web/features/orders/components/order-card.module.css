@@ -12,14 +12,42 @@
   line-height: 1.55;
 }
 
+/* Below 640px, three fixed rows (brief I §4, I-2): who, with the details
+   line under it · the badge at the start, the amount and «منذ…» at the end ·
+   the next-step button, the card's width. A card without a button (history)
+   has the first two. From 640px up, one row, as the bench draws it.
+   Grid areas, not flex-wrap: the rows do not move with the length of a
+   label or an amount (I-0 #2). The grid follows dir="rtl" by itself. */
 .row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "who who"
+    "badge figs";
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
+}
+
+.row[data-action] {
+  grid-template-areas:
+    "who who"
+    "badge figs"
+    "action action";
+}
+
+@media (min-width: 640px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "who badge figs";
+  }
+  .row[data-action] {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "who badge figs action";
+  }
 }
 
 .who {
-  flex: 1;
+  grid-area: who;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -81,6 +109,13 @@
   font-weight: 600;
 }
 
+/* A long name is cut with …, never pushed past the card. */
+.customer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .details {
   font-size: 13px;
   color: var(--text-secondary);
@@ -90,7 +125,8 @@
 }
 
 .badge {
-  flex: none;
+  grid-area: badge;
+  justify-self: start;
   border-radius: 999px;
   padding: 4px 11px;
   font-size: 13px;
@@ -134,12 +170,20 @@
   color: var(--badge-expired-text);
 }
 
+/* At the row's end below 640px, so its two lines keep to that end. */
 .figs {
-  flex: none;
+  grid-area: figs;
+  justify-self: end;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 1px;
+}
+
+@media (min-width: 640px) {
+  .figs {
+    align-items: flex-start;
+  }
 }
 
 .total {
@@ -153,7 +197,7 @@
 
 /* Same place and size as the bench's «اقبل»: 44px, accent. */
 .action {
-  flex: none;
+  grid-area: action;
   min-height: 44px;
   padding: 0 16px;
   background: var(--accent);
@@ -175,27 +219,9 @@
   outline-offset: 2px;
 }
 
-/* Keeps the columns aligned on a card without a button. */
-.actionSpace {
-  flex: none;
-  width: 0;
-}
-
 .line {
-  margin-top: 8px;
+  margin-block-start: 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-}
-
-@media (max-width: 560px) {
-  .row {
-    flex-wrap: wrap;
-  }
-  .who {
-    flex-basis: 100%;
-  }
-  .action {
-    margin-inline-start: auto;
-  }
 }

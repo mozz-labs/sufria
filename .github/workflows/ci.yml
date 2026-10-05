@@ -75,6 +75,9 @@ jobs:
       - name: Western numerals gate
         run: pnpm check:numerals
 
+      - name: RTL gate (logical properties, no reversing)
+        run: pnpm check:rtl
+
       - name: Migrations on a clean database
         run: pnpm db:migrate
 

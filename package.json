@@ -21,9 +21,10 @@
     "format:check": "prettier --check .",
     "check:contrast": "tsc -b packages/shared && node scripts/check-contrast.mjs",
     "check:numerals": "tsc -b packages/shared && node scripts/check-numerals.mjs",
+    "check:rtl": "node scripts/check-rtl.mjs",
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm check:numerals && pnpm test",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm check:numerals && pnpm check:rtl && pnpm test",
     "prepare": "husky || true"
   },
   "devDependencies": {

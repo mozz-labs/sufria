@@ -38,17 +38,21 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
 
   return (
     <article className={styles.card}>
-      <div className={styles.row}>
+      <div className={styles.row} data-action={view.action ? "" : undefined}>
         <div className={styles.who}>
           <div className={styles.name}>
             {view.pulse && <span className={styles.pulse} aria-hidden="true" />}
             <bdi dir="ltr" className={`num ${styles.number}`}>
               {view.number}
             </bdi>
-            <bdi>{view.customer}</bdi>
+            <bdi className={styles.customer}>{view.customer}</bdi>
           </div>
           <div className={styles.details}>{view.details}</div>
-          {view.reason && <div className={styles.details}>{view.reason}</div>}
+          {view.reason && (
+            <div className={styles.details} dir="auto">
+              {view.reason}
+            </div>
+          )}
         </div>
 
         <span className={styles.badge} data-status={order.status}>
@@ -60,7 +64,7 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
           <span className={`num ${styles.since}`}>{view.since}</span>
         </div>
 
-        {view.action ? (
+        {view.action && (
           // Disabled while sending, its text unchanged (G-4).
           <button
             type="button"
@@ -70,8 +74,6 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
           >
             {view.action.label}
           </button>
-        ) : (
-          tab === "active" && <span className={styles.actionSpace} />
         )}
       </div>
       {line && (
