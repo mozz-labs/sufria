@@ -10,11 +10,14 @@ import {
   ORDER_STATUSES,
   STAFF_TRANSITIONS,
   amountAr,
+  cancelTitleAr,
+  clockTime,
   customerLabelAr,
   itemsSummaryAr,
   nextStaffAction,
   orderNumberLabel,
   relativeTimeAr,
+  waLink,
   type FulfillmentType,
   type OrderStatus,
 } from "@sufria/shared";
@@ -44,6 +47,31 @@ test("DASHBOARD_UI_AR is the brief's text, verbatim", () => {
       statusConflict: "تغيّرت حالة الطلب من جهاز آخر.",
       stepFailed: "لا يمكن تنفيذ هذه الخطوة الآن.",
       disconnected: "انقطع الاتصال — نحاول مجددا.",
+      loadFailed: "تعذّر التحميل.",
+      retry: "حاول مجددا",
+    },
+    // Brief I §6, verbatim (Mohammed, 5 October).
+    details: {
+      notFound: "هذا الطلب غير موجود.",
+      deliveryFee: "رسوم التوصيل",
+      total: "المجموع",
+      address: "العنوان",
+      messageCustomer: "راسل الزبون",
+      cancelOrder: "إلغاء الطلب",
+    },
+    cancel: {
+      title: "إلغاء الطلب رقم [رقم الطلب]؟",
+      reason: "السبب (اختياري)",
+      reasonHint: "يصل السبب للزبون كما تكتبه.",
+      confirm: "ألغِ الطلب",
+      back: "رجوع",
+    },
+    conversation: {
+      title: "المحادثة",
+      showAll: "عرض الكل",
+      hide: "إخفاء",
+      empty: "لا رسائل محفوظة لهذا الطلب.",
+      customerOnly: "تظهر هنا رسائل الزبون فقط.",
     },
     empty: {
       active: "ستظهر هنا طلبات واتساب الجديدة تلقائيا.",
@@ -206,4 +234,30 @@ test("orderNumberLabel and amountAr: text as given, never through Number", () =>
   assert.equal(orderNumberLabel(102), "#102");
   assert.equal(amountAr("13.50", "JOD"), "13.50 د.أ");
   assert.equal(amountAr("5.00", "ILS"), "5.00 شيكل");
+});
+
+/** An ISO time at `h:m` on the device's clock — the zone the test runs in. */
+const localIso = (h: number, m: number) =>
+  new Date(2026, 9, 5, h, m).toISOString();
+
+test("clockTime: HH:MM, 24-hour, on the device's clock", () => {
+  assert.equal(clockTime(localIso(0, 5)), "00:05");
+  assert.equal(clockTime(localIso(12, 0)), "12:00");
+  assert.equal(clockTime(localIso(23, 59)), "23:59");
+});
+
+test("🔴 clockTime: no Arabic-Indic digit, whatever the browser's language", () => {
+  for (let h = 0; h < 24; h++)
+    assert.doesNotMatch(clockTime(localIso(h, 7)), /[٠-٩۰-۹]/u);
+});
+
+test("waLink: wa.me with the number alone — a Jordanian and a Palestinian one", () => {
+  assert.equal(waLink("+962 79 123 4567"), "https://wa.me/962791234567");
+  assert.equal(waLink("+970 59 912 3456"), "https://wa.me/970599123456");
+  // As the engine stores a customer: Meta's digits, no + at all.
+  assert.equal(waLink("970599123456"), "https://wa.me/970599123456");
+});
+
+test("cancelTitleAr: the order number in the dialog's title", () => {
+  assert.equal(cancelTitleAr(102), "إلغاء الطلب رقم 102؟");
 });

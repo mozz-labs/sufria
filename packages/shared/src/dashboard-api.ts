@@ -165,6 +165,13 @@ export function canStaffTransition(
   return STAFF_TRANSITIONS[from].includes(to);
 }
 
+/**
+ * The longest cancellation reason, after trimming — brief D §9.3. The API's
+ * DTO refuses a longer one, and the details screen's field stops at it
+ * (brief I §4, I-6): one number for both.
+ */
+export const MAX_CANCELLATION_REASON_LENGTH = 300;
+
 /** Body of `PATCH /orders/:id/status` — brief D §3.3. */
 export type UpdateOrderStatusRequest = {
   /**
@@ -181,6 +188,33 @@ export type UpdateOrderStatusRequest = {
    */
   cancellationReason?: string;
 };
+
+/**
+ * Who wrote a message of an order's conversation: the customer (`inbound`,
+ * `inbound_messages`) or the bot (`outbound`, `outbound_messages`).
+ */
+export const MESSAGE_DIRECTIONS = ["inbound", "outbound"] as const;
+export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
+
+/**
+ * A message of `GET /orders/:id/messages` — brief I §4 (I-5). Text messages
+ * alone: an image or a location has no text and is not returned.
+ */
+export type OrderMessage = {
+  id: string;
+  direction: MessageDirection;
+  /** As it arrived, or as it was sent: content, never translated or reformatted. */
+  text: string;
+  /** ISO 8601 in UTC: when it reached us (`inbound`), or went out (`outbound`). */
+  at: string;
+};
+
+/**
+ * `GET /orders/:id/messages` — the order's conversation, in time order then
+ * `id`, at most the latest 200. Which messages are the order's: brief I §4
+ * (I-5), as built in `apps/dashboard-api/src/orders/orders.service.ts`.
+ */
+export type OrderMessagesResponse = { messages: OrderMessage[] };
 
 /** The 200 of `PATCH /orders/:id/status`: the order as a `GET /orders` item. */
 export type UpdateOrderStatusResponse = OrderListItem;

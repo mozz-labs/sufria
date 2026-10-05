@@ -56,6 +56,36 @@ export const DASHBOARD_UI_AR = {
     stepFailed: "لا يمكن تنفيذ هذه الخطوة الآن.",
     /** The strip above the list while polling fails. */
     disconnected: "انقطع الاتصال — نحاول مجددا.",
+    /** An order's details that could not be read (brief I §6). */
+    loadFailed: "تعذّر التحميل.",
+    /** The button after «تعذّر التحميل.». */
+    retry: "حاول مجددا",
+  },
+  /** The order details screen — brief I §6, Mohammed's approval, 5 October. */
+  details: {
+    notFound: "هذا الطلب غير موجود.",
+    deliveryFee: "رسوم التوصيل",
+    total: "المجموع",
+    address: "العنوان",
+    messageCustomer: "راسل الزبون",
+    cancelOrder: "إلغاء الطلب",
+  },
+  /** The cancel dialog. The reason reaches the customer word for word. */
+  cancel: {
+    title: `إلغاء الطلب رقم ${ORDER_NUMBER_SLOT}؟`,
+    reason: "السبب (اختياري)",
+    reasonHint: "يصل السبب للزبون كما تكتبه.",
+    confirm: "ألغِ الطلب",
+    back: "رجوع",
+  },
+  /** The conversation section of the details screen. */
+  conversation: {
+    title: "المحادثة",
+    showAll: "عرض الكل",
+    hide: "إخفاء",
+    empty: "لا رسائل محفوظة لهذا الطلب.",
+    /** An order from before the bot's replies were kept (0013). */
+    customerOnly: "تظهر هنا رسائل الزبون فقط.",
   },
   empty: {
     active: "ستظهر هنا طلبات واتساب الجديدة تلقائيا.",
@@ -185,6 +215,35 @@ export function orderNumberLabel(orderNumber: number): string {
   return fill(DASHBOARD_UI_AR.orderNumber, {
     [ORDER_NUMBER_SLOT]: String(orderNumber),
   });
+}
+
+/** «إلغاء الطلب رقم 102؟» — the dialog's title (brief I §6). */
+export function cancelTitleAr(orderNumber: number): string {
+  return fill(DASHBOARD_UI_AR.cancel.title, {
+    [ORDER_NUMBER_SLOT]: String(orderNumber),
+  });
+}
+
+/**
+ * «14:05» — an ISO time as `HH:MM`, 24-hour, Western digits, in the device's
+ * time zone (brief I §4, I-7).
+ *
+ * 🔴 Built from the numbers, not `toLocaleTimeString`: the browser's
+ *    language decides that one's digits, and `ar` writes «١٤:٠٥».
+ */
+export function clockTime(iso: string): string {
+  const d = new Date(iso);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/**
+ * The customer's WhatsApp chat — `https://wa.me/<number>`, its `+` and spaces
+ * removed (brief I §4, I-6). The full number lives in this link alone; the
+ * screen shows «•••• 1234».
+ */
+export function waLink(phone: string): string {
+  return `https://wa.me/${phone.replace(/[+\s]/g, "")}`;
 }
 
 /**
