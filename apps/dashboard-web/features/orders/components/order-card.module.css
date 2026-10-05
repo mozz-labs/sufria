@@ -148,50 +148,10 @@
   text-overflow: ellipsis;
 }
 
+/* The badge's look is shared/ui's; its place is the card's. */
 .badge {
   grid-area: badge;
   justify-self: start;
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.35;
-  white-space: nowrap;
-}
-
-.badge[data-status="pending_acceptance"] {
-  background: var(--badge-pending_acceptance-bg);
-  color: var(--badge-pending_acceptance-text);
-}
-
-.badge[data-status="accepted"] {
-  background: var(--badge-accepted-bg);
-  color: var(--badge-accepted-text);
-}
-
-.badge[data-status="preparing"] {
-  background: var(--badge-preparing-bg);
-  color: var(--badge-preparing-text);
-}
-
-.badge[data-status="ready"] {
-  background: var(--badge-ready-bg);
-  color: var(--badge-ready-text);
-}
-
-.badge[data-status="completed"] {
-  background: var(--badge-completed-bg);
-  color: var(--badge-completed-text);
-}
-
-.badge[data-status="cancelled"] {
-  background: var(--badge-cancelled-bg);
-  color: var(--badge-cancelled-text);
-}
-
-.badge[data-status="expired"] {
-  background: var(--badge-expired-bg);
-  color: var(--badge-expired-text);
 }
 
 /* At the row's end below 640px, so its two lines keep to that end. */

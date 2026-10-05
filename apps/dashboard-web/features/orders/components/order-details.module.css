@@ -1,5 +1,7 @@
-/* One order — brief I §4 (I-6). Tokens only; logical properties only (RTL);
-   touch targets 44px. */
+/* One order — brief I §4 (I-6). Tokens only; logical properties only; touch
+   targets 44px. The number is the page's largest thing: 26px/600 in the
+   numbers' font; the total 22px/600. Two columns from 1024px up — the order
+   at the start (~420px), the conversation at the end — one below. */
 
 .page {
   width: 100%;
@@ -8,7 +10,7 @@
   padding: 14px 18px 32px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .back {
@@ -24,9 +26,258 @@
   text-decoration: none;
 }
 
-/* The page's <h1>: the largest thing on it, in the numbers' font. */
+.notice {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* ---- the order's header ---- */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .number {
   font-size: 26px;
   font-weight: 600;
   line-height: 1.25;
+}
+
+/* Two fixed rows on a phone, one from 640px up — never wrapped by length. */
+.meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "badge kind"
+    "customer since";
+  align-items: center;
+  justify-items: start;
+  gap: 6px 12px;
+  font-size: 15px;
+}
+
+@media (min-width: 640px) {
+  .meta {
+    grid-template-columns: auto auto auto auto;
+    grid-template-areas: "badge kind customer since";
+    justify-content: start;
+  }
+}
+
+.metaBadge {
+  grid-area: badge;
+}
+
+.kind {
+  grid-area: kind;
+  font-weight: 600;
+}
+
+.customer {
+  grid-area: customer;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.since {
+  grid-area: since;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---- the two columns ---- */
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "order"
+    "conversation";
+  gap: 16px;
+}
+
+@media (min-width: 1024px) {
+  .columns {
+    grid-template-columns: 420px minmax(0, 1fr);
+    grid-template-areas: "order conversation";
+    align-items: start;
+  }
+}
+
+.order {
+  grid-area: order;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.conversation {
+  grid-area: conversation;
+  min-width: 0;
+}
+
+/* ---- the order ---- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.lines {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A long name wraps on its side; the amount keeps its own. */
+.lineItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 15px;
+}
+
+.lineLabel {
+  overflow-wrap: anywhere;
+}
+
+.amount {
+  white-space: nowrap;
+}
+
+.total {
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--border);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.payment {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.address {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* The driver reads this: plain, large, as the customer wrote it. */
+.addressText {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.reason {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.history {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.historyItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.time {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---- the actions ---- */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The card's button, the width of the column. */
+.step {
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.step:disabled {
+  cursor: progress;
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.line {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* 24px from what is above it: 12 of gap, and 12 more. */
+.cancel {
+  margin-block-start: 12px;
 }

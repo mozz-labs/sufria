@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { Currency, OrderListItem, OrderTab } from "@sufria/shared";
-import { ordersApi } from "../api/orders-api.ts";
-import { advance, cardView, type AdvanceOutcome } from "../lib/board.ts";
+import { StatusBadge } from "../../../shared/ui/status-badge.tsx";
+import { cardView, type AdvanceOutcome } from "../lib/board.ts";
+import { NextStepButton } from "./next-step-button.tsx";
 import styles from "./order-card.module.css";
 
 type Props = {
@@ -27,18 +28,14 @@ type Props = {
  */
 export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
   const view = cardView(order, tab, currency, now);
-  const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<string | null>(null);
 
-  async function press() {
-    if (!view.action) return;
-    setBusy(true);
-    setLine(null);
-    // `order` is the card as displayed: its status is the request's `from`.
-    const outcome = await advance(ordersApi, order, view.action);
-    setBusy(false);
-    if (outcome.kind === "refresh" || outcome.kind === "failed")
-      setLine(outcome.line);
+  function stepped(outcome: AdvanceOutcome) {
+    setLine(
+      outcome.kind === "refresh" || outcome.kind === "failed"
+        ? outcome.line
+        : null,
+    );
     onOutcome(outcome);
   }
 
@@ -63,9 +60,9 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
           )}
         </div>
 
-        <span className={styles.badge} data-status={order.status}>
+        <StatusBadge status={order.status} className={styles.badge}>
           {view.badge}
-        </span>
+        </StatusBadge>
 
         <div className={styles.figs}>
           <span className={`num ${styles.total}`}>{view.amount}</span>
@@ -73,15 +70,13 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
         </div>
 
         {view.action && (
-          // Disabled while sending, its text unchanged (G-4).
-          <button
-            type="button"
+          // `order` is the card as displayed: its status is the `from`.
+          <NextStepButton
+            shown={order}
+            action={view.action}
+            onOutcome={stepped}
             className={styles.action}
-            onClick={press}
-            disabled={busy}
-          >
-            {view.action.label}
-          </button>
+          />
         )}
       </div>
       {line && (

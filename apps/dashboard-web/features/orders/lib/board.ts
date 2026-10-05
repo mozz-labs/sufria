@@ -112,16 +112,41 @@ export type AdvanceOutcome =
   | { kind: "unauthorized" };
 
 /**
- * Pressing the card's button. `shown` is the order **as the card displayed
- * it**: its status is the `from` of the request (brief D §2.7), never a
- * status read again before sending.
+ * Pressing the next-step button — on a card or on the details page. `shown`
+ * is the order **as the screen displayed it**: its status is the `from` of
+ * the request (brief D §2.7), never a status read again before sending.
  */
 export async function advance(
   api: Pick<OrdersApi, "changeStatus">,
-  shown: OrderListItem,
+  shown: Pick<OrderListItem, "id" | "status">,
   action: StaffAction,
 ): Promise<AdvanceOutcome> {
-  const res = await api.changeStatus(shown, action.to);
+  return outcomeOf(await api.changeStatus(shown, action.to));
+}
+
+/**
+ * «ألغِ الطلب» in the cancel dialog (brief I §4, I-6): `from` is the status
+ * the page showed, and the reason goes only when there is one after
+ * trimming — it reaches the customer word for word (brief F §1.1).
+ */
+export async function cancelOrder(
+  api: Pick<OrdersApi, "changeStatus">,
+  shown: Pick<OrderListItem, "id" | "status">,
+  reason: string,
+): Promise<AdvanceOutcome> {
+  const trimmed = reason.trim();
+  return outcomeOf(
+    await api.changeStatus(
+      shown,
+      "cancelled",
+      trimmed === "" ? undefined : trimmed,
+    ),
+  );
+}
+
+function outcomeOf(
+  res: Awaited<ReturnType<OrdersApi["changeStatus"]>>,
+): AdvanceOutcome {
   if (res.ok) return { kind: "changed", order: res.value };
   switch (res.error.kind) {
     case "unauthorized":

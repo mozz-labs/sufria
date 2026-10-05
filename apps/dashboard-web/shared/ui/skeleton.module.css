@@ -1,0 +1,21 @@
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bar {
+  display: block;
+  height: 14px;
+  border-radius: 8px;
+  background: var(--border);
+}
+
+.bar:first-child {
+  height: 22px;
+  width: 60%;
+}
+
+.bar:last-child:not(:first-child) {
+  width: 80%;
+}

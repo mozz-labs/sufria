@@ -50,10 +50,10 @@ test("🔴 pressing the button does not open the order: it is outside the link, 
   assert.match(links[0]!, /view\.number/, "the link is on the order number");
   assert.doesNotMatch(
     links[0]!,
-    /<button\b|onClick/,
+    /<button\b|<NextStepButton\b|onClick/,
     "a button inside the link: pressing it opens the order too",
   );
-  assert.match(tsx, /<button\b/, "the card still has its button");
+  assert.match(tsx, /<NextStepButton\b/, "the card still has its button");
 
   // The layer: the link's ::after covers the card, the button sits over it.
   assert.match(rule(".card"), /position:\s*relative/);

@@ -7,5 +7,6 @@ export default async function OrderPage({
 }: PageProps<"/orders/[id]">) {
   const { id } = await params;
   const { from } = await searchParams;
-  return <OrderDetails id={id} from={from} />;
+  // Keyed by the id: another order is another page, not this one's state.
+  return <OrderDetails key={id} id={id} from={from} />;
 }

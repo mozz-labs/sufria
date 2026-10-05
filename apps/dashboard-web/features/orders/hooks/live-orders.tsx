@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -12,6 +11,7 @@ import {
 import type { Currency, OrderListItem } from "@sufria/shared";
 import { ordersApi } from "../api/orders-api.ts";
 import { POLL_MS, replaceInActive } from "../lib/board.ts";
+import { usePolling } from "./use-polling.ts";
 
 export type LiveOrders = {
   /** The restaurant's currency, read once; `null` until then. */
@@ -80,24 +80,7 @@ export function LiveOrdersProvider({
     } else if (res.error.kind !== "unauthorized") setOffline(true);
   }, [ensureCurrency]);
 
-  useEffect(() => {
-    let timer: number | undefined;
-    const tick = () => {
-      if (document.visibilityState === "visible") void refresh();
-    };
-    const start = () => {
-      window.clearInterval(timer);
-      if (document.visibilityState !== "visible") return;
-      tick();
-      timer = window.setInterval(tick, POLL_MS);
-    };
-    start();
-    document.addEventListener("visibilitychange", start);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", start);
-    };
-  }, [refresh]);
+  usePolling(() => void refresh(), POLL_MS);
 
   const apply = useCallback((order: OrderListItem) => {
     setNow(Date.now());
