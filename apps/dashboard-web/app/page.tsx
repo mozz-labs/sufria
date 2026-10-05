@@ -1,6 +1,6 @@
-import { LoginForm } from "../features/auth/components/login-form.tsx";
+import { RootRedirect } from "../features/auth/components/root-redirect.tsx";
 
-/** The login screen, at `/` until the routes of brief I §2.1 (I-3). */
-export default function LoginPage() {
-  return <LoginForm />;
+/** `/` (brief I §2.1): to the orders with a session, to login without. */
+export default function RootPage() {
+  return <RootRedirect />;
 }

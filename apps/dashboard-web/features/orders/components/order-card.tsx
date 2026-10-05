@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { Currency, OrderListItem, OrderTab } from "@sufria/shared";
 import { ordersApi } from "../api/orders-api.ts";
 import { advance, cardView, type AdvanceOutcome } from "../lib/board.ts";
@@ -18,6 +19,11 @@ type Props = {
 /**
  * One order, right to left (brief G §3, G-4): number and customer with the
  * grey line under them · badge · total and «منذ…» · the next-step button.
+ *
+ * The whole card opens the order (brief I §4, I-3): a link on the number
+ * itself, its ::after stretched over the card. The button is not in the link
+ * — a button inside a link is two controls in one — and sits above that
+ * layer, so pressing it acts without opening.
  */
 export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
   const view = cardView(order, tab, currency, now);
@@ -42,9 +48,11 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
         <div className={styles.who}>
           <div className={styles.name}>
             {view.pulse && <span className={styles.pulse} aria-hidden="true" />}
-            <bdi dir="ltr" className={`num ${styles.number}`}>
-              {view.number}
-            </bdi>
+            <Link href={view.href} className={styles.open}>
+              <bdi dir="ltr" className={`num ${styles.number}`}>
+                {view.number}
+              </bdi>
+            </Link>
             <bdi className={styles.customer}>{view.customer}</bdi>
           </div>
           <div className={styles.details}>{view.details}</div>

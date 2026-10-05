@@ -5,11 +5,35 @@
    only (RTL). */
 
 .card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px 14px;
   line-height: 1.55;
+}
+
+/* The order number opens the details; its ::after covers the whole card, so
+   a press anywhere on it does too (brief I §4, I-3). The ring is the card's. */
+.open {
+  color: inherit;
+  text-decoration: none;
+}
+
+.open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+}
+
+.open:focus-visible {
+  outline: none;
+}
+
+.open:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Below 640px, three fixed rows (brief I §4, I-2): who, with the details
@@ -195,9 +219,12 @@
   color: var(--text-secondary);
 }
 
-/* Same place and size as the bench's «اقبل»: 44px, accent. */
+/* Same place and size as the bench's «اقبل»: 44px, accent. Above the
+   card's link layer: pressing it acts, it does not open the order. */
 .action {
   grid-area: action;
+  position: relative;
+  z-index: 1;
   min-height: 44px;
   padding: 0 16px;
   background: var(--accent);

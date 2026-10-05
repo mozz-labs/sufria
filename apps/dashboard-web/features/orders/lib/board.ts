@@ -44,7 +44,18 @@ export function pulses(order: OrderListItem, now: number): boolean {
   return now - Date.parse(order.statusChangedAt) < PULSE_MS;
 }
 
+/**
+ * An order's details page (brief I §2.1): its id — what the API takes — and
+ * `?from=history` when it was opened from «السجل», for the back link.
+ */
+export function orderHref(id: string, from: OrderTab): string {
+  const path = `/orders/${encodeURIComponent(id)}`;
+  return from === "history" ? `${path}?from=history` : path;
+}
+
 export type CardView = {
+  /** The details page the card opens — on its number, stretched over it. */
+  href: string;
   number: string;
   customer: string;
   /** «استلام · شاورما ×2 · بطاطا» — grey, cut with … when long. */
@@ -68,6 +79,7 @@ export function cardView(
   const summary = itemsSummaryAr(order.items);
   const kind = DASHBOARD_UI_AR.fulfillment[order.fulfillmentType];
   return {
+    href: orderHref(order.id, tab),
     number: orderNumberLabel(order.orderNumber),
     customer: customerLabelAr(order.customer),
     details: summary
@@ -134,4 +146,17 @@ export function replaceInActive(
   return orders.flatMap((o) =>
     o.id !== changed.id ? [o] : stays ? [changed] : [],
   );
+}
+
+/**
+ * Where an order's details page goes back to (brief I §4, I-6): «السجل»
+ * when it was opened from there (`?from=history`), «الطلبات» otherwise.
+ */
+export function backTo(from: string | string[] | undefined): {
+  href: string;
+  label: string;
+} {
+  return from === "history"
+    ? { href: "/history", label: DASHBOARD_UI_AR.tabs.history }
+    : { href: "/orders", label: DASHBOARD_UI_AR.tabs.active };
 }

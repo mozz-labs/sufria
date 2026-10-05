@@ -3,6 +3,7 @@
  * shapes are the API's own, from `@sufria/shared` (brief D §9).
  */
 import type {
+  OrderDetail,
   OrderListItem,
   OrderListResponse,
   OrderTab,
@@ -27,6 +28,8 @@ export type OrdersApi = {
     shown: Pick<OrderListItem, "id" | "status">,
     to: StaffTargetStatus,
   ): Promise<ApiResult<UpdateOrderStatusResponse>>;
+  /** One order with its lines and history (brief D §9.2). 404: not ours. */
+  orderDetail(id: string): Promise<ApiResult<OrderDetail>>;
   /** The restaurant's currency, for every amount on the screen. */
   restaurantSettings(): Promise<ApiResult<RestaurantSettings>>;
 };
@@ -45,6 +48,11 @@ export function createOrdersApi(http: Http): OrdersApi {
         { method: "PATCH", body, auth: "restaurant" },
       );
     },
+    orderDetail: (id) =>
+      http.call<OrderDetail>(`/orders/${encodeURIComponent(id)}`, {
+        method: "GET",
+        auth: "restaurant",
+      }),
     restaurantSettings: () =>
       http.call<RestaurantSettings>("/restaurant/settings", {
         method: "GET",

@@ -63,6 +63,7 @@ function apiReplying(status: number, body: unknown) {
 
 test("cardView: the brief's card, right to left, all from shared", () => {
   assert.deepEqual(cardView(ORDER, "active", "JOD", NOW), {
+    href: `/orders/${ORDER.id}`,
     number: "#102",
     customer: "•••• 4321",
     details: "توصيل · شاورما ×2 · بطاطا",

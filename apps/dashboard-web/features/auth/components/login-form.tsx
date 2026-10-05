@@ -7,10 +7,14 @@ import { sessionStore } from "../../../shared/api/client.ts";
 import { BrandMark } from "../../../shared/ui/brand-mark.tsx";
 import { authApi } from "../api/auth-api.ts";
 import { useSession } from "../hooks/use-session.ts";
-import { sessionFromLogin } from "../lib/session.ts";
+import { safeNext, sessionFromLogin } from "../lib/session.ts";
 import styles from "./login-form.module.css";
 
 const T = DASHBOARD_UI_AR;
+
+/** Where to go after login: `?next=` when it is a path of this site (I-3). */
+const afterLogin = () =>
+  safeNext(new URLSearchParams(window.location.search).get("next"));
 
 /** Brief G §3 (G-3): two fields and a button. */
 export function LoginForm() {
@@ -22,9 +26,9 @@ export function LoginForm() {
 
   const session = useSession();
 
-  // Already logged in in this tab: straight to the orders.
+  // Already logged in in this tab: straight on, to `?next=` or the orders.
   useEffect(() => {
-    if (session) router.replace("/orders");
+    if (session) router.replace(afterLogin());
   }, [router, session]);
 
   async function onSubmit(e: FormEvent) {
@@ -38,7 +42,7 @@ export function LoginForm() {
     const session = res.ok ? sessionFromLogin(res.value) : null;
     if (session) {
       sessionStore.set(session);
-      router.replace("/orders");
+      router.replace(afterLogin());
       return;
     }
     // A 401 is the API's one answer for every wrong credential. Anything else

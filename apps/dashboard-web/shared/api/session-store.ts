@@ -23,7 +23,27 @@ export type SessionStore = {
   get(): Session | null;
   set(session: Session): void;
   clear(): void;
+  /**
+   * Called after every `set` and `clear` — what lets a 401 that ends the
+   * session (the client clears it) reach the guard on any page. Returns the
+   * unsubscribe.
+   */
+  subscribe(listener: () => void): () => void;
 };
+
+/** The listeners of one store, and the call that tells them all. */
+function listeners() {
+  const all = new Set<() => void>();
+  return {
+    notify: () => all.forEach((listener) => listener()),
+    subscribe: (listener: () => void) => {
+      all.add(listener);
+      return () => {
+        all.delete(listener);
+      };
+    },
+  };
+}
 
 const KEY = "sufria.session";
 
@@ -51,7 +71,9 @@ export function browserSessionStore(): SessionStore {
   // useSyncExternalStore sees a stable snapshot between two reads.
   let lastRaw: string | null = null;
   let last: Session | null = null;
+  const { notify, subscribe } = listeners();
   return {
+    subscribe,
     get() {
       try {
         const raw = storage()?.getItem(KEY) ?? null;
@@ -70,6 +92,7 @@ export function browserSessionStore(): SessionStore {
       } catch {
         // A browser that refuses storage keeps the session for this page only.
       }
+      notify();
     },
     clear() {
       try {
@@ -77,6 +100,7 @@ export function browserSessionStore(): SessionStore {
       } catch {
         // Nothing stored, nothing to clear.
       }
+      notify();
     },
   };
 }
@@ -86,13 +110,17 @@ export function memorySessionStore(
   initial: Session | null = null,
 ): SessionStore {
   let current = initial;
+  const { notify, subscribe } = listeners();
   return {
     get: () => current,
     set: (s) => {
       current = s;
+      notify();
     },
     clear: () => {
       current = null;
+      notify();
     },
+    subscribe,
   };
 }

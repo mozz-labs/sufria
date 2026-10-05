@@ -1,15 +1,6 @@
-"use client";
+import { ActiveOrders } from "../../../features/orders/components/active-orders.tsx";
 
-import { SessionGate } from "../../../features/auth/components/session-gate.tsx";
-import { OrderBoard } from "../../../features/orders/components/order-board.tsx";
-
-/** «الطلبات» and «السجل» (brief G §3, G-4), behind login. */
+/** `/orders` — «الطلبات» (brief I §2.1). */
 export default function OrdersPage() {
-  return (
-    <SessionGate>
-      {(session, logout) => (
-        <OrderBoard restaurantName={session.restaurantName} onLogout={logout} />
-      )}
-    </SessionGate>
-  );
+  return <ActiveOrders />;
 }

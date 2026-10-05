@@ -1,0 +1,32 @@
+/* One order — brief I §4 (I-6). Tokens only; logical properties only (RTL);
+   touch targets 44px. */
+
+.page {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding: 14px 18px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding-inline-end: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+/* The page's <h1>: the largest thing on it, in the numbers' font. */
+.number {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+}
