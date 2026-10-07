@@ -356,3 +356,31 @@ test("the cancel dialog's counter: «12 / 300», one group read left to right (I
   assert.match(tag, /className=\{`num /);
   assert.match(tsx.slice(at), /^[^<]*>\s*\{reasonCounter\(reason\.length\)\}/);
 });
+
+test("the history's times in one column, whatever the badge's width (I-9 #5)", () => {
+  const css = readFileSync(
+    fileURLToPath(
+      new URL(
+        "../../features/orders/components/order-details.module.css",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  );
+  const rule = (selector: string) => {
+    const at = css.indexOf(`\n${selector} {`);
+    assert.notEqual(at, -1, `no rule ${selector}`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  // The list holds the two columns: the badges, as wide as the widest…
+  assert.match(rule(".history"), /display: grid;/);
+  assert.match(
+    rule(".history"),
+    /grid-template-columns: max-content minmax\(0, 1fr\);/,
+  );
+  // …and every row takes them as they are, so its time starts there too.
+  assert.match(rule(".historyItem"), /grid-column: 1 \/ -1;/);
+  assert.match(rule(".historyItem"), /grid-template-columns: subgrid;/);
+  // A badge keeps its own width inside the column.
+  assert.match(rule(".historyBadge"), /justify-self: start;/);
+});

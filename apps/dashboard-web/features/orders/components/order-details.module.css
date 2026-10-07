@@ -202,20 +202,24 @@
   overflow-wrap: anywhere;
 }
 
+/* Two columns for the whole history — the badges, as wide as the widest,
+   then the times — so every time starts on the same line, whatever its
+   badge, at every width (I-9 #5). Each row is a subgrid of them. */
 .history {
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 10px;
 }
 
 /* A status per row — its badge, its time — and a cancellation's reason
    right under its row, across both (I-9 #4). */
 .historyItem {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 6px 10px;
+  row-gap: 6px;
 }
 
 .historyBadge {
