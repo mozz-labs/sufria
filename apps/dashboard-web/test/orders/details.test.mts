@@ -452,3 +452,42 @@ test("a date reads «28/9 · 14:30», never «14:30 · 28/9» (I-9 #6): its dire
   const at = css.indexOf("\n.time {");
   assert.match(css.slice(at, css.indexOf("}", at)), /justify-self: start;/);
 });
+
+test("from 1024px up: the page is the screen, the conversation one scroll, the latest message in sight (I-9 #7)", () => {
+  const read = (file: string) =>
+    readFileSync(
+      fileURLToPath(
+        new URL(`../../features/orders/components/${file}`, import.meta.url),
+      ),
+      "utf8",
+    );
+  /** The declarations of `selector` inside the 1024px block. */
+  const wide = (css: string, selector: string) => {
+    const media = css.indexOf("@media (min-width: 1024px) {");
+    assert.notEqual(media, -1, "no 1024px block");
+    const at = css.indexOf(`\n  ${selector} {`, media);
+    assert.notEqual(at, -1, `no ${selector} from 1024px up`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  const details = read("order-details.module.css");
+  // The body is the screen's height while this page is in it, a column:
+  // the header, then the page, which takes what is left…
+  const body = wide(details, ":global(body):has(.page)");
+  assert.match(body, /height: 100dvh;/);
+  assert.match(body, /flex-direction: column;/);
+  assert.match(wide(details, ".page"), /flex: 1;\s+min-height: 0;/);
+  // …the two columns its last row, each scrolling by itself.
+  assert.match(
+    wide(details, ".columns"),
+    /grid-template-rows: minmax\(0, 1fr\);/,
+  );
+  assert.match(wide(details, ".order"), /overflow-y: auto;/);
+  assert.match(wide(details, ".conversation"), /max-height: 100%;/);
+  // The conversation fits its column — no sticky box the screen's height,
+  // which started ~450px down and hid the latest message.
+  const chat = read("conversation.module.css");
+  assert.doesNotMatch(wide(chat, ".chat"), /sticky|100dvh/);
+  const messages = wide(chat, ".messages");
+  assert.match(messages, /overflow-y: auto;/);
+  assert.match(messages, /scrollbar-color: var\(--text-muted\) transparent;/);
+});

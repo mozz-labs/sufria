@@ -107,13 +107,14 @@
   color: var(--text-secondary);
 }
 
-/* From 1024px up, beside the order: the height of the screen, scrolling by
-   itself. Below, the page scrolls — never a box inside a box on a phone. */
+/* From 1024px up, beside the order: the height its column has under the
+   order's header (order-details.module.css), the messages scrolling inside
+   it — a thin bar in the tokens' grey, light and dark (I-9 #7). Below, the
+   page scrolls — never a box inside a box on a phone. */
 @media (min-width: 1024px) {
   .chat {
-    position: sticky;
-    top: 16px;
-    max-height: calc(100dvh - 32px);
+    max-height: 100%;
+    min-height: 0;
   }
 
   .messages {
@@ -121,5 +122,7 @@
     min-height: 0;
     overflow-y: auto;
     padding-inline-end: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-muted) transparent;
   }
 }
