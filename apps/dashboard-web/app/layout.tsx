@@ -11,11 +11,19 @@ const sans = IBM_Plex_Sans_Arabic({
   display: "swap",
 });
 
+// No generated fallback face for Mono (brief I-9 #1): next/font's is a local
+// Arial, which has Arabic letters — it sat between Plex Mono and Plex Sans
+// Arabic and drew «شيكل» and «منذ» inside every number. Both options: the
+// webpack loader reads `adjustFontFallback`, Turbopack (next build) ignores it
+// and drops the face only for an explicit `fallback`. The stack itself is
+// `.num` in globals.css: Plex Mono, then Plex Sans Arabic, then monospace.
 const mono = IBM_Plex_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
   weight: ["500", "600"],
   display: "swap",
+  adjustFontFallback: false,
+  fallback: [],
 });
 
 export const metadata: Metadata = {
