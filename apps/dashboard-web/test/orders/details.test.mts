@@ -5,6 +5,8 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   ORDER_STATUSES,
@@ -19,6 +21,7 @@ import { advance, cancelOrder } from "../../features/orders/lib/board.ts";
 import {
   conversationView,
   detailView,
+  reasonCounter,
 } from "../../features/orders/lib/details.ts";
 import { createHttp } from "../../shared/api/http.ts";
 import { memorySessionStore } from "../../shared/api/session-store.ts";
@@ -283,4 +286,26 @@ test("the conversation's notices: nothing kept, or the customer's messages alone
     EASTERN,
   );
   assert.match(EASTERN, /[\u0660-\u0669]/u);
+});
+
+test("the cancel dialog's counter: «12 / 300», one group read left to right (I-9 #3)", () => {
+  assert.equal(reasonCounter(0), "0 / 300");
+  assert.equal(reasonCounter(12), "12 / 300");
+  // Isolated (.num) and left to right: inside the page's right to left, the
+  // group alone read «300 / 12».
+  const tsx = readFileSync(
+    fileURLToPath(
+      new URL(
+        "../../features/orders/components/cancel-dialog.tsx",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  );
+  const at = tsx.indexOf('id="cancel-count"');
+  assert.notEqual(at, -1, "no counter in cancel-dialog.tsx");
+  const tag = tsx.slice(at, tsx.indexOf(">", at));
+  assert.match(tag, /dir="ltr"/);
+  assert.match(tag, /className=\{`num /);
+  assert.match(tsx.slice(at), /^[^<]*>\s*\{reasonCounter\(reason\.length\)\}/);
 });

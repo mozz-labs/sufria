@@ -7,6 +7,7 @@ import {
   cancelTitleAr,
 } from "@sufria/shared";
 import { Dialog } from "../../../shared/ui/dialog.tsx";
+import { reasonCounter } from "../lib/details.ts";
 import styles from "./cancel-dialog.module.css";
 
 const T = DASHBOARD_UI_AR;
@@ -61,8 +62,9 @@ export function CancelDialog({
           <p id="cancel-hint" className={styles.hint}>
             {T.cancel.reasonHint}
           </p>
-          <span id="cancel-count" className={`num ${styles.count}`}>
-            {`${reason.length} / ${MAX_CANCELLATION_REASON_LENGTH}`}
+          {/* One group, left to right: «12 / 300», never «300 / 12». */}
+          <span id="cancel-count" dir="ltr" className={`num ${styles.count}`}>
+            {reasonCounter(reason.length)}
           </span>
         </div>
         <div className={styles.buttons}>

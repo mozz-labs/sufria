@@ -5,6 +5,7 @@
  */
 import {
   DASHBOARD_UI_AR,
+  MAX_CANCELLATION_REASON_LENGTH,
   ORDER_STATUS_LABEL_AR,
   PAYMENT_STATUS_LABEL_AR,
   STAFF_TRANSITIONS,
@@ -95,6 +96,15 @@ export function detailView(
     canCancel: STAFF_TRANSITIONS[order.status].includes("cancelled"),
     chat: waLink(order.customer.phone),
   };
+}
+
+/**
+ * The cancel dialog's counter, «12 / 300» (brief I §6) — drawn left to right
+ * as one isolated group (`dir="ltr"` on its `.num`): inside the page's right
+ * to left it read «300 / 12» (I-9 #3).
+ */
+export function reasonCounter(length: number): string {
+  return `${length} / ${MAX_CANCELLATION_REASON_LENGTH}`;
 }
 
 /** A bot message longer than this many lines opens on its first two (I-6). */
