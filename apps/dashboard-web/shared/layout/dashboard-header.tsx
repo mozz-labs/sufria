@@ -38,42 +38,45 @@ export function DashboardHeader({
   return (
     <>
       <header className={styles.top}>
-        <div className={styles.topRow}>
-          <BrandMark />
-          <span className={styles.wordmark}>{T.brand}</span>
-          <span className={styles.live}>
-            <span className={styles.liveDot} aria-hidden="true" />
-            {T.live}
-          </span>
-          <button type="button" className={styles.logout} onClick={onLogout}>
-            {T.logout}
-          </button>
+        {/* The page's width and edges; the background is the screen's. */}
+        <div className={`${styles.bounds} ${styles.content}`}>
+          <div className={styles.topRow}>
+            <BrandMark />
+            <span className={styles.wordmark}>{T.brand}</span>
+            <span className={styles.live}>
+              <span className={styles.liveDot} aria-hidden="true" />
+              {T.live}
+            </span>
+            <button type="button" className={styles.logout} onClick={onLogout}>
+              {T.logout}
+            </button>
+          </div>
+          <p className={styles.title}>{restaurantName}</p>
+          <nav className={styles.tabs}>
+            <Link
+              href="/orders"
+              className={styles.tab}
+              aria-current={current("/orders")}
+            >
+              {T.tabs.active}
+              {activeCount !== null && (
+                <span className={`num ${styles.count}`}>{activeCount}</span>
+              )}
+            </Link>
+            <Link
+              href="/history"
+              className={styles.tab}
+              aria-current={current("/history")}
+            >
+              {T.tabs.history}
+            </Link>
+          </nav>
         </div>
-        <p className={styles.title}>{restaurantName}</p>
-        <nav className={styles.tabs}>
-          <Link
-            href="/orders"
-            className={styles.tab}
-            aria-current={current("/orders")}
-          >
-            {T.tabs.active}
-            {activeCount !== null && (
-              <span className={`num ${styles.count}`}>{activeCount}</span>
-            )}
-          </Link>
-          <Link
-            href="/history"
-            className={styles.tab}
-            aria-current={current("/history")}
-          >
-            {T.tabs.history}
-          </Link>
-        </nav>
       </header>
 
       {offline && (
         <div className={styles.offline} role="status">
-          {T.errors.disconnected}
+          <div className={styles.bounds}>{T.errors.disconnected}</div>
         </div>
       )}
     </>

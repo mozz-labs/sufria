@@ -4,13 +4,19 @@
    properties only (RTL). The strip above the list is the header's now
    (shared/layout, brief I §4, I-3). */
 
+/* The page's width, on the body while it is there: the header's content
+   takes the same width and edges (I-9 #9). */
+:global(body):has(.list) {
+  --page-width: 880px;
+}
+
 .list {
   padding: 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 100%;
-  max-width: 880px;
+  max-width: var(--page-width);
   margin-inline: auto;
 }
 

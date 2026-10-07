@@ -3,10 +3,25 @@
    13 labels; radius 8 controls; touch targets 44px. Logical properties only
    (RTL). */
 
+/* The background and its line the screen's width; the content the page's
+   (I-9 #9). */
 .top {
   background: var(--surface);
   border-block-end: 1px solid var(--border);
-  padding: 14px 18px 0;
+  padding-block-start: 14px;
+}
+
+/* The page's width and edges: each page sets --page-width on the body
+   (880 the lists, 1200 the details) and pads its sides 18px. Without one,
+   the screen's. */
+.bounds {
+  width: 100%;
+  max-width: var(--page-width, none);
+  margin-inline: auto;
+  padding-inline: 18px;
+}
+
+.content {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -129,7 +144,7 @@
 .offline {
   background: var(--surface);
   border-block-end: 1px solid var(--border);
-  padding: 8px 18px;
+  padding-block: 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
