@@ -491,3 +491,65 @@ test("from 1024px up: the page is the screen, the conversation one scroll, the l
   assert.match(messages, /overflow-y: auto;/);
   assert.match(messages, /scrollbar-color: var\(--text-muted\) transparent;/);
 });
+
+test("under 1024px the next step is a bar at the bottom — never the cancel (I-9 #8)", () => {
+  const read = (path: string) =>
+    readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+  const tsx = read("../../features/orders/components/order-details.tsx");
+  const actions = tsx.slice(
+    tsx.indexOf("className={styles.actions}"),
+    tsx.indexOf(
+      "</div>\n        </div>",
+      tsx.indexOf("className={styles.actions}"),
+    ),
+  );
+  // The page's order unchanged (§1.1): the step, its line, then the
+  // customer's chat and the cancel — the bar is the first two alone.
+  const where = (needle: string) => {
+    const at = actions.indexOf(needle);
+    assert.notEqual(at, -1, `no ${needle} in the actions`);
+    return at;
+  };
+  assert.ok(where("<NextStepButton") < where("styles.line"));
+  assert.ok(where("styles.line") < where("view.chat"));
+  assert.ok(where("view.chat") < where("T.details.cancelOrder"));
+  const bar = actions.slice(
+    where("className={styles.stepBar}"),
+    where("view.chat"),
+  );
+  assert.match(bar, /<NextStepButton/);
+  assert.match(bar, /styles\.line/);
+  // 🔴 The cancel is never in the bar; nor is «راسل الزبون».
+  assert.doesNotMatch(bar, /cancelOrder|setCancelling|view\.chat/);
+  // Fixed only while there is a step: a finished order has no bar.
+  assert.match(bar, /data-fixed=\{view\.action !== null \? "" : undefined\}/);
+
+  const css = read("../../features/orders/components/order-details.module.css");
+  const rule = (selector: string, from = 0) => {
+    const at = css.indexOf(`${selector} {`, from);
+    assert.notEqual(at, -1, `no ${selector}`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  const fixed = rule("\n.stepBar[data-fixed]");
+  assert.match(fixed, /position: fixed;/);
+  assert.match(fixed, /inset-inline: 0;/);
+  assert.match(fixed, /inset-block-end: 0;/);
+  assert.match(fixed, /env\(safe-area-inset-bottom\)/);
+  assert.match(fixed, /background: var\(--surface\);/);
+  assert.match(fixed, /border-block-start: 1px solid var\(--border\);/);
+  assert.doesNotMatch(fixed, /box-shadow/);
+  // Room at the page's end for the bar, so nothing stays under it…
+  assert.match(
+    rule("\n.page:has(.stepBar[data-fixed])"),
+    /padding-block-end: calc\(32px \+ 68px \+ env\(safe-area-inset-bottom\)\);/,
+  );
+  // …and from 1024px up, where it was.
+  const media = css.indexOf(
+    "@media (min-width: 1024px) {",
+    css.indexOf(".stepBar {"),
+  );
+  assert.match(rule("  .stepBar[data-fixed]", media), /position: static;/);
+
+  // The safe area is reported only with viewport-fit=cover.
+  assert.match(read("../../app/layout.tsx"), /viewportFit: "cover"/);
+});

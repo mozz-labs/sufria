@@ -220,18 +220,29 @@ function Ready({
           </ol>
 
           <div className={styles.actions}>
-            {view.action !== null && (
-              <NextStepButton
-                shown={order}
-                action={view.action}
-                onOutcome={onOutcome}
-                className={styles.step}
-              />
-            )}
-            {line !== null && (
-              <p className={styles.line} role="status">
-                {line}
-              </p>
+            {/* The next step and its line: under 1024px a bar fixed at the
+                bottom of the screen while there is a step (I-9 #8) — the
+                same button, in the same place in the page; CSS alone moves
+                it. Never «إلغاء الطلب»: it stays below, in the page. */}
+            {(view.action !== null || line !== null) && (
+              <div
+                className={styles.stepBar}
+                data-fixed={view.action !== null ? "" : undefined}
+              >
+                {view.action !== null && (
+                  <NextStepButton
+                    shown={order}
+                    action={view.action}
+                    onOutcome={onOutcome}
+                    className={styles.step}
+                  />
+                )}
+                {line !== null && (
+                  <p className={styles.line} role="status">
+                    {line}
+                  </p>
+                )}
+              </div>
             )}
             {/* The full number lives in this link alone: the counter's
                 screen may be seen by the next customer. */}

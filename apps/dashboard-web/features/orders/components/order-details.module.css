@@ -293,6 +293,56 @@
   gap: 12px;
 }
 
+/* The next step and its line. Under 1024px, while there is a step, a bar
+   fixed at the bottom of the screen, the screen's width (I-9 #8): the
+   surface, a line over it, no shadow, clear of the phone's home bar
+   (safe-area-inset-bottom, with viewport-fit=cover in layout.tsx). The page
+   keeps that much room at its end, so nothing stays under the bar. From
+   1024px up, where it was. */
+.stepBar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stepBar[data-fixed] {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  padding-block: 12px calc(12px + env(safe-area-inset-bottom));
+  padding-inline: max(
+    18px,
+    env(safe-area-inset-left),
+    env(safe-area-inset-right)
+  );
+  background: var(--surface);
+  border-block-start: 1px solid var(--border);
+}
+
+/* The bar's height: 12 + the 44px button + 12, and the line's 12 + 22. */
+.page:has(.stepBar[data-fixed]) {
+  padding-block-end: calc(32px + 68px + env(safe-area-inset-bottom));
+}
+
+.page:has(.stepBar[data-fixed] .line) {
+  padding-block-end: calc(32px + 102px + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .stepBar[data-fixed] {
+    position: static;
+    padding: 0;
+    background: none;
+    border: 0;
+  }
+
+  .page:has(.stepBar[data-fixed]),
+  .page:has(.stepBar[data-fixed] .line) {
+    padding-block-end: 32px;
+  }
+}
+
 /* The card's button, the width of the column. */
 .step {
   min-height: 44px;

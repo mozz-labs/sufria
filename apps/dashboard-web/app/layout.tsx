@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans_Arabic } from "next/font/google";
 import { DASHBOARD_UI_AR, designTokensCss } from "@sufria/shared";
 import "./globals.css";
@@ -28,6 +28,15 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: DASHBOARD_UI_AR.brand,
+};
+
+// Next's own viewport, plus cover: without it a phone reports no safe area,
+// and the details' bottom bar would sit under its home bar (I-9 #8). The
+// sides are kept clear in globals.css.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
