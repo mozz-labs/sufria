@@ -21,6 +21,13 @@ body {
   min-height: 100%;
 }
 
+/* The scrollbar's room kept from the start: an order that loads longer than
+   the screen brings the page's scrollbar, and without this the whole page
+   jumps sideways as it does (a layout shift — I-9b #1). */
+html {
+  scrollbar-gutter: stable;
+}
+
 /* viewport-fit=cover (layout.tsx, I-9 #8) lets the page under a phone's
    notch, sideways; this keeps it clear — 0 wherever there is no notch. Both
    sides alike: the notch is on either, whatever the text's direction. */

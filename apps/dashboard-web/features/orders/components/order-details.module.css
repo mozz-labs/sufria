@@ -114,48 +114,24 @@
   gap: 16px;
 }
 
-/* From 1024px up the page is the screen under the header, and does not
-   scroll: the two columns take the height left under the order's header,
-   and each scrolls by itself — the order when it is long, the conversation
-   always — so the latest message is in sight as the page opens, one scroll
-   away from any other (I-9 #7). The body is the page's only while this page
-   is in it (:has), so «الطلبات» and «السجل» scroll as before. */
+/* From 1024px up: two columns, and the page scrolls as any page — the order
+   whole in it, with no box of its own — while the conversation stays beside
+   it, sticky (brief I-9b #1, Mohammed's decision; I-9 #7's own scroll for the
+   order is gone). The conversation's height is the screen's less where the
+   columns start (--chat-top, written on them before the first paint by
+   useOffsetTop) and the page's 32px end (conversation.module.css): as the
+   page opens, its latest message is in sight, and its list is the page's
+   one box that scrolls. */
 @media (min-width: 1024px) {
-  :global(body):has(.page) {
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .page {
-    flex: 1;
-    min-height: 0;
-  }
-
   .columns {
-    flex: 1;
-    min-height: 0;
     grid-template-columns: 420px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
     grid-template-areas: "order conversation";
     align-items: start;
   }
 
-  /* 4px of room inside, 4px back outside: a focus ring at the column's edge
-     is not cut by the scroll box. */
-  .order {
-    max-height: 100%;
-    overflow-y: auto;
-    padding: 4px;
-    margin: -4px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--text-muted) transparent;
-  }
-
   .conversation {
-    max-height: 100%;
-    display: flex;
-    flex-direction: column;
+    position: sticky;
+    top: 16px;
   }
 }
 

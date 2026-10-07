@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   DASHBOARD_UI_AR,
@@ -13,6 +13,7 @@ import { StatusBadge } from "../../../shared/ui/status-badge.tsx";
 import { ordersApi } from "../api/orders-api.ts";
 import { useLiveOrders } from "../hooks/live-orders.tsx";
 import { useOrder } from "../hooks/use-order.ts";
+import { useOffsetTop } from "../hooks/use-offset-top.ts";
 import { useOrderMessages } from "../hooks/use-order-messages.ts";
 import { backTo, cancelOrder, type AdvanceOutcome } from "../lib/board.ts";
 import { detailView } from "../lib/details.ts";
@@ -105,6 +106,9 @@ function Ready({
   const [line, setLine] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Where the columns start: the conversation's height from 1024px up.
+  const columns = useRef<HTMLDivElement>(null);
+  useOffsetTop(columns, "chat-top");
 
   // `unauthorized`: the session is gone, and the gate takes the page to login.
   const onOutcome = useCallback(
@@ -155,7 +159,7 @@ function Ready({
         </div>
       </header>
 
-      <div className={styles.columns}>
+      <div ref={columns} className={styles.columns}>
         <div className={styles.order}>
           <div className={styles.summary}>
             <ul className={styles.lines}>

@@ -453,7 +453,7 @@ test("a date reads «28/9 · 14:30», never «14:30 · 28/9» (I-9 #6): its dire
   assert.match(css.slice(at, css.indexOf("}", at)), /justify-self: start;/);
 });
 
-test("from 1024px up: the page is the screen, the conversation one scroll, the latest message in sight (I-9 #7)", () => {
+test("from 1024px up: the page scrolls, the conversation sticks beside it, its latest message in sight (I-9b #1)", () => {
   const read = (file: string) =>
     readFileSync(
       fileURLToPath(
@@ -461,35 +461,63 @@ test("from 1024px up: the page is the screen, the conversation one scroll, the l
       ),
       "utf8",
     );
-  /** The declarations of `selector` inside the 1024px block. */
+  /** The 1024px block of a module. */
+  const wideBlock = (css: string) => {
+    const at = css.indexOf("@media (min-width: 1024px) {");
+    assert.notEqual(at, -1, "no 1024px block");
+    return css.slice(at, css.indexOf("\n}\n", at));
+  };
+  /** The declarations of `selector` inside it. */
   const wide = (css: string, selector: string) => {
-    const media = css.indexOf("@media (min-width: 1024px) {");
-    assert.notEqual(media, -1, "no 1024px block");
-    const at = css.indexOf(`\n  ${selector} {`, media);
+    const block = wideBlock(css);
+    const at = block.indexOf(`\n  ${selector} {`);
     assert.notEqual(at, -1, `no ${selector} from 1024px up`);
-    return css.slice(at, css.indexOf("}", at));
+    return block.slice(at, block.indexOf("}", at));
   };
   const details = read("order-details.module.css");
-  // The body is the screen's height while this page is in it, a column:
-  // the header, then the page, which takes what is left…
-  const body = wide(details, ":global(body):has(.page)");
-  assert.match(body, /height: 100dvh;/);
-  assert.match(body, /flex-direction: column;/);
-  assert.match(wide(details, ".page"), /flex: 1;\s+min-height: 0;/);
-  // …the two columns its last row, each scrolling by itself.
+  // 1. The page scrolls as any page: no screen-high body, and the order is
+  //    part of it — no scroll box of its own, anywhere.
+  assert.doesNotMatch(details, /100dvh/);
+  assert.doesNotMatch(details, /overflow(-y)?: (auto|scroll)/);
+  // 2. The conversation stays beside it while the page scrolls…
   assert.match(
-    wide(details, ".columns"),
-    /grid-template-rows: minmax\(0, 1fr\);/,
+    wide(details, ".conversation"),
+    /position: sticky;\s+top: 16px;/,
   );
-  assert.match(wide(details, ".order"), /overflow-y: auto;/);
-  assert.match(wide(details, ".conversation"), /max-height: 100%;/);
-  // The conversation fits its column — no sticky box the screen's height,
-  // which started ~450px down and hid the latest message.
+  assert.match(wide(details, ".columns"), /align-items: start;/);
+  // …and its messages are the page's one box that scrolls.
   const chat = read("conversation.module.css");
-  assert.doesNotMatch(wide(chat, ".chat"), /sticky|100dvh/);
-  const messages = wide(chat, ".messages");
-  assert.match(messages, /overflow-y: auto;/);
-  assert.match(messages, /scrollbar-color: var\(--text-muted\) transparent;/);
+  assert.match(wide(chat, ".messages"), /overflow-y: auto;/);
+  assert.equal(
+    [...chat.matchAll(/overflow(-y)?: (auto|scroll)/g)].length,
+    1,
+    "one scroll box in the conversation",
+  );
+  // 3. As the page opens, the latest message is in sight: the conversation's
+  //    height is the screen's less where the columns start — measured on them
+  //    before the first paint (a layout effect: no jump) — and the page's end.
+  assert.match(
+    wide(chat, ".chat"),
+    /max-height: max\(240px, calc\(100dvh - var\(--chat-top, 32px\) - 32px\)\);/,
+  );
+  const tsx = read("order-details.tsx");
+  assert.match(tsx, /useOffsetTop\(columns, "chat-top"\)/);
+  assert.match(tsx, /<div ref=\{columns\} className=\{styles\.columns\}>/);
+  const hook = readFileSync(
+    fileURLToPath(
+      new URL("../../features/orders/hooks/use-offset-top.ts", import.meta.url),
+    ),
+    "utf8",
+  );
+  assert.match(hook, /useLayoutEffect\(/);
+  assert.doesNotMatch(hook, /\buseEffect\(/);
+  assert.match(hook, /new ResizeObserver\(write\)/);
+  // The page's scrollbar, appearing once the order is in, moves nothing.
+  const globals = readFileSync(
+    fileURLToPath(new URL("../../app/globals.css", import.meta.url)),
+    "utf8",
+  );
+  assert.match(globals, /html \{\s+scrollbar-gutter: stable;/);
 });
 
 test("under 1024px the next step is a bar at the bottom — never the cancel (I-9 #8)", () => {
