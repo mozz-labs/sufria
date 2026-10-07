@@ -123,17 +123,23 @@ test("the masked number is a number (I-9 #2): no name — or a blank one — and
     );
 });
 
-test("the card's age: «منذ…» under 24 hours, its date and time from 24 on (I-9 #6)", () => {
-  const view = (msAgo: number) =>
-    cardView({ ...ORDER, createdAt: ago(msAgo) }, "active", "JOD", NOW).since;
-  assert.equal(view(35 * 60_000), "منذ 35 دقيقة");
-  assert.equal(view((23 * 60 + 59) * 60_000), "منذ 23 ساعة");
-  const day = new Date(NOW - 24 * 3_600_000);
-  const two = (n: number) => String(n).padStart(2, "0");
-  assert.equal(
-    view(24 * 3_600_000),
-    `${day.getDate()}/${day.getMonth() + 1} · ${two(day.getHours())}:${two(day.getMinutes())}`,
-  );
+/** A moment on the device's clock, fixed: the same wall time in any zone. */
+const at = (y: number, mo: number, d: number, h: number, mi: number) =>
+  new Date(y, mo - 1, d, h, mi).getTime();
+
+test("the card's age, on a fixed clock: «منذ…» under 24 hours, then its date — and another year's carries its year (I-9 #6, I-9b #4)", () => {
+  const now = at(2026, 10, 5, 15, 0);
+  const since = (t: number) =>
+    cardView(
+      { ...ORDER, createdAt: new Date(t).toISOString() },
+      "active",
+      "JOD",
+      now,
+    ).since;
+  assert.equal(since(at(2026, 10, 5, 14, 25)), "منذ 35 دقيقة");
+  assert.equal(since(at(2026, 10, 4, 15, 1)), "منذ 23 ساعة");
+  assert.equal(since(at(2026, 10, 4, 15, 0)), "4/10 · 15:00");
+  assert.equal(since(at(2025, 9, 28, 14, 30)), "28/9/2025 · 14:30");
 });
 
 test("pulse: only for a status changed in the last 60 seconds", () => {

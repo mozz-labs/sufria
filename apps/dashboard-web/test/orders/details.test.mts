@@ -27,6 +27,13 @@ import { createHttp } from "../../shared/api/http.ts";
 import { memorySessionStore } from "../../shared/api/session-store.ts";
 
 const NOW = Date.parse("2026-10-05T12:00:00.000Z");
+
+/** A moment on the device's clock, fixed: the same wall time in any zone. */
+const at = (y: number, mo: number, d: number, h: number, mi: number) =>
+  new Date(y, mo - 1, d, h, mi).getTime();
+const iso = (t: number) => new Date(t).toISOString();
+/** 15:00 on 5 October 2026, on the device's clock. */
+const LOCAL_NOW = at(2026, 10, 5, 15, 0);
 const PHONE = "962791234567";
 
 const ORDER: OrderDetail = {
@@ -204,9 +211,25 @@ test("the order, in its words: lines, the fee for a delivery alone, the total, p
     view.history.map((h) => h.badge),
     ["معلّق", "جاهز"],
   );
-  // Its HH:MM — after its date when that is not today on this device's clock
-  // (I-9 #6, held below): 11:54Z is yesterday at UTC−12.
-  assert.match(view.history[0]!.time, /\d\d:\d\d$/);
+  // Each status's time, exactly — on a clock fixed on the device's day
+  // (I-9b #4): 14:54 and 14:58 of today are «14:54» and «14:58» in any zone.
+  const today = detailView(
+    {
+      ...ORDER,
+      createdAt: iso(at(2026, 10, 5, 14, 54)),
+      history: [
+        { ...ORDER.history[0]!, at: iso(at(2026, 10, 5, 14, 54)) },
+        { ...ORDER.history[1]!, at: iso(at(2026, 10, 5, 14, 58)) },
+      ],
+    },
+    "JOD",
+    LOCAL_NOW,
+  );
+  assert.equal(today.since, "منذ 6 دقائق");
+  assert.deepEqual(
+    today.history.map((h) => h.time),
+    ["14:54", "14:58"],
+  );
 
   const pickup = detailView(
     {
@@ -226,42 +249,49 @@ test("the order, in its words: lines, the fee for a delivery alone, the total, p
   assert.equal(pickup.total, "13.50 شيكل");
 });
 
-test("dates after a day (I-9 #6): the header's age, and a status from before today", () => {
-  const two = (n: number) => String(n).padStart(2, "0");
-  const written = (ms: number) => {
-    const d = new Date(ms);
-    return `${d.getDate()}/${d.getMonth() + 1} · ${two(d.getHours())}:${two(d.getMinutes())}`;
-  };
-  const created = NOW - 30 * 3_600_000;
-  const accepted = NOW - 29 * 3_600_000;
+test("dates after a day, on a fixed clock (I-9 #6): the header's age, and a status from before today", () => {
   const view = detailView(
     {
       ...ORDER,
-      createdAt: new Date(created).toISOString(),
+      createdAt: iso(at(2026, 10, 4, 9, 0)),
       history: [
-        { ...ORDER.history[0]!, at: new Date(created).toISOString() },
-        { ...ORDER.history[1]!, at: new Date(accepted).toISOString() },
+        { ...ORDER.history[0]!, at: iso(at(2026, 10, 4, 9, 0)) },
+        { ...ORDER.history[1]!, at: iso(at(2026, 10, 4, 10, 0)) },
         {
           from: "ready",
           to: "completed",
           actor: "staff",
-          // This very moment: today, in any time zone.
-          at: new Date(NOW).toISOString(),
+          at: iso(LOCAL_NOW),
         },
       ],
     },
     "JOD",
-    NOW,
+    LOCAL_NOW,
   );
-  assert.equal(view.since, written(created));
-  const today = new Date(NOW);
+  assert.equal(view.since, "4/10 · 09:00");
   assert.deepEqual(
     view.history.map((h) => h.time),
-    [
-      written(created),
-      written(accepted),
-      `${two(today.getHours())}:${two(today.getMinutes())}`,
-    ],
+    ["4/10 · 09:00", "4/10 · 10:00", "15:00"],
+  );
+});
+
+test("another year's moment carries its year — the header and the history (I-9b #4)", () => {
+  const view = detailView(
+    {
+      ...ORDER,
+      createdAt: iso(at(2025, 9, 28, 14, 30)),
+      history: [
+        { ...ORDER.history[0]!, at: iso(at(2025, 9, 28, 14, 30)) },
+        { ...ORDER.history[1]!, at: iso(at(2026, 1, 2, 9, 5)) },
+      ],
+    },
+    "JOD",
+    LOCAL_NOW,
+  );
+  assert.equal(view.since, "28/9/2025 · 14:30");
+  assert.deepEqual(
+    view.history.map((h) => h.time),
+    ["28/9/2025 · 14:30", "2/1 · 09:05"],
   );
 });
 
