@@ -47,6 +47,15 @@ input {
   color: inherit;
 }
 
+/* Every box that scrolls inside the page has a thin bar in the tokens' grey,
+   light and dark (I-9b #2): the cancel dialog and its field, which scroll by
+   the browser's own rules, here; the conversation in its own module. */
+textarea,
+dialog {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-muted) transparent;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
