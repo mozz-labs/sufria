@@ -86,3 +86,20 @@ test("the details page goes back where it was opened from", () => {
     label: "الطلبات",
   });
 });
+
+test("the masked number in the numbers' font, on the card and on the details page (I-9 #2)", () => {
+  const details = readFileSync(`${COMPONENTS}order-details.tsx`, "utf8");
+  for (const [file, src] of [
+    ["order-card.tsx", tsx],
+    ["order-details.tsx", details],
+  ] as const) {
+    const at = src.indexOf("<bdi\n");
+    const bdi = src.slice(at, src.indexOf("</bdi>", at));
+    assert.match(bdi, /\{view\.customer\}/, `${file}: the customer's <bdi>`);
+    assert.match(
+      bdi,
+      /view\.customerMasked\s*\?\s*`num \$\{styles\.customer\}`/,
+      `${file}: .num when the customer is the masked number`,
+    );
+  }
+});

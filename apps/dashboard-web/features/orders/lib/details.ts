@@ -22,7 +22,7 @@ import {
   type OrderStatus,
   type StaffAction,
 } from "@sufria/shared";
-import { minutesSince } from "./board.ts";
+import { isMaskedCustomer, minutesSince } from "./board.ts";
 
 /** «الطلب» polls every 10 seconds, its conversation every 30 (I-6). */
 export const DETAIL_POLL_MS = 10_000;
@@ -37,6 +37,8 @@ export type DetailView = {
   kind: string;
   /** «•••• 1234» — the full number is in `chat` alone. */
   customer: string;
+  /** `customer` is the masked number: set in the numbers' font. */
+  customerMasked: boolean;
   since: string;
   /** One per item: «شاورما ×2» and its line total with the currency. */
   lines: { label: string; amount: string }[];
@@ -71,6 +73,7 @@ export function detailView(
     badge: ORDER_STATUS_LABEL_AR[order.status],
     kind: DASHBOARD_UI_AR.fulfillment[order.fulfillmentType],
     customer: customerLabelAr(order.customer),
+    customerMasked: isMaskedCustomer(order.customer),
     since: relativeTimeAr(minutesSince(order.createdAt, now)),
     // The card's rule for each line: a quantity of 1 is the name alone.
     lines: order.items.map((item) => ({

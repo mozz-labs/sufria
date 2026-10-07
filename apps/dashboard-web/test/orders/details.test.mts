@@ -170,6 +170,14 @@ test("🔴 «راسل الزبون»: wa.me with the full number, which nothing 
   );
   assert.equal(view.chat, `https://wa.me/${PHONE}`);
   assert.equal(view.customer, "•••• 4567");
+  // A number, in the numbers' font (I-9 #2); a name stays text.
+  assert.equal(view.customerMasked, true);
+  const named = detailView(
+    { ...ORDER, customer: { name: "أبو خالد", phone: PHONE } },
+    "JOD",
+    NOW,
+  );
+  assert.equal(named.customerMasked, false);
   // Everything the page shows as text: the view without its link.
   const shown = JSON.stringify({ ...view, chat: null });
   assert.doesNotMatch(shown, new RegExp(PHONE.slice(0, 8)));

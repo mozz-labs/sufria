@@ -133,9 +133,11 @@
   font-weight: 600;
 }
 
-/* A long name is cut with …, never pushed past the card. */
+/* A long name is cut with …, never pushed past the card. The masked number
+   is .num (I-9 #2) — held at the row's weight, like the order number. */
 .customer {
   min-width: 0;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
 }

@@ -141,7 +141,13 @@ function Ready({
             {view.badge}
           </StatusBadge>
           <span className={styles.kind}>{view.kind}</span>
-          <bdi className={styles.customer}>{view.customer}</bdi>
+          <bdi
+            className={
+              view.customerMasked ? `num ${styles.customer}` : styles.customer
+            }
+          >
+            {view.customer}
+          </bdi>
           <span className={`num ${styles.since}`}>{view.since}</span>
         </div>
       </header>

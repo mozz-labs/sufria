@@ -50,7 +50,13 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
                 {view.number}
               </bdi>
             </Link>
-            <bdi className={styles.customer}>{view.customer}</bdi>
+            <bdi
+              className={
+                view.customerMasked ? `num ${styles.customer}` : styles.customer
+              }
+            >
+              {view.customer}
+            </bdi>
           </div>
           <div className={styles.details}>{view.details}</div>
           {view.reason && (

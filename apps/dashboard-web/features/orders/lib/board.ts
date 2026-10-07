@@ -45,6 +45,15 @@ export function pulses(order: OrderListItem, now: number): boolean {
 }
 
 /**
+ * No name: the screen writes the customer as the masked number, «•••• 1234»
+ * (`customerLabelAr`, the same rule — a blank name is none) — a number,
+ * in the numbers' font (brief I §1.5, I-9 #2).
+ */
+export function isMaskedCustomer(customer: { name: string | null }): boolean {
+  return !customer.name?.trim();
+}
+
+/**
  * An order's details page (brief I §2.1): its id — what the API takes — and
  * `?from=history` when it was opened from «السجل», for the back link.
  */
@@ -58,6 +67,8 @@ export type CardView = {
   href: string;
   number: string;
   customer: string;
+  /** `customer` is the masked number: set in the numbers' font. */
+  customerMasked: boolean;
   /** «استلام · شاورما ×2 · بطاطا» — grey, cut with … when long. */
   details: string;
   /** Under the details, in history, for a cancellation with a reason. */
@@ -82,6 +93,7 @@ export function cardView(
     href: orderHref(order.id, tab),
     number: orderNumberLabel(order.orderNumber),
     customer: customerLabelAr(order.customer),
+    customerMasked: isMaskedCustomer(order.customer),
     details: summary
       ? `${kind}${DASHBOARD_UI_AR.itemSeparator}${summary}`
       : kind,

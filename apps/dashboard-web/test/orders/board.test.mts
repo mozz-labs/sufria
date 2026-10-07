@@ -6,12 +6,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DASHBOARD_UI_AR, type OrderListItem } from "@sufria/shared";
+import {
+  DASHBOARD_UI_AR,
+  customerLabelAr,
+  type OrderListItem,
+} from "@sufria/shared";
 import { createOrdersApi } from "../../features/orders/api/orders-api.ts";
 import {
   PULSE_MS,
   advance,
   cardView,
+  isMaskedCustomer,
   pulses,
   replaceInActive,
 } from "../../features/orders/lib/board.ts";
@@ -66,6 +71,7 @@ test("cardView: the brief's card, right to left, all from shared", () => {
     href: `/orders/${ORDER.id}`,
     number: "#102",
     customer: "•••• 4321",
+    customerMasked: true,
     details: "توصيل · شاورما ×2 · بطاطا",
     reason: null,
     badge: "قيد التحضير",
@@ -88,6 +94,33 @@ test("cardView: history has no button, and a cancelled order shows its reason", 
   assert.equal(view.amount, "13.50 شيكل");
   // The same order in the active tab never shows a reason line.
   assert.equal(cardView(cancelled, "active", "ILS", NOW).reason, null);
+});
+
+test("the masked number is a number (I-9 #2): no name — or a blank one — and only then", () => {
+  for (const name of [null, "", "  "]) {
+    const view = cardView(
+      { ...ORDER, customer: { name, phone: "+962790004321" } },
+      "active",
+      "JOD",
+      NOW,
+    );
+    assert.equal(view.customer, "•••• 4321");
+    assert.equal(view.customerMasked, true);
+  }
+  const named = cardView(
+    { ...ORDER, customer: { name: "أبو خالد", phone: "+962790004321" } },
+    "active",
+    "JOD",
+    NOW,
+  );
+  assert.equal(named.customer, "أبو خالد");
+  assert.equal(named.customerMasked, false);
+  // The same rule as customerLabelAr: masked exactly when it writes «••••».
+  for (const name of [null, "", " ", "سارة", " سارة "])
+    assert.equal(
+      isMaskedCustomer({ name }),
+      customerLabelAr({ name, phone: "+962790004321" }).startsWith("••••"),
+    );
 });
 
 test("pulse: only for a status changed in the last 60 seconds", () => {
