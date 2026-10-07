@@ -46,6 +46,8 @@ pnpm dev              # run all services in parallel
 pnpm test:security    # chain-isolation gate — 15 assertions + 4 negative controls
 pnpm test:db          # critical primitives + schema drift + the migration tool
 pnpm check:rtl        # dashboard-web: logical properties only, no reversing (in verify and CI)
+pnpm check:budget     # dashboard-web: JS + fonts before first paint, per page, vs perf-budget.json
+                      # (builds first — stop `next dev`; NOT in verify; end of every brief, before every merge)
 pnpm verify           # format:check + lint + typecheck + test — run before any push
 pnpm --filter @sufria/dashboard-web dev    # single package
 # Dev only, never a real restaurant: change an order's status through the API,
@@ -317,6 +319,20 @@ right to left by `dir="rtl"` on `<html>` alone, no horizontal scroll:
 the first two items by file and line; a rare exception carries
 `rtl-ok: <why>` on its line.
 
+**The size budget (brief I-9b #5, Mohammed, 7 October).** `pnpm check:budget`
+builds shared and the app (production, `NEXT_PUBLIC_API_URL` fixed so the
+bytes do not move with a machine's `.env`), then `scripts/check-budget.mjs`
+reads `.next` and counts, for `/login` · `/orders` · `/history` ·
+`/orders/[id]`, what a browser loads before its first paint: the JS — Next's
+root files plus the page's entry chunks (`build-manifest.json`,
+`page_client-reference-manifest.js`), gzip, the `noModule` polyfills aside —
+and the fonts next/font preloads for the page (`next-font-manifest.json`).
+The manifests are checked against the static pages' HTML; a mismatch fails.
+It fails when a page passes its numbers in `apps/dashboard-web/perf-budget.json`
+— which only come down; up only by Mohammed's decision (`--write` resets
+them). Not in `verify` or CI (a build). A server component's imports never
+reach the browser and are not counted; a client component's are.
+
 ## Known gaps
 
 - **`pnpm db:reset` assumes Docker and does nothing useful on a native
@@ -551,6 +567,18 @@ the first two items by file and line; a rare exception carries
   **لا تفحص** مصدر `shared` نفسه — `normalize.ts` يحمل `٠-٩` بقصد لتطبيع مدخلات الزبون. ما عدا ذلك
   (المحرّك، الـAPI): افحص يدويا.
 - **الخطوط:** IBM Plex Sans Arabic للنص · IBM Plex Mono للأرقام. Almarai مشطوب.
+  أوزانها وpreload وطريقة تحميلها قرار تصميم مع محمد — ولا تغيير بلاه (بريف ط-9ب).
+- **قاعدة الأداء — قرار محمد، 7 أكتوبر (بريف ط-9ب §3):**
+
+  | نوع الصفحة | الهدف |
+  |---|---|
+  | **الصفحات العامة** (الموقع، وصفحة «منيو برابط» إذا انبنت) | Lighthouse **100** تلفون ولابتوب |
+  | **تحميل اللوحة** (ومنها `/login`) | تلفون **≥ 90** · لابتوب **≥ 95** هلق، و**100** بعد الاستضافة |
+  | **تفاعل اللوحة** | **INP ≤ 200ms** على معالج ×4 للأفعال الأساسية |
+  | **كل الصفحات** | **حد حجم ثابت** (`check:budget`): ما بيطلع، وكل تحسين بينزّله |
+
+  **مؤجّل للاستضافة:** الـAPI على نفس الدومين (بيشيل طلب الـpreflight) · الجلسة بكوكي httpOnly عشان
+  السيرفر يرسم البيانات (أداء وأمان). 🔴 ممنوع الحيل: أي تعديل بيرفع الرقم بلا ما يحسّن إشي حقيقي.
 - **لون البراند:** سُمّاق `#75284A` فاتح / `#B54874` غامق. الألوان كلها في `packages/shared/src/design-tokens.ts`
   وحده، ومنه تتولّد متغيّرات CSS. البوابة `pnpm check:contrast` (جزء من `pnpm verify` وخطوة CI) تعدّد الأزواج
   منه — كل نص فوق كل خلفية يقع عليها، وكل شارة، بالوضعين — بحدّ 4.5:1.

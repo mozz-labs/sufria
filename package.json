@@ -22,6 +22,7 @@
     "check:contrast": "tsc -b packages/shared && node scripts/check-contrast.mjs",
     "check:numerals": "tsc -b packages/shared && node scripts/check-numerals.mjs",
     "check:rtl": "node scripts/check-rtl.mjs",
+    "check:budget": "tsc -b packages/shared && NEXT_PUBLIC_API_URL=http://localhost:3002 pnpm --filter @sufria/dashboard-web build && node scripts/check-budget.mjs",
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm check:numerals && pnpm check:rtl && pnpm test",
