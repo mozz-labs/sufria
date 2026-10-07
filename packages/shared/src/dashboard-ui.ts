@@ -242,6 +242,48 @@ export function clockTime(iso: string): string {
   return `${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
+/** From here on, an order's age is its date and time (brief I-9 #6). */
+export const DAY_MINUTES = 24 * 60;
+
+/**
+ * «28/9 · 14:30» — day/month and the `clockTime`, on the device's clock; the
+ * year only when it is not `now`'s: «28/9/2025 · 14:30» (brief I-9 #6).
+ *
+ * 🔴 Built from the numbers, like `clockTime`: `toLocaleDateString`'s digits
+ *    are the browser language's, and `ar-JO` writes «٢٨/٩».
+ */
+export function dateTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  const year =
+    d.getFullYear() === new Date(now).getFullYear()
+      ? ""
+      : `/${d.getFullYear()}`;
+  return `${d.getDate()}/${d.getMonth() + 1}${year} · ${clockTime(iso)}`;
+}
+
+/**
+ * An order's age on the card and the details' header (brief I-9 #6):
+ * «منذ…» under 24 hours, its `dateTime` from 24 on.
+ */
+export function sinceAr(iso: string, now: number): string {
+  const minutes = Math.floor((now - Date.parse(iso)) / 60_000);
+  return minutes < DAY_MINUTES ? relativeTimeAr(minutes) : dateTime(iso, now);
+}
+
+/**
+ * A status's time in the history (brief I-9 #6): «14:30» on the device's
+ * today, «28/9 · 14:30» before it — so 23:50 seen at 00:10 is yesterday's.
+ */
+export function historyTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  const today = new Date(now);
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  return sameDay ? clockTime(iso) : dateTime(iso, now);
+}
+
 /**
  * The customer's WhatsApp chat — `https://wa.me/<number>`, its `+` and spaces
  * removed (brief I §4, I-6). The full number lives in this link alone; the

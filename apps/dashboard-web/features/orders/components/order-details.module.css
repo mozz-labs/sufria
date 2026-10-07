@@ -240,7 +240,10 @@
   overflow-wrap: anywhere;
 }
 
+/* Left to right inside (a date and its time), at the start of its column
+   all the same — the grid's start, not the text's (I-9 #6). */
 .time {
+  justify-self: start;
   font-size: 13px;
   color: var(--text-secondary);
 }

@@ -12,10 +12,11 @@ import {
   amountAr,
   clockTime,
   customerLabelAr,
+  historyTime,
   itemsSummaryAr,
   nextStaffAction,
   orderNumberLabel,
-  relativeTimeAr,
+  sinceAr,
   waLink,
   type Currency,
   type OrderDetail,
@@ -23,7 +24,7 @@ import {
   type OrderStatus,
   type StaffAction,
 } from "@sufria/shared";
-import { isMaskedCustomer, minutesSince } from "./board.ts";
+import { isMaskedCustomer } from "./board.ts";
 
 /** «الطلب» polls every 10 seconds, its conversation every 30 (I-6). */
 export const DETAIL_POLL_MS = 10_000;
@@ -51,7 +52,8 @@ export type DetailView = {
   /** The customer's own words: shown `dir="auto"`. A delivery alone. */
   address: string | null;
   /**
-   * Each status the order went through, with its `HH:MM` on this device.
+   * Each status the order went through, with its time on this device:
+   * `HH:MM` today, its date before.
    * The cancellation's carries the reason — staff's words, sent to the
    * customer as written — shown right under «ملغى» (I-9 #4); every other
    * entry, and a cancellation without one, `null`.
@@ -88,7 +90,8 @@ export function detailView(
     kind: DASHBOARD_UI_AR.fulfillment[order.fulfillmentType],
     customer: customerLabelAr(order.customer),
     customerMasked: isMaskedCustomer(order.customer),
-    since: relativeTimeAr(minutesSince(order.createdAt, now)),
+    // «منذ…» under 24 hours, its date from 24 on (I-9 #6).
+    since: sinceAr(order.createdAt, now),
     // The card's rule for each line: a quantity of 1 is the name alone.
     lines: order.items.map((item) => ({
       label: itemsSummaryAr([item]),
@@ -102,7 +105,8 @@ export function detailView(
       key: `${i}-${h.to}`,
       status: h.to,
       badge: ORDER_STATUS_LABEL_AR[h.to],
-      time: clockTime(h.at),
+      // Today's «14:30»; before today «28/9 · 14:30» (I-9 #6).
+      time: historyTime(h.at, now),
       reason: i === cancelled ? reason : null,
     })),
     action: nextStaffAction(order.status, order.fulfillmentType),

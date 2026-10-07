@@ -148,7 +148,10 @@ function Ready({
           >
             {view.customer}
           </bdi>
-          <span className={`num ${styles.since}`}>{view.since}</span>
+          {/* «منذ…» right to left, a date left to right (I-9 #6). */}
+          <span className={`num ${styles.since}`} dir="auto">
+            {view.since}
+          </span>
         </div>
       </header>
 
@@ -195,7 +198,11 @@ function Ready({
                 <StatusBadge status={h.status} className={styles.historyBadge}>
                   {h.badge}
                 </StatusBadge>
-                <span className={`num ${styles.time}`}>{h.time}</span>
+                {/* Numbers alone — «14:30», «28/9 · 14:30»: one group, left
+                    to right (I-9 #6). */}
+                <span className={`num ${styles.time}`} dir="ltr">
+                  {h.time}
+                </span>
                 {/* Right under «ملغى»: why — staff's words, as the customer
                     received them. */}
                 {h.reason !== null && (

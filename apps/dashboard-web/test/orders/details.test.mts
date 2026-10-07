@@ -204,7 +204,9 @@ test("the order, in its words: lines, the fee for a delivery alone, the total, p
     view.history.map((h) => h.badge),
     ["معلّق", "جاهز"],
   );
-  assert.match(view.history[0]!.time, /^\d\d:\d\d$/);
+  // Its HH:MM — after its date when that is not today on this device's clock
+  // (I-9 #6, held below): 11:54Z is yesterday at UTC−12.
+  assert.match(view.history[0]!.time, /\d\d:\d\d$/);
 
   const pickup = detailView(
     {
@@ -222,6 +224,45 @@ test("the order, in its words: lines, the fee for a delivery alone, the total, p
   assert.equal(pickup.address, null);
   assert.equal(pickup.payment, "محصَّل");
   assert.equal(pickup.total, "13.50 شيكل");
+});
+
+test("dates after a day (I-9 #6): the header's age, and a status from before today", () => {
+  const two = (n: number) => String(n).padStart(2, "0");
+  const written = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getDate()}/${d.getMonth() + 1} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+  };
+  const created = NOW - 30 * 3_600_000;
+  const accepted = NOW - 29 * 3_600_000;
+  const view = detailView(
+    {
+      ...ORDER,
+      createdAt: new Date(created).toISOString(),
+      history: [
+        { ...ORDER.history[0]!, at: new Date(created).toISOString() },
+        { ...ORDER.history[1]!, at: new Date(accepted).toISOString() },
+        {
+          from: "ready",
+          to: "completed",
+          actor: "staff",
+          // This very moment: today, in any time zone.
+          at: new Date(NOW).toISOString(),
+        },
+      ],
+    },
+    "JOD",
+    NOW,
+  );
+  assert.equal(view.since, written(created));
+  const today = new Date(NOW);
+  assert.deepEqual(
+    view.history.map((h) => h.time),
+    [
+      written(created),
+      written(accepted),
+      `${two(today.getHours())}:${two(today.getMinutes())}`,
+    ],
+  );
 });
 
 test("the reason right under «ملغى» in the history (I-9 #4): the cancellation's entry alone", () => {
@@ -383,4 +424,31 @@ test("the history's times in one column, whatever the badge's width (I-9 #5)", (
   assert.match(rule(".historyItem"), /grid-template-columns: subgrid;/);
   // A badge keeps its own width inside the column.
   assert.match(rule(".historyBadge"), /justify-self: start;/);
+});
+
+test("a date reads «28/9 · 14:30», never «14:30 · 28/9» (I-9 #6): its direction on every span", () => {
+  const read = (file: string) =>
+    readFileSync(
+      fileURLToPath(
+        new URL(`../../features/orders/components/${file}`, import.meta.url),
+      ),
+      "utf8",
+    );
+  /** The opening tag that holds `{expr}`. */
+  const tagOf = (src: string, expr: string) => {
+    const at = src.indexOf(`{${expr}}`);
+    assert.notEqual(at, -1, `no {${expr}}`);
+    return src.slice(src.lastIndexOf("<", at), at);
+  };
+  // «منذ…» is Arabic, a date is numbers: auto picks right to left for the
+  // one, left to right for the other (measured in Chrome 145).
+  assert.match(tagOf(read("order-card.tsx"), "view.since"), /dir="auto"/);
+  const details = read("order-details.tsx");
+  assert.match(tagOf(details, "view.since"), /dir="auto"/);
+  // The history's time is numbers alone.
+  assert.match(tagOf(details, "h.time"), /dir="ltr"/);
+  // …and still starts where its column starts, not at the text's left.
+  const css = read("order-details.module.css");
+  const at = css.indexOf("\n.time {");
+  assert.match(css.slice(at, css.indexOf("}", at)), /justify-self: start;/);
 });

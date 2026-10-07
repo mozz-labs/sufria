@@ -72,7 +72,11 @@ export function OrderCard({ order, tab, currency, now, onOutcome }: Props) {
 
         <div className={styles.figs}>
           <span className={`num ${styles.total}`}>{view.amount}</span>
-          <span className={`num ${styles.since}`}>{view.since}</span>
+          {/* «منذ…» reads right to left; a date, «28/9 · 14:30», left to
+              right as one group (I-9 #6): auto picks by the text. */}
+          <span className={`num ${styles.since}`} dir="auto">
+            {view.since}
+          </span>
         </div>
 
         {view.action && (

@@ -123,6 +123,19 @@ test("the masked number is a number (I-9 #2): no name — or a blank one — and
     );
 });
 
+test("the card's age: «منذ…» under 24 hours, its date and time from 24 on (I-9 #6)", () => {
+  const view = (msAgo: number) =>
+    cardView({ ...ORDER, createdAt: ago(msAgo) }, "active", "JOD", NOW).since;
+  assert.equal(view(35 * 60_000), "منذ 35 دقيقة");
+  assert.equal(view((23 * 60 + 59) * 60_000), "منذ 23 ساعة");
+  const day = new Date(NOW - 24 * 3_600_000);
+  const two = (n: number) => String(n).padStart(2, "0");
+  assert.equal(
+    view(24 * 3_600_000),
+    `${day.getDate()}/${day.getMonth() + 1} · ${two(day.getHours())}:${two(day.getMinutes())}`,
+  );
+});
+
 test("pulse: only for a status changed in the last 60 seconds", () => {
   assert.equal(pulses({ ...ORDER, statusChangedAt: ago(0) }, NOW), true);
   assert.equal(

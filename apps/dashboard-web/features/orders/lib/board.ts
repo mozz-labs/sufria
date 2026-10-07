@@ -13,7 +13,7 @@ import {
   itemsSummaryAr,
   nextStaffAction,
   orderNumberLabel,
-  relativeTimeAr,
+  sinceAr,
   type Currency,
   type OrderListItem,
   type OrderTab,
@@ -26,11 +26,6 @@ export const PULSE_MS = 60_000;
 
 /** The active tab polls every 10 seconds (ADR-003: 10 to 15). */
 export const POLL_MS = 10_000;
-
-/** Whole minutes from an ISO time to `now`; never negative. */
-export function minutesSince(iso: string, now: number): number {
-  return Math.max(0, Math.floor((now - Date.parse(iso)) / 60_000));
-}
 
 /**
  * The pulse is the API's `statusChangedAt` and nothing else — no status
@@ -103,7 +98,8 @@ export function cardView(
         : null,
     badge: ORDER_STATUS_LABEL_AR[order.status],
     amount: amountAr(order.total, currency),
-    since: relativeTimeAr(minutesSince(order.createdAt, now)),
+    // «منذ…» under 24 hours, its date from 24 on (I-9 #6).
+    since: sinceAr(order.createdAt, now),
     pulse: pulses(order, now),
     // History has no button (G-4).
     action:
