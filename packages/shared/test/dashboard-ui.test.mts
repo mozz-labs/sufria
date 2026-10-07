@@ -56,6 +56,8 @@ test("DASHBOARD_UI_AR is the brief's text, verbatim", () => {
       deliveryFee: "رسوم التوصيل",
       total: "المجموع",
       address: "العنوان",
+      // Brief I-9 #4 (Mohammed, 6 October).
+      cancellationReason: "سبب الإلغاء",
       messageCustomer: "راسل الزبون",
       cancelOrder: "إلغاء الطلب",
     },

@@ -50,10 +50,19 @@ export type DetailView = {
   payment: string | null;
   /** The customer's own words: shown `dir="auto"`. A delivery alone. */
   address: string | null;
-  /** Staff's words, sent to the customer as written. Cancelled alone. */
-  reason: string | null;
-  /** Each status the order went through, with its `HH:MM` on this device. */
-  history: { key: string; status: OrderStatus; badge: string; time: string }[];
+  /**
+   * Each status the order went through, with its `HH:MM` on this device.
+   * The cancellation's carries the reason — staff's words, sent to the
+   * customer as written — shown right under «ملغى» (I-9 #4); every other
+   * entry, and a cancellation without one, `null`.
+   */
+  history: {
+    key: string;
+    status: OrderStatus;
+    badge: string;
+    time: string;
+    reason: string | null;
+  }[];
   /** The next step — the card's own; `null` once the order is done. */
   action: StaffAction | null;
   /** «إلغاء الطلب» — wherever the staff transitions allow `cancelled`. */
@@ -68,6 +77,10 @@ export function detailView(
   now: number,
 ): DetailView {
   const delivery = order.fulfillmentType === "delivery";
+  const reason =
+    order.status === "cancelled" ? order.cancellationReason || null : null;
+  // The last «ملغى»: a cancellation is the end of the history.
+  const cancelled = order.history.findLastIndex((h) => h.to === "cancelled");
   return {
     number: orderNumberLabel(order.orderNumber),
     status: order.status,
@@ -85,12 +98,12 @@ export function detailView(
     total: amountAr(order.total, currency),
     payment: PAYMENT_STATUS_LABEL_AR[order.paymentStatus] ?? null,
     address: delivery ? order.deliveryAddress : null,
-    reason: order.status === "cancelled" ? order.cancellationReason : null,
     history: order.history.map((h, i) => ({
       key: `${i}-${h.to}`,
       status: h.to,
       badge: ORDER_STATUS_LABEL_AR[h.to],
       time: clockTime(h.at),
+      reason: i === cancelled ? reason : null,
     })),
     action: nextStaffAction(order.status, order.fulfillmentType),
     canCancel: STAFF_TRANSITIONS[order.status].includes("cancelled"),

@@ -67,6 +67,11 @@ export const DASHBOARD_UI_AR = {
     deliveryFee: "رسوم التوصيل",
     total: "المجموع",
     address: "العنوان",
+    /**
+     * Over the reason, under «ملغى» in the history — brief I-9 #4, the one
+     * new text (Mohammed's approval, 6 October).
+     */
+    cancellationReason: "سبب الإلغاء",
     messageCustomer: "راسل الزبون",
     cancelOrder: "إلغاء الطلب",
   },

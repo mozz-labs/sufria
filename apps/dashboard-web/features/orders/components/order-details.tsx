@@ -189,17 +189,25 @@ function Ready({
             </div>
           )}
 
-          {view.reason !== null && (
-            <p className={styles.reason} dir="auto">
-              {view.reason}
-            </p>
-          )}
-
           <ol className={styles.history}>
             {view.history.map((h) => (
               <li key={h.key} className={styles.historyItem}>
-                <StatusBadge status={h.status}>{h.badge}</StatusBadge>
+                <StatusBadge status={h.status} className={styles.historyBadge}>
+                  {h.badge}
+                </StatusBadge>
                 <span className={`num ${styles.time}`}>{h.time}</span>
+                {/* Right under «ملغى»: why — staff's words, as the customer
+                    received them. */}
+                {h.reason !== null && (
+                  <div className={styles.reason}>
+                    <span className={styles.label}>
+                      {T.details.cancellationReason}
+                    </span>
+                    <p className={styles.reasonText} dir="auto">
+                      {h.reason}
+                    </p>
+                  </div>
+                )}
               </li>
             ))}
           </ol>

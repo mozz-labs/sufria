@@ -199,7 +199,7 @@ test("the order, in its words: lines, the fee for a delivery alone, the total, p
   assert.equal(view.total, "13.50 د.أ");
   assert.equal(view.payment, null);
   assert.equal(view.address, "شارع الجامعة، بناية 12");
-  assert.equal(view.reason, null);
+  assert.ok(view.history.every((h) => h.reason === null));
   assert.deepEqual(
     view.history.map((h) => h.badge),
     ["معلّق", "جاهز"],
@@ -222,12 +222,59 @@ test("the order, in its words: lines, the fee for a delivery alone, the total, p
   assert.equal(pickup.address, null);
   assert.equal(pickup.payment, "محصَّل");
   assert.equal(pickup.total, "13.50 شيكل");
-  const cancelled = detailView(
-    { ...ORDER, status: "cancelled", cancellationReason: "نفد الخبز" },
-    "JOD",
-    NOW,
+});
+
+test("the reason right under «ملغى» in the history (I-9 #4): the cancellation's entry alone", () => {
+  const history: OrderDetail["history"] = [
+    ...ORDER.history,
+    {
+      from: "ready",
+      to: "cancelled",
+      actor: "staff",
+      at: "2026-10-05T11:59:00.000Z",
+    },
+  ];
+  const cancelled = (cancellationReason: string | null) =>
+    detailView(
+      { ...ORDER, status: "cancelled", cancellationReason, history },
+      "JOD",
+      NOW,
+    );
+  assert.deepEqual(
+    cancelled("نفد الخبز").history.map((h) => [h.badge, h.reason]),
+    [
+      ["معلّق", null],
+      ["جاهز", null],
+      ["ملغى", "نفد الخبز"],
+    ],
   );
-  assert.equal(cancelled.reason, "نفد الخبز");
+  // Without a reason: nothing at all — no label over an empty line.
+  assert.deepEqual(
+    cancelled(null).history.map((h) => h.reason),
+    [null, null, null],
+  );
+  // Under «ملغى» and nowhere else: no longer under «العنوان».
+  assert.equal("reason" in cancelled("نفد الخبز"), false);
+
+  const tsx = readFileSync(
+    fileURLToPath(
+      new URL(
+        "../../features/orders/components/order-details.tsx",
+        import.meta.url,
+      ),
+    ),
+    "utf8",
+  );
+  const item = tsx.slice(
+    tsx.indexOf("view.history.map("),
+    tsx.indexOf("</li>", tsx.indexOf("view.history.map(")),
+  );
+  assert.match(item, /h\.reason !== null/);
+  assert.match(
+    item,
+    /className=\{styles\.label\}>\s*\{T\.details\.cancellationReason\}/,
+  );
+  assert.match(item, /dir="auto">\s*\{h\.reason\}/);
 });
 
 const message = (

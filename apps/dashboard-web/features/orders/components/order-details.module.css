@@ -202,11 +202,6 @@
   overflow-wrap: anywhere;
 }
 
-.reason {
-  font-size: 15px;
-  overflow-wrap: anywhere;
-}
-
 .history {
   list-style: none;
   display: flex;
@@ -214,10 +209,31 @@
   gap: 6px;
 }
 
+/* A status per row — its badge, its time — and a cancellation's reason
+   right under its row, across both (I-9 #4). */
 .historyItem {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
+}
+
+.historyBadge {
+  justify-self: start;
+}
+
+/* «سبب الإلغاء» over the reason: the same look as «العنوان» over the
+   address. */
+.reason {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reasonText {
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .time {
