@@ -51,6 +51,13 @@ const EnvSchema = z.object({
    */
   NOTIFY_POLL_MS: z.coerce.number().int().nonnegative().default(5000),
 
+  /**
+   * مهلة الجلسة (بريف ح §2): جلسة سكتت هالعدد من الدقائق أو أكتر بتنتهي عند
+   * أول رسالة بعدها، والزبون بيبلّش من الترحيب. موجب بس — `0` كان معناه إن
+   * كل رسالة بتنهي الجلسة اللي قبلها، فما في محادثة أصلا.
+   */
+  SESSION_IDLE_MINUTES: z.coerce.number().int().positive().default(60),
+
   ENGINE_PORT: z.coerce.number().int().positive().default(3001),
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
 

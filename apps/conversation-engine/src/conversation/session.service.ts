@@ -1,4 +1,4 @@
-import { and, desc, eq, notInArray } from "drizzle-orm";
+import { and, desc, eq, notInArray, sql } from "drizzle-orm";
 import {
   closedMessageAr,
   conversationSessions,
@@ -9,6 +9,7 @@ import {
   type Currency,
 } from "@sufria/shared";
 
+import { env } from "../config/env.js";
 import { advanceSessionState } from "../db/critical-primitives.js";
 import type { TenantTx } from "../db/types.js";
 import { logger, maskPhone } from "../logger.js";
@@ -21,6 +22,7 @@ import { handleBrowsingMessage } from "./browsing.js";
 import { handleCartReviewMessage } from "./cart-review.js";
 import { handleFulfillmentMessage } from "./fulfillment.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
+import { isSessionExpired } from "./session-idle.js";
 
 /**
  * المحادثة: بوابة ساعات الدوام، فتح الجلسة، أول رد — والتصفّح والسلّة (ب-4).
@@ -30,10 +32,21 @@ import { deliverMenu, prepareMenu } from "./menu-delivery.js";
  * `last_message_at` وبس — مهام جاية.
  *
  * ⛔ ولا عنوان، ولا دفع، ولا إنشاء طلب. و«تم» ب-5.
+ *
+ * جلسة نشطة سكتت `SESSION_IDLE_MINUTES` أو أكتر بتصير `abandoned` عند أول
+ * رسالة بعدها، والرسالة بتمشي بمسار الجلسة الجديدة — بريف ح.
  */
 
 /** الحالات اللي معناها "الجلسة خلصت". نفس تعريف 0002 و0007 بالضبط. */
 const CLOSED_STATES = ["order_placed", "abandoned"] as const;
+
+/** جلسة نشطة كما انقرأت قبل أي قفل — مع سكوتها محسوبا بساعة القاعدة. */
+interface ActiveSession {
+  id: string;
+  state: (typeof conversationSessions.$inferSelect)["state"];
+  /** `now() - last_message_at` بالثواني، من القاعدة (بريف ح §0). */
+  idleSeconds: number;
+}
 
 export type ConversationOutcome =
   /** جلسة انفتحت، والترحيب والقائمة انبعثوا. */
@@ -123,11 +136,16 @@ export class ConversationService {
    * 🔴 البديل — اختبار بيحسب "الساعة كم هلأ" ويبني ساعات دوام حواليها — بيمر
    *    أو بيسقط حسب وقت تشغيله، وبينكسر عند منتصف الليل وبالتوقيت الصيفي. ساعة
    *    محقونة بتخلّي حالة "مطعم بيسكّر الساعة 2:00 ص" تنكتب كحقيقة ثابتة.
+   *
+   * 🔴 مهلة الجلسة **ما بتقرأ** هالساعة: سكوت الجلسة بينحسب بـ`now()` القاعدة
+   *    (بريف ح §0)، فساعة محقونة باختبار ما بتنهي جلسة ولا بتنقذها.
    */
   constructor(
     /** مكشوف عشان مالك المعاملة يفرّغ طابور ما بعد الـCOMMIT (ج §8). */
     readonly sender: WhatsAppSender,
     private readonly now: () => Date = () => new Date(),
+    /** مهلة الجلسة بالدقائق (بريف ح §2). */
+    private readonly idleMinutes: number = env().SESSION_IDLE_MINUTES,
   ) {}
 
   /**
@@ -150,7 +168,25 @@ export class ConversationService {
     // ١. جلسة نشطة موجودة؟ وقتها ما في ترحيب ولا بوابة — الرسالة انخزنت،
     //    وبس بينتعش وقت آخر رسالة.
     // ---------------------------------------------------------------------
-    const existing = await this.findActiveSession(tx, ctx.from);
+    let existing = await this.findActiveSession(tx, ctx.from);
+
+    // ---------------------------------------------------------------------
+    // 🔴 مهلة الجلسة — بريف ح. جلسة سكتت `idleMinutes` أو أكتر بتنتهي
+    //    **هون، عند وصول الرسالة**، بلا مهمة خلفية، والرسالة بتكمّل بمسار
+    //    الجلسة الجديدة تحت حرفيا: بوابة الدوام، ترحيب ومنيو، سلّة وعدّاد
+    //    فاضيين.
+    //
+    //    بلاها، زبون راجع بعد أيام بيوقع بنص سلّة قديمة — وإذا كان العدّاد
+    //    خالص بخطوة الاستلام، بصمت كامل. هاد العطل اللي صار فعلا (29 سبتمبر).
+    // ---------------------------------------------------------------------
+    if (
+      existing !== null &&
+      isSessionExpired(existing.idleSeconds, this.idleMinutes)
+    ) {
+      await this.expireSession(tx, ctx, existing);
+      existing = null;
+    }
+
     if (existing !== null) {
       if (existing.state === "browsing") {
         // 🔴 ولا `UPDATE` على صف الجلسة قبل هاد النداء — أول قفل عليه لازم
@@ -394,11 +430,17 @@ export class ConversationService {
   private async findActiveSession(
     tx: TenantTx,
     phone: string,
-  ): Promise<{ id: string; state: string } | null> {
+  ): Promise<ActiveSession | null> {
     const [row] = await tx
       .select({
         id: conversationSessions.id,
         state: conversationSessions.state,
+        // 🔴 السكوت بساعة القاعدة، مش بساعة Node (بريف ح §0): `now()` هي
+        //    بداية معاملة الرسالة. القرار نفسه بـ`isSessionExpired`.
+        idleSeconds:
+          sql<number>`extract(epoch from now() - ${conversationSessions.lastMessageAt})::float8`.mapWith(
+            Number,
+          ),
       })
       .from(conversationSessions)
       .innerJoin(customers, eq(customers.id, conversationSessions.customerId))
@@ -412,6 +454,56 @@ export class ConversationService {
       .limit(1);
 
     return row ?? null;
+  }
+
+  /**
+   * بتنهي جلسة سكتت أكتر من المهلة: CAS على الحالة اللي انقرأت (بريف ح §2).
+   *
+   * 🔴 مش `advanceSessionState`: هاي بتكتب `last_message_at` مع الحالة، وهون
+   *    الصف القديم لازم يضل **كما هو** — آخر رسالة من الزبون فيه، وسلّته،
+   *    حقيقة للتدقيق. الحالة وبس بتتغيّر.
+   *
+   * 🔴 صفر صفوف = رسالة تانية سبقتنا وأنهتها. مش خطأ: المستدعي بيكمّل بمسار
+   *    الجلسة الجديدة، والفهرس الفريد بـ0007 مع CAS الترحيب بيخلّوا الخاسر
+   *    يسكت هناك.
+   *
+   * هاد `UPDATE` بيصير بس على جلسة منتهية، وهي ما بتوصل لأي معالج بعده،
+   * فقاعدة «`FOR UPDATE` أول شي بيلمس صف الجلسة» (`browsing.ts`) ما بتنمسّ.
+   */
+  private async expireSession(
+    tx: TenantTx,
+    ctx: ConversationContext,
+    session: ActiveSession,
+  ): Promise<void> {
+    const expired = await tx
+      .update(conversationSessions)
+      .set({ state: "abandoned" })
+      .where(
+        and(
+          eq(conversationSessions.id, session.id),
+          eq(conversationSessions.state, session.state),
+        ),
+      )
+      .returning({ id: conversationSessions.id });
+
+    if (expired.length === 0) {
+      logger.debug(
+        { restaurantId: ctx.restaurantId, sessionId: session.id },
+        "CAS الانتهاء خسر — رسالة تانية سبقتنا. مسار الجلسة الجديدة بيحكم",
+      );
+      return;
+    }
+
+    logger.info(
+      {
+        restaurantId: ctx.restaurantId,
+        sessionId: session.id,
+        state: session.state,
+        idleMinutes: Math.floor(session.idleSeconds / 60),
+        from: maskPhone(ctx.from),
+      },
+      "جلسة انتهت بعد سكوت — الرسالة بتبلّش جلسة جديدة",
+    );
   }
 
   /**
