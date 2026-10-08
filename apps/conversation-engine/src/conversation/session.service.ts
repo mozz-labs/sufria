@@ -21,6 +21,7 @@ import { handleBrowsingMessage } from "./browsing.js";
 import { handleCartReviewMessage } from "./cart-review.js";
 import { handleFulfillmentMessage } from "./fulfillment.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
+import { replyOrdersPaused } from "./orders-paused.js";
 import { isSessionExpired } from "./session-idle.js";
 
 /**
@@ -34,6 +35,12 @@ import { isSessionExpired } from "./session-idle.js";
  *
  * جلسة نشطة سكتت `SESSION_IDLE_MINUTES` أو أكتر بتصير `abandoned` عند أول
  * رسالة بعدها، والرسالة بتمشي بمسار الجلسة الجديدة — بريف ح.
+ *
+ * Orders paused (`restaurants.orders_paused_at`, brief ي-أ §4): every message
+ * gets ORDERS_PAUSED_AR — an active session's right after the timeout, before
+ * any routing; a new conversation's right after the hours gate — and nothing
+ * is written. A menu with no item to show gets the same text, instead of an
+ * empty menu.
  */
 
 /** الحالات اللي معناها "الجلسة خلصت". نفس تعريف 0002 و0007 بالضبط. */
@@ -63,7 +70,17 @@ export type ConversationOutcome =
   /** خسرنا سباق CAS: حدا تاني رحّب. تجاهل صامت. */
   | "duplicate_ignored"
   /** القائمة أطول من سقف واتساب. انسجّل خطأ، وما انقطعت، وما انفتحت جلسة. */
-  | "reply_too_long";
+  | "reply_too_long"
+  /**
+   * Orders are paused (brief ي-أ, decision 1): ORDERS_PAUSED_AR went out, and
+   * nothing else — no session opened, an active one not touched, no order.
+   */
+  | "orders_paused"
+  /**
+   * The menu has no item to show (decision 3): ORDERS_PAUSED_AR instead of an
+   * empty menu, and no session opened.
+   */
+  | "empty_menu";
 
 /**
  * رسالة بتنبعت **بعد** ما تُقفل معاملة الرسالة بنجاح — ج §8، الخطوة 7.
@@ -187,6 +204,18 @@ export class ConversationService {
     }
 
     if (existing !== null) {
+      // -------------------------------------------------------------------
+      // 🔴 Orders paused, a conversation under way — brief ي-أ §4, step 2.
+      //    Before any routing, so «أكّد» too: no handler runs, so no order
+      //    is written, and the session is not touched at all — not its
+      //    state, its cart or `last_message_at` (decision 1). Once orders
+      //    resume, the customer picks up exactly where they were.
+      // -------------------------------------------------------------------
+      if (restaurant.ordersPaused) {
+        await replyOrdersPaused(this.sender, this.recipient(ctx), "paused");
+        return "orders_paused";
+      }
+
       if (existing.state === "browsing") {
         // 🔴 ولا `UPDATE` على صف الجلسة قبل هاد النداء — أول قفل عليه لازم
         //    يكون `FOR UPDATE` جوّا `handleBrowsingMessage`. شوف تعليقها.
@@ -276,6 +305,18 @@ export class ConversationService {
     }
 
     // ---------------------------------------------------------------------
+    // 🔴 Orders paused, a new conversation — brief ي-أ §4, step 5. After the
+    //    hours gate on purpose: a closed restaurant's text carries its hours,
+    //    which tells the customer more. And like a closed restaurant, no
+    //    session is opened: the first message after orders resume is
+    //    welcomed with the menu.
+    // ---------------------------------------------------------------------
+    if (restaurant.ordersPaused) {
+      await replyOrdersPaused(this.sender, this.recipient(ctx), "paused");
+      return "orders_paused";
+    }
+
+    // ---------------------------------------------------------------------
     // ٣. 🔴 الرد بينبنى وطوله بينفحص **قبل** ما تنفتح الجلسة.
     //
     //    قائمة أطول من سقف واتساب مشكلة **دائمة**: بتنحل بقائمة أقصر، مش
@@ -295,6 +336,13 @@ export class ConversationService {
       restaurant.currency,
     );
     if (!prepared.ok) {
+      if (prepared.reason === "empty") {
+        // 🔴 Not one item to show (decision 3): the paused text instead of an
+        //    empty menu, and no session — so the first message after an item
+        //    is back on is welcomed with the menu, as a closed restaurant's is.
+        await replyOrdersPaused(this.sender, this.recipient(ctx), "empty_menu");
+        return "empty_menu";
+      }
       logger.error(
         {
           restaurantId: ctx.restaurantId,
@@ -357,6 +405,19 @@ export class ConversationService {
     return "greeted";
   }
 
+  /** Where a reply to this message goes — the restaurant's number to the customer. */
+  private recipient(ctx: ConversationContext): {
+    restaurantId: string;
+    phoneNumberId: string;
+    to: string;
+  } {
+    return {
+      restaurantId: ctx.restaurantId,
+      phoneNumberId: ctx.phoneNumberId,
+      to: ctx.from,
+    };
+  }
+
   private async readRestaurant(
     tx: TenantTx,
     restaurantId: string,
@@ -368,6 +429,8 @@ export class ConversationService {
     offersDelivery: boolean;
     deliveryFeeMinor: number;
     currency: Currency;
+    /** `restaurants.orders_paused_at IS NOT NULL` (brief ي-أ §2). */
+    ordersPaused: boolean;
   }> {
     // 🔴 `resolve_restaurant_by_phone_id` بترجّع uuid وبس، فالاسم وساعات الدوام
     //    والمنطقة الزمنية بدهم قراءة. الشرط على المعرّف مش هو اللي بيعزل — سياسة tenant_isolation
@@ -383,6 +446,9 @@ export class ConversationService {
         // 🔴 مع بيانات المطعم اللي بتنقرأ أصلا بكل رسالة (بريف د §2.2)، **بلا
         //    snapshot بالجلسة**: العملة ما بتتغيّر بنص محادثة.
         currency: restaurants.currency,
+        // 🔴 Read with every message, like the rest of the row: a pause
+        //    applies from the very next message, with no session to wait out.
+        ordersPausedAt: restaurants.ordersPausedAt,
       })
       .from(restaurants)
       .where(eq(restaurants.id, restaurantId))
@@ -397,8 +463,12 @@ export class ConversationService {
     //    (ج §15.4): **مسار تحويل واحد** للقراءة بالسلّة كلها — نفس الدالة
     //    اللي بتقرأ سعر الصنف. مساران بيخلّوا رقمين يتفاوتا بقرش بلا ما
     //    يسقط إشي.
-    const { deliveryFee, ...rest } = row;
-    return { ...rest, deliveryFeeMinor: priceToMinor(deliveryFee) };
+    const { deliveryFee, ordersPausedAt, ...rest } = row;
+    return {
+      ...rest,
+      deliveryFeeMinor: priceToMinor(deliveryFee),
+      ordersPaused: ordersPausedAt !== null,
+    };
   }
 
   /**

@@ -52,7 +52,16 @@ export interface PreparedMenu {
 
 export type PrepareMenuResult =
   | { readonly ok: true; readonly menu: PreparedMenu }
-  | { readonly ok: false; readonly error: OutboundTextTooLongError };
+  /**
+   * Not one item to show (brief ي-أ, decision 3): the caller sends
+   * ORDERS_PAUSED_AR instead of an empty menu, and writes no session.
+   */
+  | { readonly ok: false; readonly reason: "empty" }
+  | {
+      readonly ok: false;
+      readonly reason: "too_long";
+      readonly error: OutboundTextTooLongError;
+    };
 
 /**
  * بتقرأ القائمة، بتبني النص، وبتفحص طوله — **قبل ما تنفتح أي جلسة**.
@@ -70,6 +79,12 @@ export async function prepareMenu(
   currency: Currency,
 ): Promise<PrepareMenuResult> {
   const menu = await buildMenu(tx, currency);
+  // 🔴 «No item» by the menu's own criterion — the lines `readMenu` returned,
+  //    an available item in an active category — never a second count that
+  //    could disagree with the menu the customer would have been sent
+  //    (brief ي-أ §4).
+  if (menu.lines.length === 0) return { ok: false, reason: "empty" };
+
   const body =
     welcomeFor === null ? menu.text : firstMenuMessageAr(welcomeFor, menu.text);
 
@@ -77,7 +92,7 @@ export async function prepareMenu(
     assertWithinTextLimit(body);
   } catch (error) {
     if (!(error instanceof OutboundTextTooLongError)) throw error;
-    return { ok: false, error };
+    return { ok: false, reason: "too_long", error };
   }
 
   return { ok: true, menu: { body, lines: menu.lines } };
