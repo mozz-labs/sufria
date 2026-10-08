@@ -187,6 +187,7 @@
   grid-area: action;
   position: relative;
   z-index: 1;
+  overflow: hidden;
   min-height: 44px;
   padding: 0 16px;
   background: var(--accent);
@@ -202,6 +203,46 @@
 .action:disabled {
   cursor: progress;
 }
+
+/* ---- while it works: start (I-9b #6) ----
+   Disabled from the press until the server's answer, the button shows it is
+   working (Mohammed's decision): a shade darker, a thin line of the tokens
+   running inside it, its word unchanged. The line moves by transform alone
+   — on the compositor — from the start of the line to its end, and stands
+   still under reduced motion. The same block as the other next-step button's
+   (order-card .action / order-details .step), held identical by
+   test/orders/next-step.test.mts; on the button's own disabled state, it
+   adds no code to the page. */
+.action:disabled {
+  filter: brightness(0.88);
+}
+
+.action:disabled::after {
+  --way: 1;
+  content: "";
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-start: 0;
+  width: 30%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--on-accent);
+  animation: var(--step-working);
+}
+
+.action:disabled:dir(rtl)::after {
+  --way: -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action:disabled::after {
+    animation: none;
+    inset-inline: 16px;
+    width: auto;
+    opacity: 0.7;
+  }
+}
+/* ---- while it works: end ---- */
 
 .action:focus-visible {
   outline: 2px solid var(--text-primary);

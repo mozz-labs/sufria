@@ -87,3 +87,23 @@ dialog {
   white-space: nowrap;
   border: 0;
 }
+
+/* The next step's running line while it works (brief I-9b #6), used by
+   order-card .action and order-details .step as `animation:
+   var(--step-working)`: from just outside the start to just past the end —
+   the line is 30% of the button, so the whole width is 100% / 30% ≈ 334% of
+   it — by transform alone, its way set by --way. Global, not in the modules:
+   a module renames its keyframes, and each name costs bytes in its JS that
+   the page budget counts (check:budget); a variable's value it leaves as is. */
+:root {
+  --step-working: step-working 1.2s ease-in-out infinite;
+}
+
+@keyframes step-working {
+  from {
+    transform: translateX(calc(-100% * var(--way)));
+  }
+  to {
+    transform: translateX(calc(334% * var(--way)));
+  }
+}
