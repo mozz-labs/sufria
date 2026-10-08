@@ -1,0 +1,9 @@
+/* Drawn pointing to the left, the start of a left-to-right line; in a
+   right-to-left one the start is on the right, so it turns round. */
+.arrow {
+  flex: none;
+}
+
+.arrow:dir(rtl) {
+  transform: scaleX(-1);
+}

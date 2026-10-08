@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The tab's icon for now: the sumac square, nothing drawn on it (brief
+       I-9b #3, Mohammed) — the designer's comes with the final logo. Its
+       colour is the accent token of design-tokens.ts, light and dark, written
+       out: an icon outside the page reads no CSS variable. -->
+  <style>
+    rect { fill: #75284A; }
+    @media (prefers-color-scheme: dark) { rect { fill: #B54874; } }
+  </style>
+  <rect width="32" height="32" rx="7"/>
+</svg>

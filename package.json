@@ -13,7 +13,7 @@
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
     "db:seed": "node --env-file-if-exists=.env scripts/seed.mjs",
     "test:security": "node --env-file-if-exists=.env scripts/test-security.mjs",
-    "test:db": "tsx --env-file-if-exists=.env tests/db/critical-primitives.verify.ts && tsx --env-file-if-exists=.env tests/db/schema-drift.verify.ts",
+    "test:db": "tsx --env-file-if-exists=.env tests/db/critical-primitives.verify.ts && tsx --env-file-if-exists=.env tests/db/schema-drift.verify.ts && node --env-file-if-exists=.env --test tests/db/migrate.test.mjs",
     "test": "pnpm test:security && pnpm test:db && pnpm -r test",
     "typecheck": "tsc -b --pretty && pnpm --filter @sufria/dashboard-web typecheck",
     "lint": "eslint . --max-warnings 0 && pnpm --filter @sufria/dashboard-web lint",
@@ -21,9 +21,11 @@
     "format:check": "prettier --check .",
     "check:contrast": "tsc -b packages/shared && node scripts/check-contrast.mjs",
     "check:numerals": "tsc -b packages/shared && node scripts/check-numerals.mjs",
+    "check:rtl": "node scripts/check-rtl.mjs",
+    "check:budget": "tsc -b packages/shared && NEXT_PUBLIC_API_URL=http://localhost:3002 pnpm --filter @sufria/dashboard-web build && node scripts/check-budget.mjs",
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm check:numerals && pnpm test",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:contrast && pnpm check:numerals && pnpm check:rtl && pnpm test",
     "prepare": "husky || true"
   },
   "devDependencies": {

@@ -27,6 +27,18 @@ export interface OutboundTextMessage {
   /** رقم الزبون بصيغة واتساب الدولية بلا +. */
   to: string;
   body: string;
+  /**
+   * The order the message is about — set by the status notifications alone
+   * (`notify/order-notifier.ts`), which send after their transaction
+   * committed. Meta never sees it: it is for `outbound_messages` (brief I,
+   * I-4).
+   *
+   * 🔴 Never on a message sent while a transaction is open: the saving
+   *    wrapper writes from another connection, and the rows of an open
+   *    transaction are not there for it yet. The dashboard attributes such a
+   *    message by the customer's last message before it.
+   */
+  orderId?: string;
 }
 
 export interface WhatsAppSender {

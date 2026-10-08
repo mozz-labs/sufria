@@ -23,7 +23,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
 | `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`) |
-| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login and the orders screen (task G, `docs/16-orders-screen-brief.md`). Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
+| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login, the orders screen (task G, `docs/16-orders-screen-brief.md`) and an order's details with its conversation (task I, `docs/brief-i-order-details.md`). Feature-based: `app/` (routes) · `features/<x>/` · `shared/` — see *Dashboard structure*. Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
 | `tests/security` | — | Chain-isolation gate (mandatory) |
@@ -37,13 +37,17 @@ paths — except `tests/`, which imports `packages/shared/src/*` directly.
 
 ```bash
 pnpm db:up            # start PostgreSQL (Docker) and wait for it
-pnpm db:migrate       # apply migrations
+pnpm db:migrate       # apply the files not applied yet — safe on an existing database
 pnpm db:seed          # load dev fixtures
+# 🔴 Never `pnpm db:reset` on the demo restaurant's database: it wipes it, data and all.
 # After ANY database rebuild, recreate the demo restaurant (brief E) — prints its staff password once:
 node --env-file-if-exists=.env --import @swc-node/register/esm-register apps/dashboard-api/src/scripts/setup-restaurant.ts db/restaurants/demo.json
 pnpm dev              # run all services in parallel
 pnpm test:security    # chain-isolation gate — 15 assertions + 4 negative controls
-pnpm test:db          # critical primitives + schema drift
+pnpm test:db          # critical primitives + schema drift + the migration tool
+pnpm check:rtl        # dashboard-web: logical properties only, no reversing (in verify and CI)
+pnpm check:budget     # dashboard-web: JS + fonts before first paint, per page, vs perf-budget.json
+                      # (builds first — stop `next dev`; NOT in verify; end of every brief, before every merge)
 pnpm verify           # format:check + lint + typecheck + test — run before any push
 pnpm --filter @sufria/dashboard-web dev    # single package
 # Dev only, never a real restaurant: change an order's status through the API,
@@ -52,7 +56,51 @@ node --env-file=.env scripts/demo-order-status.mjs 101 accepted
 ```
 
 `pnpm verify` needs a live database: `test:security` and `test:db` connect using
-`DATABASE_URL` / `MIGRATION_DATABASE_URL` from `.env` (copy `.env.example`).
+`DATABASE_URL` / `MIGRATION_DATABASE_URL`, and the Jest suites `ENGINE_DATABASE_URL`
+too.
+
+🔴 **On the laptop, the tests always run with `.env.test` — never without it**
+(Mohammed, 5 October 2026). `.env` points at the demo restaurant's real
+database; a test run without `.env.test` writes into it, and the security gate's
+negative controls flip `sufria_dashboard` to SUPERUSER and back on whatever
+instance they reach.
+
+The tests run on **a Postgres instance of their own**: `test`, on port **5434**
+(`pg_createcluster 16 test --port 5434`), next to `main` on 5432 that holds the
+demo. Its own roles — `postgres`, `sufria_dashboard`, `sufria_engine` — with
+their own passwords, and one database, `sufria_test`. Roles belong to an
+instance, so nothing a test does to a role reaches the demo's. `.env.test`
+(`/root/sufria/.env.test`, mode 600, gitignored by `.env.*`; a worktree links
+to it, as to `.env`) holds the three URLs. Exported, they win over `.env`
+everywhere: Node's `--env-file` and both Jest `setup-env.ts` files keep a
+variable that is already set. Every test command, then:
+
+```bash
+set -a && . ./.env.test && set +a && pnpm verify
+```
+
+`postgresql.service` starts both instances at boot, and so does
+`sudo service postgresql start` (the instance is `auto` in
+`/etc/postgresql/16/test/start.conf`). One stopped by hand while the service
+is up: `sudo service postgresql@16-test start`.
+
+On a new machine, once (as root; `<p0> <p1> <p2>` = three new passwords, e.g.
+`openssl rand -hex 24`, written into `.env.test` as
+`postgres://<role>:<p>@localhost:5434/sufria_test`):
+
+```bash
+pg_createcluster 16 test --port 5434 --encoding UTF8 --locale C.UTF-8 --start
+sudo -u postgres psql -p 5434 -c "ALTER ROLE postgres PASSWORD '<p0>'" -c "CREATE ROLE sufria_dashboard LOGIN PASSWORD '<p1>'" -c "CREATE ROLE sufria_engine LOGIN PASSWORD '<p2>'"
+set -a && . ./.env.test && set +a && createdb --maintenance-db="${MIGRATION_DATABASE_URL%/sufria_test}/postgres" -T template0 -E UTF8 --locale-provider=icu --icu-locale=ar-JO --locale=C.UTF-8 sufria_test
+set -a && . ./.env.test && set +a && pnpm db:migrate
+set -a && . ./.env.test && set +a && for f in chain-isolation-fixture dev-staff-passwords dev-contact-phone dev-delivery; do psql "$MIGRATION_DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f db/seed/$f.sql; done
+```
+
+The roles are created by hand, with 0003's attributes (`LOGIN` alone), so they
+carry passwords of their own; 0003's `CREATE ROLE … IF NOT EXISTS` then finds
+them. Not `pnpm db:seed`: it starts with `dev-role-passwords.sql`, which would
+set them to the shared dev passwords. CI is unaffected: one fresh database, no
+`.env` at all.
 
 ## Database names
 
@@ -61,13 +109,26 @@ node --env-file=.env scripts/demo-order-status.mjs 101 accepted
 | Database | `sufria` |
 | Application roles | `sufria_dashboard`, `sufria_engine` — neither is superuser or BYPASSRLS |
 | Migration role | `postgres` (owns the tables; the app never connects as it) |
+| Migration ledger | `migrations.applied` (`name`, `applied_at`, `baselined`) — its own schema, out of `public`; no grant to the app roles |
+| Test instance (local) | Postgres `16/test` on port 5434, its own roles and passwords; database `sufria_test`; URLs in `.env.test` (see *Commands*) |
 | Docker container / volume | `sufria-postgres` / `sufria-pgdata` |
 
-`migrate.mjs` keeps no tracking table and `0001` has bare `CREATE TYPE`, so
-migrations only ever run against a **clean** database — re-running against an
-existing one fails loudly at `0001` by design. The upgrade path is always
-`pnpm db:reset` (or drop and recreate the database on a native install; see
-`docs/02-تجهيز-البيئة.md`).
+**`pnpm db:migrate` is safe on an existing database** (since brief I, 5 October
+2026). `scripts/migrate.mjs` records every file it applies in
+`migrations.applied`, **in the same transaction as the file** — each file's own
+`BEGIN; … COMMIT;` (its first and last statements, refused otherwise) is
+replaced by the runner's — so a file and its row commit together or not at
+all, and a second run applies nothing. A database built before the ledger
+(the demo restaurant's) is recorded up to `0012` as `baselined` — only once it
+proves `0012` is there (`app.restaurants_with_unnotified_orders()`, SECURITY
+DEFINER); a database that cannot prove it stops before any file, with nothing
+changed. A session advisory lock keeps two runs apart. `tests/db/migrate.test.mjs`
+(in `test:db`) holds all of it on databases of its own, created and dropped
+per test — breaking the "applied?" check drops the second-run test.
+
+🔴 **`pnpm db:reset` stays forbidden on the demo restaurant's database** — it
+wipes it. A new migration reaches that database through `pnpm db:migrate` alone,
+after a `pg_dump` to a file outside the repo (it holds customers' phones).
 
 ## Rules that do not bend
 
@@ -96,12 +157,17 @@ All four packages run real suites — Jest for the backend apps, `node --test` f
 they fail if a status label is written inline, if a local status map or
 `OrderStatus` type reappears, or if `preparing`/`completed` gain a customer
 message. Since task G they also fail on **any** Arabic letter in the code of
-`app/` or `lib/` (every visible text comes from `DASHBOARD_UI_AR` in
-`packages/shared/src/dashboard-ui.ts`), and on a local copy of an API
-contract type. The screen's decisions — the card's text, the pulse, what the
-next-step button sends and what a 409 leads to — live in
-`apps/dashboard-web/lib/board.ts`, as plain TypeScript, because `node --test`
-cannot import JSX: components only render what it returns.
+`app/`, `features/` or `shared/` (every visible text comes from
+`DASHBOARD_UI_AR` in `packages/shared/src/dashboard-ui.ts`), and on a local
+copy of an API contract type; since task I, on an import that breaks the
+structure (`test/boundaries.test.mts`). The screens' decisions — the card's
+text, the pulse, what the next-step button sends and what a 409 leads to, the
+details page's view, the cancel's body, `?next=` — live in
+`features/orders/lib/` (`board.ts`, `details.ts`) and `features/auth/lib/`, as
+plain TypeScript, because `node --test` cannot import JSX: components only
+render what they return. The card's "the button does not open the order" is
+held by reading the card's TSX and CSS (`test/orders/card.test.mts`): the
+press itself needs a browser.
 
 | Package | `test` script | Real? |
 |---|---|---|
@@ -113,6 +179,23 @@ cannot import JSX: components only render what it returns.
 `shared` holds the pure half — the command matchers, the item parser, the cart
 and order texts — so the parsing decisions are tested without a database, and
 the engine suites are free to test only what needs one.
+
+`conversation-engine/test/saving-sender.test.ts` covers the saving wrapper
+(brief I, I-4): a send that went out leaves one row, a failed send or a text
+over the limit none, a failed save neither throws nor logs the number, the row
+is its restaurant's alone, the notifier names its order — and a reply sent
+inside the inbound transaction arrives and is kept without hanging, while a
+save blocked by a row lock gives up at 2 s. Breaks, each dropping only its
+tests: saving before the send · letting a failed save throw · removing the 2 s
+timeouts (the held-row test then takes 10 s, the pool's own timeout).
+`dashboard-api/test/order-messages.test.ts` builds one customer's two orders
+minute by minute (a «جاهز» of 101 sent mid-conversation for 102, an image that
+anchors a reply, a message 25 h old, one after the last order, another customer,
+the same digits at another restaurant). Breaks: ignoring `order_id` drops the
+«جاهز» test; dropping the customer condition drops "another customer"; reading
+`restaurant_id` from the raw header instead of the guard drops **nothing** —
+on this route the guard verified that very header (no `restaurantId` param),
+so the protection is the guard, held by `tenant-context.test.ts`.
 
 **Jest, not Vitest, and never `tsx` — see `docs/ADR-004`.** Anything that boots
 Nest DI must be compiled by a toolchain that emits `design:paramtypes`. esbuild
@@ -199,6 +282,71 @@ its transaction open, the loser blocks on the expiry CAS. `setup-env.ts` pins
 The engine and API suites run in parallel under `pnpm -r test`; count only the
 rows of the order or restaurant the test itself created.
 
+## Dashboard structure and the RTL contract (brief I §1–§2, 5 October)
+
+`apps/dashboard-web` is feature-based (Mohammed's decision): `app/` holds the
+routes and only composes · `features/auth/`, `features/orders/` — each with its
+`components/`, `hooks/`, `api/`, `lib/` (pure functions) — · `shared/` (`ui/`,
+`layout/` — the header, given its count as a prop — and `api/` — the client,
+the token, `x-restaurant-id`, the error kinds). Tests in `test/<feature>/`.
+
+1. `app/` composes: it imports from `features/` and `shared/`, with no logic.
+2. **No feature imports another.** What two share belongs in `shared/`.
+3. `shared/` imports neither `features/` nor `app/`.
+4. Logic the API or the engine needs too lives in `packages/shared`.
+5. A CSS module sits next to its component; no empty folders.
+
+`test/boundaries.test.mts` fails on an import that breaks 1–3 (break: an
+import of `features/auth` inside `features/orders` → caught, by file and line).
+
+Routes: `/` → `/orders` or `/login` · `/login?next=` (a path of this site
+alone: `//host`, `https://…`, a backslash or whitespace → `/orders`) ·
+`/orders` · `/history` · `/orders/[id]` (`?from=history`). The dashboard pages
+share `app/(dashboard)/layout.tsx`: the guard (no session, or a 401 the
+refresh could not cure — the session store tells its subscribers — →
+`/login?next=<page>`), the header, and **one** poll of «الطلبات» feeding both
+the count and the list (`features/orders/hooks/live-orders.tsx`).
+
+**The RTL and width contract, on every file touched** — from 375px to 1440px,
+right to left by `dir="rtl"` on `<html>` alone, no horizontal scroll:
+- DOM order = reading order = the phone's column. **Never** `row-reverse`,
+  `column-reverse` or `order:` to fix a direction: `dir` already flips a row,
+  and reversing it on top shows only once the row becomes a column.
+- Logical properties only: `margin-inline-*`, `padding-inline-*`,
+  `inset-inline-*`, `border-inline-*`, `text-align: start/end`,
+  `border-start-start-radius`… — never `left`/`right` in any of them, `float`,
+  or the same in `style={{}}` (`marginLeft`…).
+- Space between elements is `gap`. Text that can grow inside flex or grid:
+  `min-width: 0` and `…`, or a wrap on purpose.
+- Numbers (`.num`, isolated), an amount with its currency, the masked number:
+  `<bdi>` or `unicode-bidi: isolate`. The customer's words (messages, a
+  cancellation reason, an address): `dir="auto"`.
+- An icon with a direction mirrors (`:dir(rtl)`): «back» points right.
+- **Breakpoints, fixed: 640** (the card: three rows below, one row from it up)
+  **· 768 · 1024** (the details: one column below, two from it up) — written
+  here and atop `globals.css`, because a CSS variable does not work in `@media`.
+- A layout that changes with the width uses `grid-template-areas`, never
+  `flex-wrap` and hope: the grid follows `dir`, the wrap follows text length.
+- Touch targets 44px at every width.
+
+`pnpm check:rtl` (`scripts/check-rtl.mjs`, in `verify` and a CI step) fails on
+the first two items by file and line; a rare exception carries
+`rtl-ok: <why>` on its line.
+
+**The size budget (brief I-9b #5, Mohammed, 7 October).** `pnpm check:budget`
+builds shared and the app (production, `NEXT_PUBLIC_API_URL` fixed so the
+bytes do not move with a machine's `.env`), then `scripts/check-budget.mjs`
+reads `.next` and counts, for `/login` · `/orders` · `/history` ·
+`/orders/[id]`, what a browser loads before its first paint: the JS — Next's
+root files plus the page's entry chunks (`build-manifest.json`,
+`page_client-reference-manifest.js`), gzip, the `noModule` polyfills aside —
+and the fonts next/font preloads for the page (`next-font-manifest.json`).
+The manifests are checked against the static pages' HTML; a mismatch fails.
+It fails when a page passes its numbers in `apps/dashboard-web/perf-budget.json`
+— which only come down; up only by Mohammed's decision (`--write` resets
+them). Not in `verify` or CI (a build). A server component's imports never
+reach the browser and are not counted; a client component's are.
+
 ## Known gaps
 
 - **`pnpm db:reset` assumes Docker and does nothing useful on a native
@@ -208,9 +356,10 @@ rows of the order or restaurant the test itself created.
   DATABASE sufria`, recreate it with the same locale (`TEMPLATE template0
   ENCODING 'UTF8' LOCALE_PROVIDER icu ICU_LOCALE 'ar-JO' LOCALE 'C.UTF-8'`),
   then `pnpm db:migrate && pnpm db:seed` — is described in prose in
-  `docs/02-تجهيز-البيئة.md` but is not automated anywhere. Since migrations only
-  ever run against a clean database, this friction repeats on **every** new
-  migration. A `db:reset:native` script would remove it.
+  `docs/02-تجهيز-البيئة.md` but is not automated anywhere. It no longer repeats
+  on every new migration — `pnpm db:migrate` applies only the new file to an
+  existing database — so it matters only for rebuilding a dev database, and
+  never applies to the demo restaurant's.
 - **Every mirror lives in `packages/shared`, and `pnpm test:db` now enforces
   that.** It used to iterate the TS schema only, so a SQL table mirrored
   somewhere else was invisible to it — `inbound_messages` sat in
@@ -327,6 +476,34 @@ rows of the order or restaurant the test itself created.
 - **The customer's menu order is written twice** — the ORDER BY in the engine's
   `readMenu` and in `dashboard-api`'s `MenuService.list`. Changing one does not
   fail the other.
+- **Every text the engine sends is kept in `outbound_messages` (0013), from the
+  day it shipped — nothing before it.** One wrapper, `SavingWhatsAppSender`
+  (`src/whatsapp/saving-sender.ts`, built in `main.ts`): after a successful
+  send, on a `TenantDb` of its own (most replies leave inside the inbound
+  transaction, which holds a connection of the engine's pool), with
+  `lock_timeout` and `statement_timeout` at 2 s; a failed save is an `error`
+  line with the number masked, never a failed reply. `orderId` is set by the
+  status notifier alone: no message sent while a transaction is open carries
+  one — that transaction's rows are not there for the wrapper's connection —
+  and «استلمنا…», sent after COMMIT, carries none either, by Mohammed's
+  decision (5 October). `GET /orders/:id/messages` attributes such messages by
+  the customer's last message before them. The rules, as built:
+  `docs/13-dashboard-api-brief.md` §9.9.
+- **The security gate's negative control 2 alters an application role.**
+  `tests/security/negative-controls.sh` runs `ALTER ROLE sufria_dashboard
+  SUPERUSER` and then `NOSUPERUSER`; roles belong to the Postgres instance, and
+  nothing restores the role if the script dies in between. Locally that is the
+  test instance's role now (5434, Mohammed's option B, 5 October); in CI it is a
+  throwaway instance. **For a later brief, not done (option C):** make the
+  control grant SUPERUSER to a role it creates for the run, so the gate never
+  alters an application role on any instance.
+- **`pnpm -r test` kills the other packages' suites when one fails** (it bails
+  on the first failure), so their `afterAll` never runs and their fixtures
+  stay in the database — `menu-items.test.ts`'s fixed-id categories then make
+  the next run fail on a duplicate key. Found in brief I (5 October): delete
+  the leftovers by the killed run's id (`d5-<pid>-<time>` in their names), as
+  the test's own `afterAll` would — and never the seed's (`both@`, `onlya@`,
+  `onlyz@sufria.test`).
 - **A failed «استلمنا طلبك» is never retried.** It is logged, and the order is
   already in the dashboard, so the restaurant still sees it — but the customer
   gets silence after «أكّد». The notify poller does not retry it either: the
@@ -405,6 +582,10 @@ rows of the order or restaurant the test itself created.
 
 ## قرارات مقفولة — لا تُعاد مناقشتها
 
+- 🔴 **الاختبارات على اللاب دايما بـ`.env.test` — ممنوع تشغيلها بدونه.** `.env` بيأشّر على قاعدة مطعم
+  العرض الحقيقية، و`.env.test` على نسخة Postgres الاختبارات (منفذ 5434) بأدوارها وكلمات سرها
+  (قرار محمد، 5 أكتوبر). الأمر: `set -a && . ./.env.test && set +a && pnpm verify`.
+
 - **Drizzle** (ADR-001) · **Zod** (ADR-003)
 - **Jest + ts-jest** — لا Vitest ولا esbuild ولا SWC (ADR-004).
   السبب: esbuild لا يدعم `emitDecoratorMetadata`، وNest يقرأ `design:paramtypes`
@@ -416,6 +597,18 @@ rows of the order or restaurant the test itself created.
   **لا تفحص** مصدر `shared` نفسه — `normalize.ts` يحمل `٠-٩` بقصد لتطبيع مدخلات الزبون. ما عدا ذلك
   (المحرّك، الـAPI): افحص يدويا.
 - **الخطوط:** IBM Plex Sans Arabic للنص · IBM Plex Mono للأرقام. Almarai مشطوب.
+  أوزانها وpreload وطريقة تحميلها قرار تصميم مع محمد — ولا تغيير بلاه (بريف ط-9ب).
+- **قاعدة الأداء — قرار محمد، 7 أكتوبر (بريف ط-9ب §3):**
+
+  | نوع الصفحة | الهدف |
+  |---|---|
+  | **الصفحات العامة** (الموقع، وصفحة «منيو برابط» إذا انبنت) | Lighthouse **100** تلفون ولابتوب |
+  | **تحميل اللوحة** (ومنها `/login`) | تلفون **≥ 90** · لابتوب **≥ 95** هلق، و**100** بعد الاستضافة |
+  | **تفاعل اللوحة** | **INP ≤ 200ms** على معالج ×4 للأفعال الأساسية |
+  | **كل الصفحات** | **حد حجم ثابت** (`check:budget`): ما بيطلع، وكل تحسين بينزّله |
+
+  **مؤجّل للاستضافة:** الـAPI على نفس الدومين (بيشيل طلب الـpreflight) · الجلسة بكوكي httpOnly عشان
+  السيرفر يرسم البيانات (أداء وأمان). 🔴 ممنوع الحيل: أي تعديل بيرفع الرقم بلا ما يحسّن إشي حقيقي.
 - **لون البراند:** سُمّاق `#75284A` فاتح / `#B54874` غامق. الألوان كلها في `packages/shared/src/design-tokens.ts`
   وحده، ومنه تتولّد متغيّرات CSS. البوابة `pnpm check:contrast` (جزء من `pnpm verify` وخطوة CI) تعدّد الأزواج
   منه — كل نص فوق كل خلفية يقع عليها، وكل شارة، بالوضعين — بحدّ 4.5:1.

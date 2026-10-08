@@ -1,0 +1,131 @@
+/* «المحادثة» — brief I §4 (I-6). Tokens only: the bubbles are the page's
+   two surfaces, never the accent (the accent carries no meaning here).
+   Logical properties only; the start is the customer's side. */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.notice {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.retry {
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.messages {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 85%;
+  min-width: 0;
+}
+
+.message[data-from="customer"] {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.message[data-from="bot"] {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+/* As written: its own line breaks, and a long word wraps rather than
+   pushing the page sideways. */
+.bubble {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message[data-from="customer"] .bubble {
+  background: var(--bg);
+}
+
+.message[data-from="bot"] .bubble {
+  background: var(--surface);
+}
+
+.more {
+  min-height: 44px;
+  padding-inline: 4px;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.time {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* From 1024px up, beside the order and sticky (order-details.module.css):
+   the screen's height less where the columns start (--chat-top, measured
+   before the first paint) and the page's 32px end, so its latest message is
+   in sight as the page opens — 240px at the least, on a very short screen.
+   The messages scroll inside it, a thin bar in the tokens' grey, light and
+   dark (I-9 #7, I-9b #1). Below, the page scrolls — never a box inside a
+   box on a phone. */
+@media (min-width: 1024px) {
+  .chat {
+    max-height: max(240px, calc(100dvh - var(--chat-top, 32px) - 32px));
+    min-height: 0;
+  }
+
+  .messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-inline-end: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-muted) transparent;
+  }
+}

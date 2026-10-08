@@ -1,0 +1,47 @@
+/* The seven status badges — brief G §2: 13px/600, radius 999px, each
+   status's text on its own background, both checked by check:contrast. */
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.badge[data-status="pending_acceptance"] {
+  background: var(--badge-pending_acceptance-bg);
+  color: var(--badge-pending_acceptance-text);
+}
+
+.badge[data-status="accepted"] {
+  background: var(--badge-accepted-bg);
+  color: var(--badge-accepted-text);
+}
+
+.badge[data-status="preparing"] {
+  background: var(--badge-preparing-bg);
+  color: var(--badge-preparing-text);
+}
+
+.badge[data-status="ready"] {
+  background: var(--badge-ready-bg);
+  color: var(--badge-ready-text);
+}
+
+.badge[data-status="completed"] {
+  background: var(--badge-completed-bg);
+  color: var(--badge-completed-text);
+}
+
+.badge[data-status="cancelled"] {
+  background: var(--badge-cancelled-bg);
+  color: var(--badge-cancelled-text);
+}
+
+.badge[data-status="expired"] {
+  background: var(--badge-expired-bg);
+  color: var(--badge-expired-text);
+}

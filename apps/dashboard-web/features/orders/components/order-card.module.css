@@ -1,0 +1,257 @@
+/* One order card — docs/design/orders-bench.html, density «متوسطة».
+   Brief G §2: colours are token variables only; 15 text · 13 labels and
+   badges, nothing under 13; radius 12 surfaces · 8 controls · 999px badge;
+   row padding 12, line-height 1.55; touch targets 44px. Logical properties
+   only (RTL). */
+
+.card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+
+/* The order number opens the details; its ::after covers the whole card, so
+   a press anywhere on it does too (brief I §4, I-3). The ring is the card's. */
+.open {
+  color: inherit;
+  text-decoration: none;
+}
+
+.open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+}
+
+.open:focus-visible {
+  outline: none;
+}
+
+.open:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Below 640px, three fixed rows (brief I §4, I-2): who, with the details
+   line under it · the badge at the start, the amount and «منذ…» at the end ·
+   the next-step button, the card's width. A card without a button (history)
+   has the first two. From 640px up, one row, as the bench draws it.
+   Grid areas, not flex-wrap: the rows do not move with the length of a
+   label or an amount (I-0 #2). The grid follows dir="rtl" by itself. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "who who"
+    "badge figs";
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.row[data-action] {
+  grid-template-areas:
+    "who who"
+    "badge figs"
+    "action action";
+}
+
+@media (min-width: 640px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "who badge figs";
+  }
+  .row[data-action] {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "who badge figs action";
+  }
+}
+
+.who {
+  grid-area: who;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The accent carries no status: the live dot and the card's pulse are the
+   accent's two dots (G §2). */
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+  flex: none;
+}
+
+.pulse::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+  animation: ping 2.4s ease-out infinite;
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  70%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* The pulse stays, without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse::after {
+    animation: none;
+    opacity: 0.35;
+  }
+}
+
+.number {
+  font-weight: 600;
+}
+
+/* A long name is cut with …, never pushed past the card. The masked number
+   is .num (I-9 #2) — held at the row's weight, like the order number. */
+.customer {
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.details {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The badge's look is shared/ui's; its place is the card's. */
+.badge {
+  grid-area: badge;
+  justify-self: start;
+}
+
+/* At the row's end below 640px, so its two lines keep to that end. */
+.figs {
+  grid-area: figs;
+  justify-self: end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+@media (min-width: 640px) {
+  .figs {
+    align-items: flex-start;
+  }
+}
+
+.total {
+  font-size: 15px;
+}
+
+.since {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Same place and size as the bench's «اقبل»: 44px, accent. Above the
+   card's link layer: pressing it acts, it does not open the order. */
+.action {
+  grid-area: action;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  min-height: 44px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action:disabled {
+  cursor: progress;
+}
+
+/* ---- while it works: start (I-9b #6) ----
+   Disabled from the press until the server's answer, the button shows it is
+   working (Mohammed's decision): a shade darker, a thin line of the tokens
+   running inside it, its word unchanged. The line moves by transform alone
+   — on the compositor — from the start of the line to its end, and stands
+   still under reduced motion. The same block as the other next-step button's
+   (order-card .action / order-details .step), held identical by
+   test/orders/next-step.test.mts; on the button's own disabled state, it
+   adds no code to the page. */
+.action:disabled {
+  filter: brightness(0.88);
+}
+
+.action:disabled::after {
+  --way: 1;
+  content: "";
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-start: 0;
+  width: 30%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--on-accent);
+  animation: var(--step-working);
+}
+
+.action:disabled:dir(rtl)::after {
+  --way: -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action:disabled::after {
+    animation: none;
+    inset-inline: 16px;
+    width: auto;
+    opacity: 0.7;
+  }
+}
+/* ---- while it works: end ---- */
+
+.action:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.line {
+  margin-block-start: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

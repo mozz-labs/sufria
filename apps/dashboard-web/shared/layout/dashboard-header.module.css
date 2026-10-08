@@ -1,0 +1,151 @@
+/* The dashboard's header — docs/design/orders-bench.html, density «متوسطة».
+   Brief G §2: colours are token variables only; 26 title · 19 · 15 text ·
+   13 labels; radius 8 controls; touch targets 44px. Logical properties only
+   (RTL). */
+
+/* The background and its line the screen's width; the content the page's
+   (I-9 #9). */
+.top {
+  background: var(--surface);
+  border-block-end: 1px solid var(--border);
+  padding-block-start: 14px;
+}
+
+/* The page's width and edges: each page sets --page-width on the body
+   (880 the lists, 1200 the details) and pads its sides 18px. Without one,
+   the screen's. */
+.bounds {
+  width: 100%;
+  max-width: var(--page-width, none);
+  margin-inline: auto;
+  padding-inline: 18px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wordmark {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.live {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.logout {
+  min-height: 44px;
+  padding-inline: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The accent carries no status: the live dot and the card's pulse are the
+   accent's two dots (G §2). */
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+  flex: none;
+}
+
+.liveDot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  opacity: 0;
+  animation: ping 2.4s ease-out infinite;
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  70%,
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* The dot stays, without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .liveDot::after {
+    animation: none;
+    opacity: 0.35;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+/* The current page's tab: its accent underline. Its text stays primary —
+   accent text on the dark surface is 3.26:1 (design-tokens.ts). */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 9px 14px;
+  border-block-end: 2px solid transparent;
+  border-start-start-radius: 8px;
+  border-start-end-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.tab[aria-current="page"] {
+  color: var(--text-primary);
+  border-block-end-color: var(--accent);
+}
+
+.count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-inline-start: 6px;
+}
+
+/* While a read fails: one line under the header, gone by itself once one
+   answers (brief G §3, G-4). Part of the header on every page (I-3). */
+.offline {
+  background: var(--surface);
+  border-block-end: 1px solid var(--border);
+  padding-block: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

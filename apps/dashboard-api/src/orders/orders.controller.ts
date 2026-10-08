@@ -12,6 +12,7 @@ import {
 import type {
   OrderDetail,
   OrderListResponse,
+  OrderMessagesResponse,
   OrderStatusConflictBody,
   UpdateOrderStatusResponse,
 } from "@sufria/shared";
@@ -57,6 +58,20 @@ export class OrdersController {
     const order = await this.orders.detail(restaurantId, params.id);
     if (!order) throw new NotFoundException();
     return order;
+  }
+
+  /**
+   * Brief I §4 (I-5): the order's conversation. Another restaurant's order is
+   * the very 404 a non-existent one gets — and not one message of it.
+   */
+  @Get(":id/messages")
+  async messages(
+    @VerifiedRestaurantId() restaurantId: string,
+    @Param() params: OrderIdParamDto,
+  ): Promise<OrderMessagesResponse> {
+    const conversation = await this.orders.messages(restaurantId, params.id);
+    if (!conversation) throw new NotFoundException();
+    return conversation;
   }
 
   /**

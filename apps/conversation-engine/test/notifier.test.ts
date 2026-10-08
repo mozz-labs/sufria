@@ -489,6 +489,8 @@ describe("الإرسال (§1.3 و§1.4)", () => {
         phoneNumberId: a.phoneNumberId,
         to: oa.to,
         body: "أكّدنا طلبك.",
+        // Brief I (I-4): a status message names its order, for outbound_messages.
+        orderId: oa.id,
       },
     ]);
     expect(sentTo(ob.to)).toEqual([
@@ -497,6 +499,7 @@ describe("الإرسال (§1.3 و§1.4)", () => {
         phoneNumberId: b.phoneNumberId,
         to: ob.to,
         body: "طلبك جاهز للاستلام.",
+        orderId: ob.id,
       },
     ]);
     expect(

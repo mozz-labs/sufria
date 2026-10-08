@@ -56,6 +56,41 @@ export const DASHBOARD_UI_AR = {
     stepFailed: "لا يمكن تنفيذ هذه الخطوة الآن.",
     /** The strip above the list while polling fails. */
     disconnected: "انقطع الاتصال — نحاول مجددا.",
+    /** An order's details that could not be read (brief I §6). */
+    loadFailed: "تعذّر التحميل.",
+    /** The button after «تعذّر التحميل.». */
+    retry: "حاول مجددا",
+  },
+  /** The order details screen — brief I §6, Mohammed's approval, 5 October. */
+  details: {
+    notFound: "هذا الطلب غير موجود.",
+    deliveryFee: "رسوم التوصيل",
+    total: "المجموع",
+    address: "العنوان",
+    /**
+     * Over the reason, under «ملغى» in the history — brief I-9 #4, the one
+     * new text (Mohammed's approval, 6 October).
+     */
+    cancellationReason: "سبب الإلغاء",
+    messageCustomer: "راسل الزبون",
+    cancelOrder: "إلغاء الطلب",
+  },
+  /** The cancel dialog. The reason reaches the customer word for word. */
+  cancel: {
+    title: `إلغاء الطلب رقم ${ORDER_NUMBER_SLOT}؟`,
+    reason: "السبب (اختياري)",
+    reasonHint: "يصل السبب للزبون كما تكتبه.",
+    confirm: "ألغِ الطلب",
+    back: "رجوع",
+  },
+  /** The conversation section of the details screen. */
+  conversation: {
+    title: "المحادثة",
+    showAll: "عرض الكل",
+    hide: "إخفاء",
+    empty: "لا رسائل محفوظة لهذا الطلب.",
+    /** An order from before the bot's replies were kept (0013). */
+    customerOnly: "تظهر هنا رسائل الزبون فقط.",
   },
   empty: {
     active: "ستظهر هنا طلبات واتساب الجديدة تلقائيا.",
@@ -185,6 +220,77 @@ export function orderNumberLabel(orderNumber: number): string {
   return fill(DASHBOARD_UI_AR.orderNumber, {
     [ORDER_NUMBER_SLOT]: String(orderNumber),
   });
+}
+
+/** «إلغاء الطلب رقم 102؟» — the dialog's title (brief I §6). */
+export function cancelTitleAr(orderNumber: number): string {
+  return fill(DASHBOARD_UI_AR.cancel.title, {
+    [ORDER_NUMBER_SLOT]: String(orderNumber),
+  });
+}
+
+/**
+ * «14:05» — an ISO time as `HH:MM`, 24-hour, Western digits, in the device's
+ * time zone (brief I §4, I-7).
+ *
+ * 🔴 Built from the numbers, not `toLocaleTimeString`: the browser's
+ *    language decides that one's digits, and `ar` writes «١٤:٠٥».
+ */
+export function clockTime(iso: string): string {
+  const d = new Date(iso);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** From here on, an order's age is its date and time (brief I-9 #6). */
+export const DAY_MINUTES = 24 * 60;
+
+/**
+ * «28/9 · 14:30» — day/month and the `clockTime`, on the device's clock; the
+ * year only when it is not `now`'s: «28/9/2025 · 14:30» (brief I-9 #6).
+ *
+ * 🔴 Built from the numbers, like `clockTime`: `toLocaleDateString`'s digits
+ *    are the browser language's, and `ar-JO` writes «٢٨/٩».
+ */
+export function dateTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  const year =
+    d.getFullYear() === new Date(now).getFullYear()
+      ? ""
+      : `/${d.getFullYear()}`;
+  return `${d.getDate()}/${d.getMonth() + 1}${year} · ${clockTime(iso)}`;
+}
+
+/**
+ * An order's age on the card and the details' header (brief I-9 #6):
+ * «منذ…» under 24 hours, its `dateTime` from 24 on.
+ */
+export function sinceAr(iso: string, now: number): string {
+  const minutes = Math.floor((now - Date.parse(iso)) / 60_000);
+  return minutes < DAY_MINUTES ? relativeTimeAr(minutes) : dateTime(iso, now);
+}
+
+/**
+ * A status's time in the history (brief I-9 #6): «14:30» on the device's
+ * today, «28/9 · 14:30» before it — so 23:50 seen at 00:10 is yesterday's.
+ */
+export function historyTime(iso: string, now: number): string {
+  const d = new Date(iso);
+  const today = new Date(now);
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate();
+  return sameDay ? clockTime(iso) : dateTime(iso, now);
+}
+
+/**
+ * The customer's WhatsApp chat — `https://wa.me/<number>`, its `+` and spaces
+ * removed (brief I §4, I-6). The full number lives in this link alone; the
+ * screen shows «•••• 1234».
+ */
+export function waLink(phone: string): string {
+  return `https://wa.me/${phone.replace(/[+\s]/g, "")}`;
 }
 
 /**

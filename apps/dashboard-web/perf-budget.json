@@ -1,0 +1,26 @@
+{
+  "rule": "The budget only comes down. It goes up by Mohammed's decision alone (brief I-9b #5).",
+  "unit": "bytes: JS gzip-compressed, fonts as woff2, loaded before the first paint",
+  "pages": {
+    "/login": {
+      "js": 138599,
+      "fonts": 123204,
+      "total": 261803
+    },
+    "/orders": {
+      "js": 144735,
+      "fonts": 123204,
+      "total": 267939
+    },
+    "/history": {
+      "js": 144962,
+      "fonts": 123204,
+      "total": 268166
+    },
+    "/orders/[id]": {
+      "js": 147785,
+      "fonts": 123204,
+      "total": 270989
+    }
+  }
+}

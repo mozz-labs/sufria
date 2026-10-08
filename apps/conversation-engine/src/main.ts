@@ -4,6 +4,7 @@ import { TenantDb } from "./db/tenant-db.js";
 import { createWebhookServer, WEBHOOK_PATH } from "./http/server.js";
 import { logger } from "./logger.js";
 import { OrderNotifier } from "./notify/order-notifier.js";
+import { SavingWhatsAppSender } from "./whatsapp/saving-sender.js";
 import { MetaWhatsAppSender } from "./whatsapp/sender.js";
 import { WebhookService } from "./whatsapp/webhook.service.js";
 
@@ -15,9 +16,16 @@ async function bootstrap(): Promise<void> {
   // بيرفض الإقلاع لو الاتصال كـsuperuser. قبل المنفذ كمان.
   await db.start();
 
+  // The pool the saving wrapper writes outbound_messages through — its own:
+  // most replies are sent inside the inbound message's transaction, which
+  // holds a connection of `db` (brief I, I-4). Same role, same checks.
+  const outboundDb = new TenantDb();
+  await outboundDb.start();
+
   // 🔴 المسار الوحيد للإنتاج. RecordingWhatsAppSender بـwhatsapp/sender.ts
   //    موجود للاختبارات وللتشغيل المحلي بلا توكن، وما بينوصل من هون أبدا.
-  const sender = new MetaWhatsAppSender();
+  //    Every message that went out is kept, for the order's conversation.
+  const sender = new SavingWhatsAppSender(new MetaWhatsAppSender(), outboundDb);
   const conversation = new ConversationService(sender);
   // مُراقِب الإشعارات (FR-11): نفس المرسِل ونفس المخزن. `NOTIFY_POLL_MS=0` يطفئه.
   const notifier = new OrderNotifier(db, sender, {
@@ -38,6 +46,7 @@ async function bootstrap(): Promise<void> {
       void notifier
         .stop()
         .then(() => db.stop())
+        .then(() => outboundDb.stop())
         .then(() => process.exit(0));
     });
   };
