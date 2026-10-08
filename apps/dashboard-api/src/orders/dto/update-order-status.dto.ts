@@ -1,9 +1,10 @@
 import { createZodDto } from "nestjs-zod";
 import { z } from "zod";
-import { ORDER_STATUSES, STAFF_TARGET_STATUSES } from "@sufria/shared";
-
-/** Brief D §2.8: the limit applies after trimming, i.e. to what is stored. */
-export const MAX_CANCELLATION_REASON_LENGTH = 300;
+import {
+  MAX_CANCELLATION_REASON_LENGTH,
+  ORDER_STATUSES,
+  STAFF_TARGET_STATUSES,
+} from "@sufria/shared";
 
 /**
  * Body of `PATCH /orders/:id/status` — brief D §3.3, check 1: everything here

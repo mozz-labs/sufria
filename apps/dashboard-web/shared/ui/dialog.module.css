@@ -1,0 +1,16 @@
+/* A modal window: a surface on a dimmed page, both from the tokens. */
+
+.dialog {
+  margin: auto;
+  width: calc(100% - 32px);
+  max-width: 420px;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.dialog::backdrop {
+  background: color-mix(in srgb, var(--text-primary) 45%, transparent);
+}

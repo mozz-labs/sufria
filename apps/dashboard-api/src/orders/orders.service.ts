@@ -8,6 +8,8 @@ import {
   type OrderDetail,
   type OrderListItem,
   type OrderListResponse,
+  type OrderMessage,
+  type OrderMessagesResponse,
   type OrderStatus,
   type OrderTab,
   type PaymentMethod,
@@ -76,6 +78,19 @@ export type StatusChangeOutcome =
 
 /** Brief D §2.5: 20 per page in the `history` tab, no pages in `active`. */
 export const HISTORY_PAGE_SIZE = 20;
+
+/** Brief I §4 (I-5): an order's conversation, at most its latest 200. */
+export const MESSAGES_LIMIT = 200;
+
+/**
+ * Rule 3's window for a customer message's time (brief I §4, I-5): after the
+ * customer's order before this one, up to this one, and no older than 24
+ * hours before it. Assumes the `o` CTE of `messages`; `time` is a column.
+ */
+const inWindow = (time: string) =>
+  sql.raw(`(${time} > COALESCE(o.prev_at, '-infinity'::timestamptz)
+            AND ${time} <= o.created_at
+            AND ${time} >= o.created_at - interval '24 hours')`);
 
 type OrderListRow = {
   id: string;
@@ -256,6 +271,93 @@ export class OrdersService {
       })),
       history: r.history,
     };
+  }
+
+  /**
+   * `GET /orders/:id/messages` — brief I §4 (I-5): the order's conversation.
+   * `null` = not found under the restaurant's context, as `detail` (§2.9).
+   *
+   * Which messages are the order's — the customer is the order's, and their
+   * number is the very digits of `from_phone` and `to_phone` (I-0 #7):
+   *   1. a bot message naming this order (`order_id`) is its;
+   *   2. one naming another order is not, whatever its time;
+   *   3. a customer message belongs to the first order of the same customer
+   *      at the same restaurant made after it or at its moment — so from just
+   *      after the order before, up to this one — and none older than 24
+   *      hours before the order (`inWindow`). `received_at`: the database's
+   *      clock, as `created_at` is — the «أكّد» that made the order is
+   *      received in the very transaction that writes it, at its moment;
+   *   4. a bot message naming no order belongs where the customer's last
+   *      message before it belongs (3) — any message, an image too: the reply
+   *      answered it;
+   *   5. what comes after the customer's last order is no order's yet.
+   * Text messages alone; the latest 200, in time order then `id`. One
+   * statement, so the order and its messages are one moment's.
+   *
+   * RLS keeps every table to the restaurant (`runInTenant`); the explicit
+   * `restaurant_id` conditions are defence in depth, and the indexes'.
+   */
+  async messages(
+    restaurantId: string,
+    orderId: string,
+  ): Promise<OrderMessagesResponse | null> {
+    const res = await this.tenantDb.runInTenant(restaurantId, (tx) =>
+      tx.execute<{ found: boolean; messages: OrderMessage[] }>(sql`
+        WITH o AS (
+          SELECT o.id, o.restaurant_id, o.created_at, c.phone_number AS phone,
+                 (SELECT p.created_at
+                    FROM orders p
+                   WHERE p.customer_id = o.customer_id
+                     AND p.restaurant_id = o.restaurant_id
+                     AND (p.created_at, p.id) < (o.created_at, o.id)
+                   ORDER BY p.created_at DESC, p.id DESC
+                   LIMIT 1) AS prev_at
+            FROM orders o
+            JOIN customers c ON c.id = o.customer_id
+           WHERE o.id = ${orderId}::uuid
+             AND o.restaurant_id = ${restaurantId}::uuid
+        ),
+        msgs AS (
+          SELECT i.id, 'inbound' AS direction, i.body AS text, i.received_at AS at
+            FROM o
+            JOIN inbound_messages i
+              ON i.restaurant_id = o.restaurant_id
+             AND i.from_phone = o.phone
+           WHERE i.body IS NOT NULL
+             AND ${inWindow("i.received_at")}
+          UNION ALL
+          SELECT m.id, 'outbound', m.body, m.sent_at
+            FROM o
+            JOIN outbound_messages m
+              ON m.restaurant_id = o.restaurant_id
+             AND m.to_phone = o.phone
+            LEFT JOIN LATERAL (
+              SELECT a.received_at
+                FROM inbound_messages a
+               WHERE a.restaurant_id = o.restaurant_id
+                 AND a.from_phone = o.phone
+                 AND a.received_at <= m.sent_at
+               ORDER BY a.received_at DESC, a.id DESC
+               LIMIT 1) last ON true
+           WHERE m.order_id = o.id
+              OR (m.order_id IS NULL AND ${inWindow("last.received_at")})
+        )
+        SELECT EXISTS (SELECT 1 FROM o) AS found,
+               COALESCE(
+                 (SELECT json_agg(json_build_object(
+                           'id', l.id,
+                           'direction', l.direction,
+                           'text', l.text,
+                           'at', ${isoUtc("l.at")})
+                         ORDER BY l.at, l.id)
+                    FROM (SELECT * FROM msgs
+                           ORDER BY at DESC, id DESC
+                           LIMIT ${MESSAGES_LIMIT}) l),
+                 '[]'::json) AS messages`),
+    );
+    const row = res.rows[0];
+    if (!row?.found) return null;
+    return { messages: row.messages };
   }
 
   /**

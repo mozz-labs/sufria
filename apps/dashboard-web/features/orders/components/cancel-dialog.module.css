@@ -1,0 +1,85 @@
+/* The cancel dialog — brief I §4 (I-6). Tokens only, logical properties,
+   44px buttons; both buttons in the existing secondary style. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.input {
+  min-height: 88px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The warning at the start, the count at the end; the warning wraps. */
+.under {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.count {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-block-start: 8px;
+}
+
+.button {
+  min-height: 44px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: progress;
+}

@@ -1,0 +1,417 @@
+/* One order — brief I §4 (I-6). Tokens only; logical properties only; touch
+   targets 44px. The number is the page's largest thing: 26px/600 in the
+   numbers' font; the total 22px/600. Two columns from 1024px up — the order
+   at the start (~420px), the conversation at the end — one below. */
+
+/* The page's width, on the body while it is there: the header's content
+   takes the same width and edges (I-9 #9). */
+:global(body):has(.page) {
+  --page-width: 1200px;
+}
+
+.page {
+  width: 100%;
+  max-width: var(--page-width);
+  margin-inline: auto;
+  padding: 14px 18px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding-inline-end: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.notice {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* ---- the order's header ---- */
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.number {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* Two fixed rows on a phone, one from 640px up — never wrapped by length. */
+.meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "badge kind"
+    "customer since";
+  align-items: center;
+  justify-items: start;
+  gap: 6px 12px;
+  font-size: 15px;
+}
+
+@media (min-width: 640px) {
+  .meta {
+    grid-template-columns: auto auto auto auto;
+    grid-template-areas: "badge kind customer since";
+    justify-content: start;
+  }
+}
+
+.metaBadge {
+  grid-area: badge;
+}
+
+.kind {
+  grid-area: kind;
+  font-weight: 600;
+}
+
+.customer {
+  grid-area: customer;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.since {
+  grid-area: since;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---- the two columns ---- */
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "order"
+    "conversation";
+  gap: 16px;
+}
+
+/* From 1024px up: two columns, and the page scrolls as any page — the order
+   whole in it, with no box of its own — while the conversation stays beside
+   it, sticky (brief I-9b #1, Mohammed's decision; I-9 #7's own scroll for the
+   order is gone). The conversation's height is the screen's less where the
+   columns start (--chat-top, written on them before the first paint by
+   useOffsetTop) and the page's 32px end (conversation.module.css): as the
+   page opens, its latest message is in sight, and its list is the page's
+   one box that scrolls. */
+@media (min-width: 1024px) {
+  .columns {
+    grid-template-columns: 420px minmax(0, 1fr);
+    grid-template-areas: "order conversation";
+    align-items: start;
+  }
+
+  .conversation {
+    position: sticky;
+    top: 16px;
+  }
+}
+
+.order {
+  grid-area: order;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.conversation {
+  grid-area: conversation;
+  min-width: 0;
+}
+
+/* ---- the order ---- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.lines {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A long name wraps on its side; the amount keeps its own. */
+.lineItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 15px;
+}
+
+.lineLabel {
+  overflow-wrap: anywhere;
+}
+
+.amount {
+  white-space: nowrap;
+}
+
+.total {
+  padding-block-start: 8px;
+  border-block-start: 1px solid var(--border);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.payment {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.address {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* The driver reads this: plain, large, as the customer wrote it. */
+.addressText {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Two columns for the whole history — the badges, as wide as the widest,
+   then the times — so every time starts on the same line, whatever its
+   badge, at every width (I-9 #5). Each row is a subgrid of them. */
+.history {
+  list-style: none;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+/* A status per row — its badge, its time — and a cancellation's reason
+   right under its row, across both (I-9 #4). */
+.historyItem {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  row-gap: 6px;
+}
+
+.historyBadge {
+  justify-self: start;
+}
+
+/* «سبب الإلغاء» over the reason: the same look as «العنوان» over the
+   address. */
+.reason {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reasonText {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+/* Left to right inside (a date and its time), at the start of its column
+   all the same — the grid's start, not the text's (I-9 #6). */
+.time {
+  justify-self: start;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---- the actions ---- */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The next step and its line. Under 1024px, while there is a step, a bar
+   fixed at the bottom of the screen, the screen's width (I-9 #8): the
+   surface, a line over it, no shadow, clear of the phone's home bar
+   (safe-area-inset-bottom, with viewport-fit=cover in layout.tsx). The page
+   keeps that much room at its end, so nothing stays under the bar. From
+   1024px up, where it was. */
+.stepBar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stepBar[data-fixed] {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  padding-block: 12px calc(12px + env(safe-area-inset-bottom));
+  padding-inline: max(
+    18px,
+    env(safe-area-inset-left),
+    env(safe-area-inset-right)
+  );
+  background: var(--surface);
+  border-block-start: 1px solid var(--border);
+}
+
+/* The bar's height: 12 + the 44px button + 12, and the line's 12 + 22. */
+.page:has(.stepBar[data-fixed]) {
+  padding-block-end: calc(32px + 68px + env(safe-area-inset-bottom));
+}
+
+.page:has(.stepBar[data-fixed] .line) {
+  padding-block-end: calc(32px + 102px + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .stepBar[data-fixed] {
+    position: static;
+    padding: 0;
+    background: none;
+    border: 0;
+  }
+
+  .page:has(.stepBar[data-fixed]),
+  .page:has(.stepBar[data-fixed] .line) {
+    padding-block-end: 32px;
+  }
+}
+
+/* The card's button, the width of the column. */
+.step {
+  position: relative;
+  overflow: hidden;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.step:disabled {
+  cursor: progress;
+}
+
+/* ---- while it works: start (I-9b #6) ----
+   Disabled from the press until the server's answer, the button shows it is
+   working (Mohammed's decision): a shade darker, a thin line of the tokens
+   running inside it, its word unchanged. The line moves by transform alone
+   — on the compositor — from the start of the line to its end, and stands
+   still under reduced motion. The same block as the other next-step button's
+   (order-card .action / order-details .step), held identical by
+   test/orders/next-step.test.mts; on the button's own disabled state, it
+   adds no code to the page. */
+.step:disabled {
+  filter: brightness(0.88);
+}
+
+.step:disabled::after {
+  --way: 1;
+  content: "";
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-start: 0;
+  width: 30%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--on-accent);
+  animation: var(--step-working);
+}
+
+.step:disabled:dir(rtl)::after {
+  --way: -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step:disabled::after {
+    animation: none;
+    inset-inline: 16px;
+    width: auto;
+    opacity: 0.7;
+  }
+}
+/* ---- while it works: end ---- */
+
+.step:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.line {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* 24px from what is above it: 12 of gap, and 12 more. */
+.cancel {
+  margin-block-start: 12px;
+}

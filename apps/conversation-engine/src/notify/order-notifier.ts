@@ -298,12 +298,15 @@ export class OrderNotifier {
       return "no_sender_number";
     }
 
+    // The claim committed before the send, so the order is there for the
+    // saving wrapper's own connection: the message carries it (brief I, I-4).
     const sent = await this.sendWithRetry(
       {
         restaurantId: order.restaurantId,
         phoneNumberId: order.phoneNumberId,
         to: order.customerPhone,
         body: decision.body,
+        orderId: order.id,
       },
       logFields,
     );
