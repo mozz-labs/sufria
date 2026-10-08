@@ -2,10 +2,8 @@ import { and, asc, eq } from "drizzle-orm";
 import {
   menuCategories,
   menuItems,
-  menuLineAr,
   priceToMinor,
-  MENU_COMMANDS_TAIL_AR,
-  MENU_HEADER_AR,
+  renderMenuText,
   type Currency,
 } from "@sufria/shared";
 
@@ -93,31 +91,11 @@ async function readMenu(tx: TenantTx): Promise<MenuRow[]> {
   }));
 }
 
-/** بتبني النص النهائي. مفصولة عن القراءة عشان تنفحص بلا قاعدة. */
-export function renderMenuText(
-  rows: readonly MenuRow[],
-  currency: Currency,
-): string {
-  const parts: string[] = [MENU_HEADER_AR];
-  let currentCategory: string | null = null;
-
-  for (const row of rows) {
-    if (row.categoryId !== currentCategory) {
-      currentCategory = row.categoryId;
-      parts.push("", row.categoryName);
-    }
-    // 🔴 القالب بـ`domain.ts` جوّا القاموس المحروس، مش سطر inline هون —
-    //    كان هون بلا عملة، والسلّة بعملة (بريف د §2.3).
-    parts.push(menuLineAr(row, currency));
-  }
-
-  // 🔴 الذيل بينضاف هون، بمكان واحد، فبيطلع **مرة وحدة** بكل رسالة قائمة.
-  //    إضافته بمكان النداء بتخلّيه يتكرّر أو ينُسى حسب مين بيبعت.
-  parts.push("", MENU_COMMANDS_TAIL_AR);
-
-  return parts.join("\n");
-}
-
+/**
+ * The rows read here, the text built by `renderMenuText` from
+ * `packages/shared` (brief ي-أ §3): the dashboard API's 4096 guard measures
+ * the very text the engine sends, so the two cannot build it apart.
+ */
 export async function buildMenu(
   tx: TenantTx,
   currency: Currency,

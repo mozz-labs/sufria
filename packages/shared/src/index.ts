@@ -9,6 +9,8 @@ export * from "./schema.js";
 export * from "./domain.js";
 export * from "./normalize.js";
 export * from "./item-parser.js";
+export * from "./menu-message.js";
+export * from "./staff-input.js";
 export * from "./dashboard-api.js";
 export * from "./design-tokens.js";
 export * from "./dashboard-ui.js";

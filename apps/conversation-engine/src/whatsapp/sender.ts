@@ -1,3 +1,5 @@
+import { WHATSAPP_TEXT_LIMIT, whatsappTextLength } from "@sufria/shared";
+
 import { env } from "../config/env.js";
 import { logger, maskPhone } from "../logger.js";
 
@@ -46,20 +48,12 @@ export interface WhatsAppSender {
 }
 
 /**
- * سقف نص رسالة واتساب الواحدة.
- *
- * 🔴 قائمة مطعم بستين صنفا بتتجاوزه. والسلوك الممنوع هنا هو **الاقتطاع
- *    الصامت**: زبون بيشوف قائمة بتقطع بنص اسم صنف وبيطلب رقما مش موجود،
- *    والمطعم ما بيعرف إن نص قائمته ما وصل ولا مرة. الصح إن الحالة تنكشف
- *    وتنسجّل خطأ.
- *
- *    تقسيم القائمة لصفحات أو خطوة اختيار تصنيف = تأجيل مقصود لشريحة جاية.
- */
-export const WHATSAPP_TEXT_LIMIT = 4096;
-
-/**
  * نص أطول من سقف واتساب. **دائمة، مش عابرة** — إعادة المحاولة ما بتصلّحها،
  * بتصلّحها قائمة أقصر. المستدعي بيسجّل وبيكمّل، وما بيطلب إعادة إرسال.
+ *
+ * The limit and the way it is counted live in `packages/shared`
+ * (`WHATSAPP_TEXT_LIMIT`, `whatsappTextLength`), since brief ي-أ §3: the
+ * dashboard API's 4096 guard counts by the very same rule.
  */
 export class OutboundTextTooLongError extends Error {
   constructor(
@@ -73,9 +67,8 @@ export class OutboundTextTooLongError extends Error {
 
 /** بترمي بدل ما تقتطع. بتنستدعى من التنفيذين الاتنين. */
 export function assertWithinTextLimit(body: string): void {
-  // 🔴 [...body].length مش body.length: الأخيرة بتعدّ وحدات UTF-16، فالإيموجي
-  //    بينعدّ اتنين. ميتا بتعدّ محارف. الفرق بيرفض قائمة صالحة.
-  const length = [...body].length;
+  // 🔴 Characters, as Meta counts them — not UTF-16 units (`whatsappTextLength`).
+  const length = whatsappTextLength(body);
   if (length > WHATSAPP_TEXT_LIMIT) {
     throw new OutboundTextTooLongError(length);
   }
@@ -157,7 +150,7 @@ export class MetaWhatsAppSender implements WhatsAppSender {
       {
         restaurantId: message.restaurantId,
         to: maskPhone(message.to),
-        chars: [...message.body].length,
+        chars: whatsappTextLength(message.body),
       },
       "رسالة صادرة انبعثت",
     );

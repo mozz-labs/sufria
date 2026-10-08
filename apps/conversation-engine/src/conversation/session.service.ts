@@ -5,7 +5,6 @@ import {
   customers,
   priceToMinor,
   restaurants,
-  welcomeMessageAr,
   type Currency,
 } from "@sufria/shared";
 
@@ -292,7 +291,7 @@ export class ConversationService {
     // ---------------------------------------------------------------------
     const prepared = await prepareMenu(
       tx,
-      welcomeMessageAr(restaurant.name),
+      restaurant.name,
       restaurant.currency,
     );
     if (!prepared.ok) {

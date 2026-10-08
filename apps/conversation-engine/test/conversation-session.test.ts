@@ -40,6 +40,7 @@ import {
   conversationSessions,
   nothingUnderstoodAr,
   welcomeMessageAr,
+  WHATSAPP_TEXT_LIMIT,
 } from "@sufria/shared";
 
 import { env } from "../src/config/env.js";
@@ -52,10 +53,7 @@ import {
   legacyTimezoneKey,
 } from "../src/restaurant/business-hours.js";
 import { buildMenu } from "../src/restaurant/menu.js";
-import {
-  RecordingWhatsAppSender,
-  WHATSAPP_TEXT_LIMIT,
-} from "../src/whatsapp/sender.js";
+import { RecordingWhatsAppSender } from "../src/whatsapp/sender.js";
 import { WebhookService } from "../src/whatsapp/webhook.service.js";
 
 const RUN = randomUUID();

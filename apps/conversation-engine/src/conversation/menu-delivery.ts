@@ -1,4 +1,8 @@
-import { itemsRemovedUnavailableLineAr, type Currency } from "@sufria/shared";
+import {
+  firstMenuMessageAr,
+  itemsRemovedUnavailableLineAr,
+  type Currency,
+} from "@sufria/shared";
 
 import type { TenantTx } from "../db/types.js";
 import { buildMenu, type MenuLine } from "../restaurant/menu.js";
@@ -38,7 +42,10 @@ import {
  * يبعتها بلا ما يمرق من `deliverMenu`.
  */
 export interface PreparedMenu {
-  /** النص كما بينبعت: البادئة (الترحيب أول مرة) + القائمة. */
+  /**
+   * The text as it is sent: the first message (welcome + menu, built by
+   * `firstMenuMessageAr` in `packages/shared`), or the menu alone for «منيو».
+   */
   readonly body: string;
   readonly lines: readonly MenuLine[];
 }
@@ -53,14 +60,18 @@ export type PrepareMenuResult =
  * 🔴 الترتيب مقصود ومكتوب بـ`session.service.ts`: قائمة أطول من سقف واتساب
  *    مشكلة **دائمة** بتنحل بقائمة أقصر لا بإعادة محاولة. لو انفتحت جلسة،
  *    رسايل الزبون الجاية بتمرق من فرع "جلسة نشطة" وبيضل بلا قائمة للأبد.
+ *
+ * @param welcomeFor the restaurant's name, for the first message's welcome;
+ *   `null` for «منيو», which sends the menu alone.
  */
 export async function prepareMenu(
   tx: TenantTx,
-  prefix: string | null,
+  welcomeFor: string | null,
   currency: Currency,
 ): Promise<PrepareMenuResult> {
   const menu = await buildMenu(tx, currency);
-  const body = prefix === null ? menu.text : `${prefix}\n${menu.text}`;
+  const body =
+    welcomeFor === null ? menu.text : firstMenuMessageAr(welcomeFor, menu.text);
 
   try {
     assertWithinTextLimit(body);
