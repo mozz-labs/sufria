@@ -5,7 +5,8 @@
 // Section 6 extends the same discipline to the CHECK constraints added in
 // 0010: they are the safety net order creation leans on (task C brief §8), and
 // a constraint nobody has watched reject anything is a comment, not a net.
-// Section 7 does the same for 0011's order number and currency.
+// Section 7 does the same for 0011's order number and currency, and section 8
+// for 0014's «an archived item is never available».
 //
 // Every order inserted here carries an explicit order_number (0011: NOT NULL,
 // no default), and no two orders of the same restaurant in one section share
@@ -581,6 +582,87 @@ async function main() {
     "7. control: a restaurant with no currency named gets JOD",
     defaulted === "JOD",
     `${defaulted}`,
+  );
+
+  // --- 8. 0014 an archived item is never available ------------------------
+  // The guarantee under the dashboard API (brief ي-أ §2), and the reason the
+  // engine needed no change for archiving: it already treats
+  // is_available = false as «not on the menu».
+  //
+  // 🔴 Every statement here is rolled back, rejected or not. A constraint that
+  //    stopped firing must not leave an archived, available item in restaurant
+  //    A's menu for the next suite to trip over — which `rejects` above would
+  //    do, since it commits whatever gets through.
+  const ITEM_A = "e0000000-0000-4000-8000-00000000000a";
+  const CATEGORY_A = "d0000000-0000-4000-8000-00000000000a";
+  const ROLLED_BACK = new Error("rolled back on purpose");
+  type Attempt =
+    | { accepted: true }
+    | { accepted: false; code?: string; constraint?: string };
+  const attempt = async (stmt: unknown): Promise<Attempt> => {
+    try {
+      await db.transaction(async (tx) => {
+        await withTenant(tx);
+        await tx.execute(stmt as never);
+        throw ROLLED_BACK;
+      });
+    } catch (e) {
+      if (e === ROLLED_BACK) return { accepted: true };
+      const cause = (e as { cause?: { code?: string; constraint?: string } })
+        .cause;
+      return {
+        accepted: false,
+        code: cause?.code,
+        constraint: cause?.constraint,
+      };
+    }
+    return { accepted: true };
+  };
+  const firedArchiveCheck = (a: Attempt): boolean =>
+    !a.accepted &&
+    a.code === "23514" &&
+    a.constraint === "menu_items_archived_not_available";
+  const archiveDetail = (a: Attempt): string =>
+    a.accepted
+      ? "ACCEPTED — the constraint did not fire"
+      : firedArchiveCheck(a)
+        ? ""
+        : `rejected by ${a.constraint ?? "nothing nameable"} (${a.code ?? "?"}) instead`;
+
+  const insertedAvailable = await attempt(
+    sql.raw(`
+    INSERT INTO menu_items (restaurant_id, category_id, name, price, is_available, archived_at)
+    VALUES ('${RID}', '${CATEGORY_A}', 'صنف فحص 0014', 2.50, true, now())`),
+  );
+  check(
+    "8. menu_items_archived_not_available: an archived item written available (23514)",
+    firedArchiveCheck(insertedAvailable),
+    archiveDetail(insertedAvailable),
+  );
+
+  // The very UPDATE a dashboard bug would run: archive and switch on at once.
+  const archivedAndOn = await attempt(
+    sql.raw(`
+    UPDATE menu_items SET archived_at = now(), is_available = true
+     WHERE id = '${ITEM_A}'`),
+  );
+  check(
+    "8. menu_items_archived_not_available: an item archived and switched on in one UPDATE (23514)",
+    firedArchiveCheck(archivedAndOn),
+    archiveDetail(archivedAndOn),
+  );
+
+  // 🔴 The control. Without it CHECK (false) would pass both cases above, and
+  //    no item could ever be archived.
+  const archivedOff = await attempt(
+    sql.raw(`
+    INSERT INTO menu_items (restaurant_id, category_id, name, price, is_available, archived_at)
+    VALUES ('${RID}', '${CATEGORY_A}', 'صنف فحص 0014', 2.50, false, now())`),
+  );
+  check(
+    "8. control: an archived item that is switched off is accepted",
+    archivedOff.accepted,
+    archivedOff.accepted ? "" : `rejected (${archivedOff.code ?? "?"})`,
   );
 
   console.log(
