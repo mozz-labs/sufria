@@ -15,8 +15,8 @@ flowchart TB
         U10["Pay in cash<br/><b>FR-10</b> · partially built"]:::part
         U22["Told the restaurant<br/>is closed<br/><b>FR-22</b> · built"]:::uc
         U25["Start over after<br/>60 minutes of silence<br/><b>FR-25</b> · built"]:::uc
-        U28["Told ordering<br/>is paused<br/><b>FR-28</b> · in progress"]:::prog
-        U8["Reorder the usual<br/>order in one step<br/><b>FR-08</b> · planned"]:::prog
+        U28["Told ordering<br/>is paused<br/><b>FR-28</b> · built"]:::uc
+        U8["Repeat the last order<br/>in one word<br/><b>FR-08</b> · built"]:::uc
         U15["Pay online<br/><b>FR-15</b> · deferred"]:::defer
     end
 
@@ -28,5 +28,5 @@ flowchart TB
     U5 -. "extended by — outside opening hours" .- U22
     U5 -. "extended by — silent session" .- U25
     U6 -. "extended by — at any step while paused" .- U28
-    U7 -. "extended by — skips browsing" .- U8
+    U5 -. "extended by — returning customer" .- U8
     U10 -. "online option" .- U15

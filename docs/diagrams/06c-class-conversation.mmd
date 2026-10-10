@@ -14,12 +14,12 @@ classDiagram
         -ingestOne(message) IngestOutcome
     }
     class ConversationService {
-        +handleInbound(tx, message) void
-        -readRestaurant(tx)
+        +handleInbound(tx, ctx) ConversationOutcome
+        -readRestaurant(tx, restaurantId)
         -findActiveSession(tx, phone)
-        -expireSession(tx, session)
-        -upsertCustomer(tx, phone)
-        -openSession(tx, customerId)
+        -expireSession(tx, ctx, session)
+        -upsertCustomer(tx, restaurantId, phone)
+        -openSession(tx, restaurantId, customerId)
     }
     class StateHandlers {
         <<functions>>
@@ -30,8 +30,17 @@ classDiagram
     class OpeningHoursAndMenu {
         <<functions>>
         +decideHours(hours, timezone, now)
-        +prepareMenu(tx, restaurant)
-        +deliverMenu(tx, sender, session)
+        +prepareMenu(tx, name, currency, reorder)
+        +deliverMenu(tx, sender, args)
+    }
+    class LastOrderSuggestion {
+        <<functions reorder.ts · FR-08>>
+        +findReorderSource(tx, phone, minAgeMinutes)
+        +buildReorderSuggestion(source, catalog, menuOrder, currency)
+    }
+    class OrdersPaused {
+        <<function orders-paused.ts · FR-28>>
+        +replyOrdersPaused(sender, recipient, reason)
     }
     class CriticalPrimitives {
         <<module>>
@@ -42,6 +51,9 @@ classDiagram
     WebhookServer --> WebhookService : after the HMAC check
     WebhookService --> CriticalPrimitives : dedup gate first
     WebhookService --> ConversationService
+    ConversationService --> OrdersPaused : paused, or no item to show
+    ConversationService --> LastOrderSuggestion : findReorderSource, new conversation only
     ConversationService --> OpeningHoursAndMenu
+    OpeningHoursAndMenu --> LastOrderSuggestion : buildReorderSuggestion, measured with the menu
     ConversationService --> StateHandlers
     StateHandlers --> CriticalPrimitives : CAS on the session state

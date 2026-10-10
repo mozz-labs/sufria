@@ -2,21 +2,21 @@ stateDiagram-v2
     direction TB
     classDef deferred fill:#F2F2F0,stroke:#8A8A85,stroke-dasharray:5 3,color:#5A5A57
 
-    [*] --> new : first message, restaurant open,<br/>menu within 4,096 characters
-    new --> browsing : same transaction (CAS)<br/>welcome and numbered menu sent
+    [*] --> new : first message ·<br/>restaurant open ·<br/>orders not paused ·<br/>menu not empty and<br/>within 4,096 characters
+    new --> browsing : same transaction (CAS):<br/>welcome and menu sent,<br/>with the last order<br/>when there is one
 
-    browsing --> fulfillment_choice : finish word, cart not empty,<br/>restaurant delivers
-    browsing --> cart_review : finish word, cart not empty,<br/>pickup only or fulfilment already chosen
+    browsing --> fulfillment_choice : finish word with a cart,<br/>or the reorder word<br/>with an empty cart ·<br/>restaurant delivers
+    browsing --> cart_review : the same, when pickup is<br/>the only option or<br/>fulfilment is chosen
 
-    fulfillment_choice --> cart_review : pickup, or a delivery address<br/>(1 to 300 characters)
+    fulfillment_choice --> cart_review : pickup, or a delivery<br/>address (1 to 300<br/>characters)
     fulfillment_choice --> browsing : edit (fulfilment cleared)<br/>or cancel (cart emptied)
 
-    cart_review --> browsing : edit (fulfilment kept), cancel,<br/>or every line now unavailable
-    cart_review --> order_placed : confirm word, every line available<br/>(CAS, then the order is written)
+    cart_review --> browsing : edit (fulfilment kept),<br/>cancel, or every line<br/>now unavailable
+    cart_review --> order_placed : confirm word, every line<br/>available (CAS, then<br/>the order is written)
 
-    browsing --> abandoned : next message after 60 min of silence
-    fulfillment_choice --> abandoned : next message after 60 min of silence
-    cart_review --> abandoned : next message after 60 min of silence
+    browsing --> abandoned : next message after<br/>60 min of silence
+    fulfillment_choice --> abandoned : next message after<br/>60 min of silence
+    cart_review --> abandoned : next message after<br/>60 min of silence
 
     awaiting_payment
     class awaiting_payment deferred
@@ -24,28 +24,59 @@ stateDiagram-v2
     order_placed --> [*]
     abandoned --> [*]
 
-    note right of browsing
-        Item numbers, cart, menu and
-        remove N stay in browsing.
-        Three messages in a row not understood:
-        one handoff message with the restaurant's
-        contact number; the state does not change.
+    note right of new
+        Orders paused (FR-28):
+        in browsing, fulfilment
+        and cart review every
+        message gets the paused
+        text, before any handler.
+        No state changes and
+        last_message_at is kept,
+        so the customer resumes
+        where they were.
+    end note
+
+    note left of browsing
+        Item numbers, cart, menu
+        and remove N stay in
+        browsing.
+        The reorder word (FR-08)
+        fills an empty cart from
+        the suggestion at
+        today's prices, then
+        does what the finish
+        word does. Without a
+        suggestion, or with a
+        cart, it is read as
+        ordinary text.
+        Three messages in a row
+        not understood: one
+        handoff message with
+        the restaurant's contact
+        number; the state does
+        not change.
     end note
 
     note right of awaiting_payment
-        In the schema for online payment
-        (deferred). Never entered today.
+        In the schema for online
+        payment (deferred).
+        Never entered today.
     end note
 
     note right of order_placed
-        A closed state. The next message
-        opens a new session with the
-        welcome and the full menu.
+        A closed state. The next
+        message opens a new
+        session with the welcome
+        and the full menu.
     end note
 
     note right of abandoned
-        No job: expiry is checked when the next
-        message arrives, which then starts a new
-        conversation. The abandoned session
-        keeps its cart; no order is touched.
+        No job: expiry is
+        checked when the next
+        message arrives, which
+        then starts a new
+        conversation. The
+        abandoned session keeps
+        its cart; no order
+        is touched.
     end note

@@ -4,6 +4,7 @@ flowchart TB
     classDef shared fill:#EDE6F7,stroke:#5B3A99,color:#161615
     classDef db fill:#DCEEDC,stroke:#24632F,stroke-width:2px,color:#161615
     classDef ext fill:#F5DEDD,stroke:#8A332F,color:#161615
+    classDef prog fill:#FBEAB0,stroke:#7A5C06,stroke-width:1px,stroke-dasharray:5 3,color:#161615
     classDef defer fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
 
     subgraph REPO["sufria — single repository (pnpm workspaces) · three processes"]
@@ -14,22 +15,25 @@ flowchart TB
             W2["Order details<br/>with the conversation"]:::mod
             W3["Login and session gate"]:::mod
             W4["API client<br/><i>polling every 10 s</i>"]:::mod
+            W5["Menu and orders pause<br/><i>screen in progress</i>"]:::prog
         end
 
         subgraph SHARED["packages/shared — @sufria/shared"]
             SH1["Drizzle schema mirror"]:::shared
             SH2["Customer-facing texts,<br/>normaliser, item parser"]:::shared
-            SH3["STAFF_TRANSITIONS,<br/>API contracts"]:::shared
+            SH3["STAFF_TRANSITIONS,<br/>API contracts,<br/>dashboard texts"]:::shared
+            SH4["Menu message builder<br/><i>the engine sends it,<br/>the API measures it</i>"]:::shared
         end
 
         subgraph ENGINE["apps/conversation-engine — node:http · port 3001"]
             E1["Webhook route<br/><i>HMAC on the raw body + Zod</i>"]:::mod
             E2["WebhookService<br/><i>dedup gate · routing ·<br/>one transaction per message</i>"]:::mod
-            E3["ConversationService<br/><i>idle expiry · opening hours ·<br/>state router</i>"]:::mod
+            E3["ConversationService<br/><i>idle expiry · opening hours ·<br/>orders pause · state router</i>"]:::mod
             E4["State handlers<br/><i>browsing · fulfilment ·<br/>cart review</i>"]:::mod
             E5["Order creation<br/><i>availability re-check · CAS</i>"]:::mod
             E6["Sender<br/><i>text only · saved to<br/>outbound_messages</i>"]:::mod
             E7["OrderNotifier<br/><i>every 5 s</i>"]:::mod
+            E8["Last-order suggestion<br/><i>FR-08 · in the first message</i>"]:::mod
         end
 
         subgraph API["apps/dashboard-api — NestJS 11 · port 3002"]
@@ -37,7 +41,8 @@ flowchart TB
             A2["RestaurantContextGuard"]:::mod
             A3["TenantDbService<br/><i>sole data path</i>"]:::mod
             A4["Orders<br/><i>list · detail · messages · status</i>"]:::mod
-            A5["Menu items · Settings"]:::mod
+            A5["Menu<br/><i>list · add · edit · archive ·<br/>enable all · 4,096 guard</i>"]:::mod
+            A7["Restaurant settings<br/><i>hours · fee · contact ·<br/>orders pause</i>"]:::mod
             A6["Auth<br/><i>login · refresh · logout</i>"]:::mod
         end
     end
@@ -48,11 +53,12 @@ flowchart TB
 
     W4 -->|"REST + JWT + x-restaurant-id"| A1
     A1 --> A2 --> A3
-    A4 & A5 & A6 --> A3
+    A4 & A5 & A6 & A7 --> A3
     A3 -->|"set_config(..., true) then query"| DB
 
     META -->|"inbound webhook"| E1
     E1 --> E2 --> E3 --> E4 --> E5
+    E3 --> E8
     E4 --> E6
     E7 --> E6
     E6 -->|"outbound text"| META

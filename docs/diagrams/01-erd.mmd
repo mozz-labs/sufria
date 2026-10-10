@@ -55,6 +55,7 @@ erDiagram
     jsonb tags
     timestamptz created_at
     timestamptz updated_at
+    timestamptz archived_at "nullable"
   }
   message_templates {
     uuid id PK
@@ -156,6 +157,7 @@ erDiagram
     text contact_phone "nullable"
     numeric delivery_fee
     text currency
+    timestamptz orders_paused_at "nullable"
   }
   staff_accounts {
     uuid id PK

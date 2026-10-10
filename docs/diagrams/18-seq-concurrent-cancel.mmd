@@ -14,7 +14,7 @@ sequenceDiagram
         CE->>DB: INSERT processed_webhook_events ON CONFLICT DO NOTHING
         CE->>DB: SELECT order WHERE payment_gateway_ref=? FOR UPDATE
     end
-    Note over DB: The row lock admits exactly one of the two first.<br/>The second blocks, then re-reads committed state.
+    Note over DB: The row lock admits exactly one<br/>of the two first. The second blocks,<br/>then re-reads committed state.
     alt cancellation committed first
         API->>DB: status='cancelled'
         API->>DB: COMMIT (releases the lock)

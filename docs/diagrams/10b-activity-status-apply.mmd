@@ -6,13 +6,13 @@ flowchart TB
     classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
     classDef defer fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
 
-    S(("from part a — transition allowed")):::start --> A6["3 · runInTenant: BEGIN ·<br/>set_config(app.current_restaurant_id, ..., true)"]:::crit
-    A6 --> A7["One compare-and-swap UPDATE:<br/>SET status = to, notified = false<br/>+ ready_at on ready · collected on a completed cash order<br/>· cancelled_by and reason on cancel<br/>WHERE id AND status = from<br/>AND, for accepted or completed: cash OR paid"]:::crit
+    S(("from part a — transition allowed")):::start --> A6["3 · runInTenant: BEGIN<br/>set_config(<br/>app.current_restaurant_id,<br/>..., true)"]:::crit
+    A6 --> A7["One compare-and-swap<br/>UPDATE:<br/>SET status = to,<br/>notified = false<br/>+ ready_at on ready<br/>+ payment_status =<br/>collected when a cash<br/>order is completed<br/>+ cancelled_by and<br/>reason on cancel<br/>WHERE id AND<br/>status = from<br/>AND, for accepted or<br/>completed: cash OR paid"]:::crit
     A7 --> D4{"rowcount = 1?"}:::dec
-    D4 -- no --> A8["Re-read the order in the same transaction"]:::act
-    A8 --> E8["404 · not found<br/>409 · status_conflict, with the current status<br/>409 · payment_not_settled"]:::act --> F1(("end")):::fin
-    D4 -- yes --> A9["INSERT order_status_history<br/>actor = staff · actor_staff_id · reason"]:::act
-    A9 --> A10["COMMIT · 200 with the updated order"]:::act
-    A10 --> A11["Within 5 s the notifier claims notified = false,<br/>then sends the text for accepted, ready or cancelled<br/>· preparing and completed are silent"]:::act
+    D4 -- no --> A8["Re-read the order in<br/>the same transaction"]:::act
+    A8 --> E8["404 · not found<br/>409 · status_conflict,<br/>with the current status<br/>409 · payment_not_settled"]:::act --> F1(("end")):::fin
+    D4 -- yes --> A9["INSERT<br/>order_status_history<br/>actor = staff ·<br/>actor_staff_id · reason"]:::act
+    A9 --> A10["COMMIT · 200 with<br/>the updated order"]:::act
+    A10 --> A11["Within 5 s the notifier<br/>claims notified = false,<br/>then sends the text for<br/>accepted, ready or<br/>cancelled · preparing<br/>and completed are silent"]:::act
     A11 --> F2(("end")):::fin
-    A10 -.- N1["Not built: refund on a paid cancellation<br/>(online payment deferred) · customer<br/>statistics on completed (FR-14)"]:::defer
+    A10 -.- N1["Not built: refund on a<br/>paid cancellation<br/>(online payment<br/>deferred) · customer<br/>statistics on completed<br/>(FR-14)"]:::defer

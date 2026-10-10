@@ -4,29 +4,39 @@ sequenceDiagram
     participant WA as Meta Cloud API
     participant CE as Conversation Engine
     participant DB as PostgreSQL
-    Note over C,DB: FR-08 — PLANNED, next after menu management. Design from August 2026.<br/>Open before its brief: which past order is "the usual" (most recent or most frequent),<br/>and the exact wording. Target: first message to confirmed order in under 30 seconds.
-    C->>WA: first message
-    WA->>CE: webhook (after the signature check and the dedup gate)
-    CE->>DB: resolve restaurant · opening hours · open session (as built)
-    CE->>DB: SELECT the customer's usual order at this restaurant<br/>(idx_orders_customer_completed)
-    DB-->>CE: prior order + its items (order_items.menu_item_id)
-    alt no prior completed order
-        CE->>WA: welcome + full menu (as today)
-    else prior order exists
-        CE->>DB: check every item against today's menu: available, current price
-        DB-->>CE: current availability and prices
-        alt one or more items unavailable
-            CE->>WA: welcome + "your usual is partly unavailable" + name the items
-            Note over CE,WA: The suggestion is never shown with a stale price<br/>or an item the kitchen cannot make.
-        else all items still available
-            CE->>WA: welcome + "reorder your usual? [items, total]" + "or browse the menu"
+    Note over C,DB: FR-08 — BUILT (brief K, 10 October 2026). The suggestion is the customer's last order<br/>that the restaurant accepted, shown inside the first message at today's prices.<br/>NFR-03 (first message to confirmed order in under 30 seconds) is not measured yet.
+    C->>WA: first message (no active session, or one that has just expired)
+    WA->>CE: webhook — signature, dedup gate, restaurant open, orders not paused
+    CE->>DB: any order of this customer not cancelled or expired, created in the last 3 hours?<br/>(idx_orders_customer_recent · the database's clock)
+    alt yes — an order may still be on its way
+        CE->>WA: welcome + menu, no suggestion
+    else no
+        CE->>DB: the last order with status accepted, preparing, ready or completed<br/>and its items (quantities summed per item, capped at 50)
+        CE->>DB: today's catalog: names, prices, availability (item on and category on)
+        alt no such order, or none of its items available today
+            CE->>WA: welcome + menu, no suggestion
+        else at least one item available
+            CE->>CE: block: the available lines at today's prices and their total,<br/>a line naming the unavailable items, how to repeat the order
+            alt welcome + block + menu over 4,096 characters
+                CE->>WA: welcome + menu without the block (logged)
+            else it fits
+                CE->>DB: open the session as usual · context.reorder = order id + items
+                CE->>WA: welcome + block + menu
+            end
         end
-        alt customer accepts
-            CE->>DB: pre-fill the cart with the same items at today's prices
-            CE->>DB: CAS session to fulfillment_choice (or cart_review when pickup only)
-            CE->>WA: pickup or delivery, then the summary, ready to confirm
-            Note over C,DB: Browsing is skipped entirely — this is the<br/>whole point of the requirement.
-        else customer browses instead
-            CE->>WA: full menu
+    end
+    C->>WA: the reorder word ("same")
+    WA->>CE: webhook — the session is in browsing
+    CE->>DB: SELECT the session FOR UPDATE
+    alt no suggestion kept, or the cart is not empty
+        CE->>WA: read as ordinary text, exactly as before FR-08
+    else suggestion kept and the cart is empty
+        CE->>DB: re-check every item live: available now, today's price
+        alt none is still available
+            CE->>WA: the missing items named + the empty-cart text · stays in browsing
+        else at least one is still available
+            CE->>DB: fill the cart · CAS browsing to fulfillment_choice<br/>(cart_review when pickup is the only option or already chosen)
+            CE->>WA: missing items named first, then what the finish word sends:<br/>the pickup-or-delivery question, or the summary
+            Note over C,DB: From here it is the ordinary path: pickup or delivery, the address,<br/>the summary and the confirm word. Building the cart is skipped.
         end
     end

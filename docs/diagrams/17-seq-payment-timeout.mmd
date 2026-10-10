@@ -24,7 +24,7 @@ sequenceDiagram
         SCH->>DB: UPDATE orders SET status='cancelled', cancelled_by='system',<br/>cancellation_reason='payment_timeout_2h'<br/>WHERE payment_status='pending_online'
         DB-->>SCH: rowcount
         alt rowcount = 0
-            Note over SCH: Payment landed in the same instant. Leave it alone.
+            Note over SCH: Payment landed in the same<br/>instant. Leave it alone.
         else rowcount = 1
             SCH->>DB: INSERT order_status_history (actor='system')
             Note over SCH,DB: No refund — payment_status was never 'paid'.

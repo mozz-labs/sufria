@@ -17,8 +17,8 @@ flowchart TB
     SUFRIA -- "replies and status messages" --> META
     META -- "message delivery" --> CUST
 
-    STAFF -- "sign-in, status changes" --> SUFRIA
-    SUFRIA -- "orders and conversations" --> STAFF
+    STAFF -- "sign-in, status<br/>changes, menu and<br/>orders pause <i>(screen<br/>in progress)</i>" --> SUFRIA
+    SUFRIA -- "orders and<br/>conversations" --> STAFF
     TEAM -- "configuration (script)" ---> SUFRIA
 
     SUFRIA -. "payment, refund" .-> PAY

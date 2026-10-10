@@ -4,7 +4,7 @@ sequenceDiagram
     participant WA as Meta Cloud API
     participant CE as Conversation Engine
     participant DB as PostgreSQL
-    Note over C,DB: Entry via the webhook gate (previous figure). session.state = cart_review:<br/>the customer has the summary with items, delivery fee and total.
+    Note over C,DB: Entry via the webhook gate (previous figure). session.state = cart_review:<br/>the customer has the summary with items, delivery fee and total.<br/>While orders are paused (FR-28) the gate answers with the paused text first, so no order is written.
     C->>WA: sends the confirm word
     WA->>CE: webhook
     CE->>DB: SELECT the session FOR UPDATE
@@ -20,7 +20,7 @@ sequenceDiagram
             Note over CE,DB: No second order. This is the compare-and-swap layer.
         else rowcount = 1
             CE->>DB: pg_advisory_xact_lock(restaurant) · next order number (MAX + 1, from 101)
-            CE->>DB: INSERT orders (cash, pending_cash, pending_acceptance,<br/>delivery fee and address, outbound_msg_count)
+            CE->>DB: INSERT orders (cash, pending_cash, pending_acceptance,<br/>delivery fee and address, notified=true, outbound_msg_count)
             DB-->>CE: order.id
             CE->>DB: INSERT order_items (name and unit price snapshotted)
             CE->>DB: INSERT order_status_history (NULL to pending_acceptance, actor='customer')

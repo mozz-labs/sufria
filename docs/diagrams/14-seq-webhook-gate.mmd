@@ -11,7 +11,7 @@ sequenceDiagram
     CE->>DB: BEGIN · INSERT processed_webhook_events (event_id=message id, source='whatsapp')<br/>ON CONFLICT (event_id, source) DO NOTHING RETURNING id
     DB-->>CE: rowcount
     alt rowcount = 0 (already processed)
-        CE->>DB: skip this message
+        CE->>CE: outcome "duplicate" — nothing else runs (200 at the end)
         Note over CE: Covers even the first message of a brand-new conversation,<br/>where no session exists yet to hold a reference.
     else rowcount = 1 (genuinely new)
         CE->>DB: app.resolve_restaurant_by_phone_id(phone_id)
@@ -19,22 +19,28 @@ sequenceDiagram
         CE->>DB: set_config('app.current_restaurant_id', restaurant_id, true)
         Note over CE,DB: Every query from here on is under row-level security.
         CE->>DB: INSERT inbound_messages (raw payload kept)
+        CE->>DB: SELECT the restaurant (hours, timezone, delivery, fee, orders_paused_at)
         CE->>DB: SELECT active session (state NOT IN order_placed, abandoned), idle seconds by now()
         DB-->>CE: session or none
         opt active session silent for 60 minutes or more
             CE->>DB: CAS the session to 'abandoned' — then as if there were none
         end
-        alt active session
+        alt active session, orders paused (FR-28)
+            CE->>WA: the paused text · the session is not touched
+        else active session
             Note over CE: Route to the handler for the current state:<br/>browsing, fulfillment_choice or cart_review.
         else no active session
             CE->>CE: opening hours in the restaurant's timezone
             alt closed
                 CE->>WA: closing message with today's opening hours · no session
+            else open, orders paused (FR-28)
+                CE->>WA: the paused text · no session
             else open
-                CE->>CE: build welcome + numbered menu · at most 4,096 characters
+                CE->>DB: the customer's last accepted order (FR-08) —<br/>none if any order of theirs is under 3 hours old
+                CE->>CE: build welcome + numbered menu · at most 4,096 characters<br/>no item to show: the paused text instead · the last-order block only if it fits
                 CE->>DB: upsert customer · INSERT session 'new' ON CONFLICT DO NOTHING<br/>(one active session per customer)
                 CE->>DB: CAS 'new' to 'browsing'
-                CE->>WA: welcome + menu
+                CE->>WA: welcome (+ last order) + menu
             end
         end
         CE->>DB: COMMIT
