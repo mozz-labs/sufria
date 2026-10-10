@@ -13,8 +13,10 @@ import {
   nextUnparsedStreak,
   nothingUnderstoodAr,
   overCapLineAr,
+  parseItems,
   unclearPartsLineAr,
   unknownNumbersLineAr,
+  type CustomerCommand,
   type Currency,
   type MessageIntent,
 } from "@sufria/shared";
@@ -47,6 +49,40 @@ import {
 // القرار — صافٍ
 // ---------------------------------------------------------------------------
 
+/**
+ * The intent as `decideBrowsing` gets it: the shared parser's, with «نفسه»
+ * resolved first by `interpretBrowsing` (brief ك).
+ *
+ * 🔴 `command` never carries "reorder" here, by its type: «نفسه» reaches the
+ *    decision as plain text, so the parser, the hint and the unparsed streak
+ *    treat it exactly as they treat any other text.
+ */
+export type BrowsingIntent =
+  | Exclude<MessageIntent, { readonly kind: "command" }>
+  | {
+      readonly kind: "command";
+      readonly command: Exclude<CustomerCommand, "reorder">;
+    };
+
+/**
+ * The message as `browsing` reads it.
+ *
+ * «نفسه» and its sister words (`REORDER_INPUTS`) are read as plain text, on
+ * today's path — the parser, then the hint and the streak.
+ */
+export function interpretBrowsing(
+  raw: string,
+  data: SessionData,
+): BrowsingIntent {
+  const intent = interpretMessage(raw, data.menu_map);
+  if (intent.kind !== "command") return intent;
+  const { command } = intent;
+  if (command === "reorder") {
+    return { kind: "items", result: parseItems(raw, data.menu_map) };
+  }
+  return { kind: "command", command };
+}
+
 export interface BrowsingDecision {
   readonly next: SessionData;
   /** الرد النصي، أو `null` = صمت. */
@@ -66,7 +102,7 @@ export interface BrowsingDecision {
 
 export interface BrowsingInput {
   readonly data: SessionData;
-  readonly intent: MessageIntent;
+  readonly intent: BrowsingIntent;
   /** الأصناف اللي ذكرتها الرسالة، مقروءة حيّا لحظة المعالجة. */
   readonly catalog: Catalog;
   /** `restaurants.contact_phone`. `null` = الاستسلام صامت تماما (§11.3). */
@@ -305,7 +341,7 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
 // ---------------------------------------------------------------------------
 
 /** المعرّفات اللي بيحتاجها القرار من الكتالوج — ولا غيرها. */
-function itemIdsNeeded(intent: MessageIntent, data: SessionData): string[] {
+function itemIdsNeeded(intent: BrowsingIntent, data: SessionData): string[] {
   if (intent.kind === "items") return intent.result.items.map((i) => i.itemId);
   if (intent.kind === "remove") {
     const id = data.menu_map[String(intent.number)];
@@ -348,7 +384,7 @@ export async function handleBrowsingMessage(
   message: BrowsingMessage,
 ): Promise<void> {
   const data = await readSessionData(tx, message.sessionId);
-  const intent = interpretMessage(message.body ?? "", data.menu_map);
+  const intent = interpretBrowsing(message.body ?? "", data);
   const catalog = await readCatalog(tx, itemIdsNeeded(intent, data));
 
   const decision = decideBrowsing({

@@ -89,3 +89,22 @@ export function firstMenuMessageAr(
 ): string {
   return `${welcomeMessageAr(restaurantName)}\n${menuText}`;
 }
+
+/**
+ * The first message of a returning customer (brief ك, decision 4): the
+ * welcome, the «آخر طلب لك» block (`reorderBlockAr`), then the whole menu —
+ * a blank line before the block and after it.
+ *
+ * 🔴 A function of its own, beside `firstMenuMessageAr` and not a parameter
+ *    of it: a new customer's first message must not change by one character
+ *    (the menu snapshot guards it), and the dashboard's 4096 guard measures
+ *    that one, the message every restaurant sends. The engine measures this
+ *    one, and sends the plain one instead when it is too long.
+ */
+export function firstMenuMessageWithReorderAr(
+  restaurantName: string,
+  reorderBlock: string,
+  menuText: string,
+): string {
+  return `${welcomeMessageAr(restaurantName)}\n\n${reorderBlock}\n\n${menuText}`;
+}

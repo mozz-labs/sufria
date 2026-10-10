@@ -1,5 +1,5 @@
 /**
- * تطبيع مدخلات الزبون، ومطابقة الأوامر الثلاثة.
+ * تطبيع مدخلات الزبون، ومطابقة أوامر التصفّح الأربعة.
  *
  * 🔴 **دالة تطبيع واحدة في المشروع كله.** كل مطابقة تمر من `normalizeArabic`.
  *    نسخة ثانية معناها أن قائمة تُطبَّع بقاعدة ومدخل الزبون بقاعدة أخرى،
@@ -13,7 +13,7 @@
  */
 
 /** الأمر الذي عناه الزبون برسالته كاملة، أو `null` إن لم تكن أمرا. */
-export type CustomerCommand = "finish" | "cart" | "menu";
+export type CustomerCommand = "finish" | "cart" | "menu" | "reorder";
 
 /**
  * أوامر ما بعد التصفّح: اختيار طريقة الاستلام، وردّ `cart_review` (ج §5).
@@ -81,7 +81,7 @@ export function normalizeArabic(input: string): string {
 //
 // 🔴 مدخل غير مطبَّع في هذه القوائم لا يطابق شيئا أبدا: المدخل يُطبَّع والقائمة
 //    لا، فالمقارنة تفشل صامتة. `COMMAND_INPUT_LISTS` تحت مصدَّرة لهذا: اختبار
-//    واحد يمشي على القوائم الثلاث مدخلا مدخلا ويؤكد أن كلا منها نقطة ثابتة
+//    واحد يمشي على القوائم الأربع مدخلا مدخلا ويؤكد أن كلا منها نقطة ثابتة
 //    لـ`normalizeArabic`. والشكلان لا يُخزَّنان معا — شكل واحد مطبَّع، وهو المرجع.
 // ---------------------------------------------------------------------------
 
@@ -103,6 +103,15 @@ export const CART_INPUTS = ["سله", "السله"] as const;
 
 /** عرض المنيو من جديد. */
 export const MENU_INPUTS = ["منيو", "المنيو", "القائمه"] as const;
+
+/**
+ * تكرار آخر طلب — «نفسه» (بريف ك، القرار 9). الرسالة كلها، بعد التطبيع.
+ *
+ * 🔴 كلمة تصفّح، بس **ما إلها معنى إلا بشرطين** (السلّة فاضية، والاقتراح
+ *    محفوظ بالجلسة) — `browsing.ts` بيقرّر. بلاهم بتنقرأ كنص عادي، فما في
+ *    سلوك قائم بيتغيّر. و«نفسة» بتوصل هون «نفسه» بالتطبيع (ة → ه).
+ */
+export const REORDER_INPUTS = ["نفسه", "نفسو", "نفس الطلب"] as const;
 
 /** الاستلام من المطعم (ج §5). */
 export const PICKUP_INPUTS = ["استلام", "الاستلام", "من المطعم"] as const;
@@ -132,6 +141,7 @@ const COMMAND_TABLE: ReadonlyArray<
   ["finish", new Set<string>(FINISH_INPUTS)],
   ["cart", new Set<string>(CART_INPUTS)],
   ["menu", new Set<string>(MENU_INPUTS)],
+  ["reorder", new Set<string>(REORDER_INPUTS)],
 ];
 
 const ORDER_COMMAND_TABLE: ReadonlyArray<
@@ -195,7 +205,7 @@ export function matchOrderCommand(raw: string): OrderCommand | null {
 }
 
 /**
- * كل مدخلات القوائم الثلاث مع أسمائها — للاختبار الذي يثبت أنها مطبَّعة.
+ * كل مدخلات القوائم الأربع مع أسمائها — للاختبار الذي يثبت أنها مطبَّعة.
  * مصدَّرة عشان الاختبار يمشي على القوائم نفسها، لا على نسخة منها تتقادم.
  */
 export const COMMAND_INPUT_LISTS: ReadonlyArray<
@@ -204,6 +214,7 @@ export const COMMAND_INPUT_LISTS: ReadonlyArray<
   ["FINISH_INPUTS", FINISH_INPUTS],
   ["CART_INPUTS", CART_INPUTS],
   ["MENU_INPUTS", MENU_INPUTS],
+  ["REORDER_INPUTS", REORDER_INPUTS],
 ];
 
 /** نفسها لقوائم ما بعد التصفّح (ج §5). */
@@ -218,7 +229,7 @@ export const ORDER_COMMAND_INPUT_LISTS: ReadonlyArray<
 ];
 
 /**
- * القوائم الثماني معا. **مدخل مكرر بين قائمتين لا يُكتشف إلا هنا**، وهو يهمّ
+ * القوائم التسع معا. **مدخل مكرر بين قائمتين لا يُكتشف إلا هنا**، وهو يهمّ
  * لأن خطوة العنوان تسأل المطابقين معا: كلمة في قائمتين تجعل الجواب يعتمد على
  * ترتيب النداء، لا على ما كتبه الزبون.
  */
