@@ -3,7 +3,8 @@
  * «Performance»): a fixed size budget per page of the dashboard. It never
  * goes up; every improvement brings it down.
  *
- * For /login · /orders · /history · /orders/[id], read from the production
+ * For /login · /orders · /history · /orders/[id] · /menu · /menu/removed
+ * (the last two since brief ي-ب), read from the production
  * build (apps/dashboard-web/.next), what a browser loads before its first
  * paint:
  *   - JS: Next's root files (build-manifest.json) and the page's own entry
@@ -40,6 +41,11 @@ const PAGES = {
   "/orders": { dir: "(dashboard)/orders", html: "orders.html" },
   "/history": { dir: "(dashboard)/history", html: "history.html" },
   "/orders/[id]": { dir: "(dashboard)/orders/[id]", html: null },
+  "/menu": { dir: "(dashboard)/menu", html: "menu.html" },
+  "/menu/removed": {
+    dir: "(dashboard)/menu/removed",
+    html: "menu/removed.html",
+  },
 };
 
 const read = (path) => readFileSync(new URL(path, NEXT));
