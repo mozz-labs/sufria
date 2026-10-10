@@ -246,10 +246,10 @@ export type OrderStatusConflictBody =
     };
 
 /**
- * An item of `GET /menu-items` — brief D §3.4 with §8.3. Unavailable items are
- * included, so staff can turn them back on; items of an inactive category are
- * not, because the engine treats them as unavailable whatever `isAvailable`
- * says.
+ * An item of `GET /menu-items` — brief D §3.4 with §8.3, and brief ي-أ §5.
+ * Unavailable items are included, so staff can turn them back on; archived
+ * items are not (decision 4), nor are the items of an inactive category,
+ * because the engine treats them as unavailable whatever `isAvailable` says.
  */
 export type MenuItemListItem = {
   id: string;
@@ -258,6 +258,9 @@ export type MenuItemListItem = {
   price: string;
   /** `menu_items.is_available` — the very column the engine reads at «أكّد». */
   isAvailable: boolean;
+  /** The item's category, the heading it sits under (brief ي-أ §5). */
+  categoryId: string;
+  categoryName: string;
 };
 
 /** `GET /menu-items`, in the order the customer sees the menu. */
@@ -265,15 +268,124 @@ export type MenuItemListResponse = {
   items: MenuItemListItem[];
 };
 
-/** Body of `PATCH /menu-items/:id` — at least one of the two. */
-export type UpdateMenuItemRequest = {
-  isAvailable?: boolean;
-  /** Western digits only, greater than zero, at most two decimals: `"3.00"`. */
-  price?: string;
+/** An item of `GET /menu-items?archived=true` — brief ي-أ §5. */
+export type ArchivedMenuItem = MenuItemListItem & {
+  /** ISO 8601 in UTC: when it was archived. `isAvailable` is always false. */
+  archivedAt: string;
 };
 
+/** `GET /menu-items?archived=true`: the archived items alone, the most recent first. */
+export type ArchivedMenuItemListResponse = {
+  items: ArchivedMenuItem[];
+};
+
+/** A category of `GET /menu-categories`. */
+export type MenuCategory = { id: string; name: string };
+
+/**
+ * `GET /menu-categories` — brief ي-أ §5: the active categories, in the menu's
+ * order. What `POST /menu-items` can add to (decision 7: an existing one).
+ */
+export type MenuCategoryListResponse = {
+  categories: MenuCategory[];
+};
+
+/**
+ * Body of `POST /menu-items` — brief ي-أ §5. All three fields; anything else
+ * (a `restaurantId` among them) is a 400.
+ *
+ * - `categoryId`: an active category of the restaurant — otherwise a 404.
+ * - `name`: trimmed, every run of spaces one space, Arabic-Indic digits made
+ *   Western, letters as typed. Blank, longer than `MENU_ITEM_NAME_MAX` (40)
+ *   characters, or with a newline, a tab or any control character: a 400.
+ * - `price`: as in `UpdateMenuItemRequest`.
+ */
+export type CreateMenuItemRequest = {
+  categoryId: string;
+  name: string;
+  price: string;
+};
+
+/**
+ * The 201 of `POST /menu-items`: the item, available from its first moment
+ * and last in its category.
+ */
+export type CreateMenuItemResponse = MenuItemListItem;
+
+/**
+ * Body of `PATCH /menu-items/:id` — brief ي-أ §5: one or more of `name`,
+ * `price` and `isAvailable`, or `archived` alone (with anything else: a 400).
+ *
+ * - `name`: as in `CreateMenuItemRequest`.
+ * - `price`: greater than zero, at most six digits and two decimals: `"3.00"`.
+ *   Arabic-Indic digits and `٫` are made Western first (decision 6): `٢٫٥٠` is
+ *   2.50. `2,50` and `٢،٥٠` are a 400.
+ * - `archived: true` takes the item off the menu and out of `GET /menu-items`,
+ *   switched off; archived again, it keeps its first `archivedAt`.
+ *   `archived: false` brings it back — still switched off (decision 4).
+ * - An archived item takes `archived: false` alone: anything else is a 409
+ *   `item_archived`.
+ */
+export type UpdateMenuItemRequest =
+  | {
+      name?: string;
+      price?: string;
+      isAvailable?: boolean;
+      archived?: never;
+    }
+  | {
+      archived: boolean;
+      name?: never;
+      price?: never;
+      isAvailable?: never;
+    };
+
 /** The 200 of `PATCH /menu-items/:id`: the item after the change. */
-export type UpdateMenuItemResponse = MenuItemListItem;
+export type UpdateMenuItemResponse = MenuItemListItem & {
+  /** ISO 8601 in UTC, or `null` when the item is not archived. */
+  archivedAt: string | null;
+};
+
+/**
+ * The 200 of `POST /menu-items/enable-all` — «شغّل الكل» (brief ي-أ §5): every
+ * switched-off item that is not archived, in the categories `GET /menu-items`
+ * lists. There is no «switch everything off» (decision 7).
+ */
+export type EnableAllMenuItemsResponse = {
+  /** How many items were switched on. */
+  enabled: number;
+};
+
+export type MenuConflictCode = "menu_too_long" | "item_archived";
+
+/**
+ * The 409 body of the menu routes — brief ي-أ §5, in the shape of brief D
+ * §8.7: Nest's default plus `code`. The screen reads `code`; `message` is
+ * English, for the developer.
+ *
+ * - `menu_too_long` — `POST /menu-items`, a `PATCH` with `name`, `price` or
+ *   `isAvailable: true`, `POST /menu-items/enable-all`: the first message —
+ *   the welcome and the whole menu, counted as WhatsApp counts — would be
+ *   longer than `limit` (4096) and longer than it was. Nothing was written.
+ *   `length` is what it would have been.
+ * - `item_archived` — `PATCH`: the item is archived, and only
+ *   `archived: false` applies to it.
+ */
+export type MenuConflictBody =
+  | {
+      statusCode: 409;
+      error: "Conflict";
+      code: "menu_too_long";
+      message: string;
+      length: number;
+      limit: number;
+    }
+  | {
+      statusCode: 409;
+      error: "Conflict";
+      code: "item_archived";
+      message: string;
+    };
 
 /**
  * The day keys the settings screen writes into `restaurants.business_hours` —
@@ -324,12 +436,27 @@ export type RestaurantSettings = {
    * screen may carry a form only the engine's lenient reader accepts.
    */
   openingHours: OpeningHours | Record<string, never>;
+  /**
+   * ISO 8601 in UTC: orders paused since then — the bot answers every message
+   * with one text and writes no order (brief ي-أ). `null`: taking orders.
+   * Written by `PATCH /restaurant/orders-pause` alone.
+   */
+  ordersPausedAt: string | null;
 };
+
+/** Body of `PATCH /restaurant/orders-pause` — «أوقف الطلبات مؤقتا», brief ي-أ §5. */
+export type OrdersPauseRequest = { paused: boolean };
+
+/**
+ * The 200 of `PATCH /restaurant/orders-pause`. Pausing while paused keeps the
+ * first moment; resuming while taking orders is `null`, and a 200.
+ */
+export type OrdersPauseResponse = { ordersPausedAt: string | null };
 
 /**
  * Body of `PATCH /restaurant/settings` — at least one field. `currency`,
- * `offersDelivery` and `timezone` are not writable from here: sending any of
- * them is a 400.
+ * `offersDelivery`, `timezone` and `ordersPausedAt` are not writable from
+ * here: sending any of them is a 400.
  */
 export type UpdateRestaurantSettingsRequest = {
   /** Western digits, zero allowed, at most two decimals: `"1.50"`. */

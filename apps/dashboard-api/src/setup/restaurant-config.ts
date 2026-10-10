@@ -6,7 +6,7 @@ import {
   DELIVERY_FEE_PATTERN,
   OpeningHoursSchema,
 } from "../restaurant/dto/update-restaurant-settings.dto.js";
-import { MENU_PRICE_PATTERN } from "../menu/dto/update-menu-item.dto.js";
+import { MENU_PRICE_PATTERN } from "../menu/dto/menu-item-fields.js";
 
 /**
  * The config file of `scripts/setup-restaurant.ts` — brief E §2.2.

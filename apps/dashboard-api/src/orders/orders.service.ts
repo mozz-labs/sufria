@@ -17,16 +17,8 @@ import {
   type StaffTargetStatus,
   type UpdateOrderStatusRequest,
 } from "@sufria/shared";
+import { isoUtc } from "../db/iso-utc.js";
 import { TenantDbService } from "../db/tenant-db.service.js";
-
-/**
- * timestamptz → ISO 8601 in UTC, in SQL: the drizzle driver returns a
- * timestamptz from `execute` as raw text, not as a `Date`.
- */
-const isoUtc = (column: string) =>
-  sql.raw(
-    `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
-  );
 
 /**
  * The §3.1 item projection — one for `GET /orders` and for the reply of
