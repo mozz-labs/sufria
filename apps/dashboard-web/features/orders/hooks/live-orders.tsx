@@ -9,12 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import type { Currency, OrderListItem } from "@sufria/shared";
+import { useLiveSettings } from "../../../shared/settings/live-settings.tsx";
 import { ordersApi } from "../api/orders-api.ts";
 import { POLL_MS, replaceInActive } from "../lib/board.ts";
 import { usePolling } from "./use-polling.ts";
 
 export type LiveOrders = {
-  /** The restaurant's currency, read once; `null` until then. */
+  /** The restaurant's currency (`useLiveSettings`); `null` until read. */
   currency: Currency | null;
   /** «الطلبات» as the last poll returned it; `null` before the first answer. */
   orders: OrderListItem[] | null;
@@ -45,6 +46,10 @@ export function useLiveOrders(): LiveOrders {
  * list both — and never while the browser tab is hidden; it catches up the
  * moment the tab is shown again.
  *
+ * Each tick also reads the restaurant's settings, beside the list (brief
+ * ي-ب §4): the currency and `ordersPausedAt`, for the pause strip and the
+ * menu — another device's «أوقف» shows here within one tick.
+ *
  * A 401 the refresh could not cure clears the session, and the session gate
  * takes the page to login: nothing to do here.
  */
@@ -53,32 +58,26 @@ export function LiveOrdersProvider({
 }: {
   children: (live: LiveOrders) => ReactNode;
 }) {
-  const [currency, setCurrency] = useState<Currency | null>(null);
+  const { currency, read } = useLiveSettings();
   const [orders, setOrders] = useState<OrderListItem[] | null>(null);
   const [offline, setOffline] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  /** The restaurant's currency, read once; `false` when it could not be. */
-  const ensureCurrency = useCallback(async (): Promise<boolean> => {
-    if (currency) return true;
-    const s = await ordersApi.restaurantSettings();
-    if (s.ok) {
-      setCurrency(s.value.currency);
-      return true;
-    }
-    if (s.error.kind !== "unauthorized") setOffline(true);
-    return false;
-  }, [currency]);
-
   const refresh = useCallback(async () => {
-    if (!(await ensureCurrency())) return;
-    const res = await ordersApi.listOrders("active");
+    const startedAt = Date.now();
+    const [settings, res] = await Promise.all([
+      ordersApi.restaurantSettings(),
+      ordersApi.listOrders("active"),
+    ]);
+    if (settings.ok) read(settings.value, startedAt);
     setNow(Date.now());
-    if (res.ok) {
-      setOrders(res.value.orders);
-      setOffline(false);
-    } else if (res.error.kind !== "unauthorized") setOffline(true);
-  }, [ensureCurrency]);
+    if (res.ok) setOrders(res.value.orders);
+    // `unauthorized`: the session is gone, and the gate takes the page to login.
+    const failed = [settings, res].some(
+      (r) => !r.ok && r.error.kind !== "unauthorized",
+    );
+    setOffline(failed);
+  }, [read]);
 
   usePolling(() => void refresh(), POLL_MS);
 

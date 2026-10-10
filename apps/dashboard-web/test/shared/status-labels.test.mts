@@ -228,6 +228,8 @@ test("الموك انشال، والأنواع من @sufria/shared لا نسخ �
     "shared/api/http.ts",
     "features/orders/api/orders-api.ts",
     "features/auth/api/auth-api.ts",
+    "features/menu/api/menu-api.ts",
+    "features/menu/api/orders-pause-api.ts",
   ])
     assert.match(
       readFileSync(join(APP_ROOT, client), "utf8"),
@@ -245,6 +247,21 @@ test("الموك انشال، والأنواع من @sufria/shared لا نسخ �
     "RestaurantSettings",
     "OrderStatus",
     "FulfillmentType",
+    // The menu's (brief ي-ب §4).
+    "MenuItemListItem",
+    "MenuItemListResponse",
+    "ArchivedMenuItem",
+    "ArchivedMenuItemListResponse",
+    "MenuCategory",
+    "MenuCategoryListResponse",
+    "CreateMenuItemRequest",
+    "CreateMenuItemResponse",
+    "UpdateMenuItemRequest",
+    "UpdateMenuItemResponse",
+    "EnableAllMenuItemsResponse",
+    "MenuConflictBody",
+    "OrdersPauseRequest",
+    "OrdersPauseResponse",
   ];
   for (const file of sourceFiles()) {
     const src = readFileSync(file, "utf8");

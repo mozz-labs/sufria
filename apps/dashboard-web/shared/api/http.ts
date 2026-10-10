@@ -8,6 +8,7 @@
  * so a screen never has an unhandled rejection to forget.
  */
 import type {
+  MenuConflictBody,
   OrderStatus,
   OrderStatusConflictBody,
   RefreshResult,
@@ -24,6 +25,17 @@ export type ApiError =
       kind: "conflict";
       code: Exclude<OrderStatusConflictBody["code"], "status_conflict">;
     }
+  /**
+   * A 409 of the menu routes (brief ي-أ §5): the first message would be
+   * `length` characters, over `limit` — or the item is archived.
+   */
+  | {
+      kind: "menu_conflict";
+      code: "menu_too_long";
+      length: number;
+      limit: number;
+    }
+  | { kind: "menu_conflict"; code: "item_archived" }
   /** No answer at all: the API is down or the connection dropped. */
   | { kind: "network" }
   /** An answer that is none of the above (400, 403, 404, 5xx). */
@@ -130,7 +142,8 @@ export function createHttp({
 
 async function conflictOf(res: Response): Promise<ApiError> {
   try {
-    const body = (await res.json()) as OrderStatusConflictBody;
+    const body = (await res.json()) as
+      OrderStatusConflictBody | MenuConflictBody;
     if (body.code === "status_conflict")
       return { kind: "status_conflict", currentStatus: body.currentStatus };
     if (
@@ -138,8 +151,17 @@ async function conflictOf(res: Response): Promise<ApiError> {
       body.code === "transition_not_allowed"
     )
       return { kind: "conflict", code: body.code };
+    if (body.code === "menu_too_long" && typeof body.length === "number")
+      return {
+        kind: "menu_conflict",
+        code: body.code,
+        length: body.length,
+        limit: body.limit,
+      };
+    if (body.code === "item_archived")
+      return { kind: "menu_conflict", code: body.code };
   } catch {
-    // Not the §9.3 body: fall through to a plain HTTP error.
+    // Not a §9.3 or §9.10 body: fall through to a plain HTTP error.
   }
   return { kind: "http", status: 409 };
 }
