@@ -1,0 +1,89 @@
+/* «المُزالة» — brief ي-ب §7, in the menu rows' language
+   (menu-row.module.css): a surface, 12 radius, 15 text · 13 labels, a 44px
+   button; tokens only, logical properties only.
+
+   Below 640px, three fixed rows: the name · the price at the start, the
+   category at the end · «إرجاع», the row's width. From 640px up, one row.
+   Grid areas, not flex-wrap. */
+
+/* Where an item brought back went, under the tabs. */
+.restored {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+
+.view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name name"
+    "price category"
+    "button button";
+  align-items: center;
+  gap: 8px 12px;
+}
+
+@media (min-width: 640px) {
+  .view {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "name price category button";
+  }
+}
+
+.name {
+  grid-area: name;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.price {
+  grid-area: price;
+  justify-self: start;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.category {
+  grid-area: category;
+  justify-self: end;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.button {
+  grid-area: button;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button[aria-busy="true"] {
+  cursor: progress;
+}
+
+.line {
+  margin-block-start: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

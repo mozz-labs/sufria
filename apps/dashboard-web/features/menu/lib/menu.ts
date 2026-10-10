@@ -39,6 +39,18 @@ export function rowView(item: MenuItemListItem, currency: Currency): RowView {
   };
 }
 
+/** A row of «المُزالة» (brief ي-ب §7): its name, price and category. */
+export function removedRowView(
+  item: MenuItemListItem,
+  currency: Currency,
+): { name: string; amount: string; category: string } {
+  return {
+    name: item.name,
+    amount: amountAr(item.price, currency),
+    category: item.categoryName,
+  };
+}
+
 /**
  * The menu under its category headings, in the order `GET /menu-items`
  * returned it — the customer's (brief ي-ب §6). A category's items are
