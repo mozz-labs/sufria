@@ -1,0 +1,32 @@
+/* «الأصناف» and «المُزالة» — the header's tabs' look (decision 4;
+   shared/layout/dashboard-header.module.css .tab, held to it by
+   test/menu/screen.test.mts), on a line of their own. Logical properties
+   only. */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-block-end: 1px solid var(--border);
+}
+
+/* The current page's tab: its accent underline, over the line. Its text
+   stays primary — accent text on the dark surface is 3.26:1. */
+.tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 9px 14px;
+  border-block-end: 2px solid transparent;
+  border-start-start-radius: 8px;
+  border-start-end-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  margin-block-end: -1px;
+}
+
+.tab[aria-current="page"] {
+  color: var(--text-primary);
+  border-block-end-color: var(--accent);
+}

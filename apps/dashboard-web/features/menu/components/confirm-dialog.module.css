@@ -1,0 +1,50 @@
+/* The menu's confirmations — the cancel dialog's look (brief I §4, I-6):
+   tokens only, logical properties, 44px buttons, both in the secondary
+   style. */
+
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.body {
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.line {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-block-start: 8px;
+}
+
+.button {
+  min-height: 44px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button[aria-busy="true"] {
+  cursor: progress;
+}

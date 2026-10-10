@@ -1,0 +1,197 @@
+/* One item of the menu — brief ي-ب §6, in the orders card's language
+   (order-card.module.css): a surface, 12 radius, 15 text · 13 labels,
+   44px buttons, tokens only, logical properties only.
+
+   Below 640px, three fixed rows: the name · the price at the start, the
+   state at the end · the three buttons, the row's width. From 640px up, one
+   row. Grid areas, not flex-wrap: nothing moves with a name's length. The
+   grid follows dir="rtl" by itself. */
+
+.row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+
+.view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name name"
+    "price status"
+    "actions actions";
+  align-items: center;
+  gap: 8px 12px;
+}
+
+@media (min-width: 640px) {
+  .view {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "name price status actions";
+  }
+}
+
+/* A long name wraps, on purpose; it never pushes the row wider. */
+.name {
+  grid-area: name;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Switched off: the word says it (.status); the name steps back too. */
+.row[data-off] .name {
+  color: var(--text-secondary);
+}
+
+.price {
+  grid-area: price;
+  justify-self: start;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.status {
+  grid-area: status;
+  justify-self: end;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .status {
+    justify-self: start;
+  }
+}
+
+.actions {
+  grid-area: actions;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* One width for the three, whatever the word: «أطفئ» and «شغّل» differ,
+   and the price and the state would move from row to row. */
+@media (min-width: 640px) {
+  .actions {
+    grid-template-columns: repeat(3, minmax(5rem, auto));
+  }
+}
+
+.button {
+  min-height: 44px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* Under the row: why the last action did not go through. */
+.line {
+  margin-block-start: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ---- in edit (decision 2) ----
+   Below 640px the name, the price, the buttons, one under the other; from
+   640px up the two fields side by side, the buttons under them. */
+.edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "name"
+    "price"
+    "buttons";
+  gap: 8px 12px;
+}
+
+@media (min-width: 640px) {
+  .edit {
+    grid-template-columns: minmax(0, 1fr) 10rem;
+    grid-template-areas:
+      "name price"
+      "buttons buttons";
+    align-items: start;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nameField {
+  grid-area: name;
+}
+
+.priceField {
+  grid-area: price;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.fieldError {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.editButtons {
+  grid-area: buttons;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* «لم يُحفظ»: a word, beside the buttons, while the fields differ. */
+.unsaved {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}

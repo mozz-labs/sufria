@@ -1,0 +1,122 @@
+/* «أضف صنفا» — a form in the page (brief ي-ب §6). Tokens only, logical
+   properties only, 44px controls. Below 640px the category, the name, the
+   price and the buttons one under the other; from 640px up the three
+   fields on one row. Grid areas, not flex-wrap. */
+
+.form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "category"
+    "name"
+    "price"
+    "end";
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .form {
+    grid-template-columns: 12rem minmax(0, 1fr) 10rem;
+    grid-template-areas:
+      "category name price"
+      "end end end";
+    align-items: start;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.category {
+  grid-area: category;
+}
+
+.name {
+  grid-area: name;
+}
+
+.price {
+  grid-area: price;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.fieldError {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.end {
+  grid-area: end;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.primary,
+.button {
+  min-height: 44px;
+  padding-inline: 16px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+}
+
+.button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.primary[aria-busy="true"] {
+  cursor: progress;
+}
+
+.line {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}

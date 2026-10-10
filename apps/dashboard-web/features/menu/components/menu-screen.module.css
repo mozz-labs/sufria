@@ -1,0 +1,124 @@
+/* «المنيو» and «المُزالة» — brief ي-ب §6–§7, the lists' language
+   (order-list.module.css): tokens only; 15 text · 13 labels; radius 8
+   controls; touch targets 44px; logical properties only. */
+
+/* The page's width, on the body while it is there: the header's content
+   takes the same width and edges (I-9 #9). */
+:global(body):has(.page) {
+  --page-width: 880px;
+}
+
+.page {
+  padding: 14px 18px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: var(--page-width);
+  margin-inline: auto;
+}
+
+/* «أضف صنفا», the pause, «المطفأة» — one under the other, at the start. */
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pause {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* What every customer gets while paused: a sentence, it wraps. */
+.hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.off {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.offCount {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.primary,
+.secondary {
+  min-height: 44px;
+  padding-inline: 16px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+}
+
+.secondary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.secondary[aria-busy="true"] {
+  cursor: progress;
+}
+
+.line {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* A category: its heading, then its items. */
+.category {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-start: 8px;
+}
+
+.heading {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty {
+  padding: 32px 0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.notice {
+  font-size: 15px;
+  font-weight: 600;
+}
