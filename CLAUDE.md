@@ -23,7 +23,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, restaurant settings (task D); the menu — `GET`/`POST /menu-items`, `PATCH /menu-items/:id` (name, price, availability, archive and bring back), `POST /menu-items/enable-all`, `GET /menu-categories` — and `PATCH /restaurant/orders-pause`, all under the 4096 guard where they can lengthen the menu (brief ي-أ, `docs/brief-ja-menu-backend.md`). Contracts as built: `docs/13-dashboard-api-brief.md` §9 (§9.10 for ي-أ) |
 | `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`); orders paused and the empty menu (brief ي-أ §4, `src/conversation/orders-paused.ts`); «آخر طلب لك» in a returning customer's first message, and «نفسه» (FR-08, brief ك, `docs/brief-ka-reorder.md`, `src/conversation/reorder.ts`) |
-| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login, the orders screen (task G, `docs/16-orders-screen-brief.md`) and an order's details with its conversation (task I, `docs/brief-i-order-details.md`). Feature-based: `app/` (routes) · `features/<x>/` · `shared/` — see *Dashboard structure*. Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
+| `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login, the orders screen (task G, `docs/16-orders-screen-brief.md`), an order's details with its conversation (task I, `docs/brief-i-order-details.md`), and the menu screen with the orders pause — `/menu`, `/menu/removed`, the pause strip on every page (brief ي-ب, `docs/brief-jb-menu-screen.md`). Feature-based: `app/` (routes) · `features/<x>/` · `shared/` — see *Dashboard structure*. Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
 | `tests/security` | — | Chain-isolation gate (mandatory) |
@@ -167,10 +167,14 @@ message. Since task G they also fail on **any** Arabic letter in the code of
 copy of an API contract type; since task I, on an import that breaks the
 structure (`test/boundaries.test.mts`). The screens' decisions — the card's
 text, the pulse, what the next-step button sends and what a 409 leads to, the
-details page's view, the cancel's body, `?next=` — live in
-`features/orders/lib/` (`board.ts`, `details.ts`) and `features/auth/lib/`, as
-plain TypeScript, because `node --test` cannot import JSX: components only
-render what they return. The card's "the button does not open the order" is
+details page's view, the cancel's body, `?next=`, the menu row's buttons, what
+«حفظ» sends and when «لم يُحفظ» shows — live in `features/orders/lib/`
+(`board.ts`, `details.ts`), `features/menu/lib/menu.ts` and
+`features/auth/lib/`, as plain TypeScript, because `node --test` cannot import
+JSX: components only render what they return. A button's working look is on
+`[aria-busy="true"]`, never `:disabled` (brief ي-ب §2, Mohammed, 8 October):
+a button disabled for another reason does not look busy —
+`test/orders/next-step.test.mts` holds it for every module. The card's "the button does not open the order" is
 held by reading the card's TSX and CSS (`test/orders/card.test.mts`): the
 press itself needs a browser.
 
@@ -290,10 +294,15 @@ rows of the order or restaurant the test itself created.
 ## Dashboard structure and the RTL contract (brief I §1–§2, 5 October)
 
 `apps/dashboard-web` is feature-based (Mohammed's decision): `app/` holds the
-routes and only composes · `features/auth/`, `features/orders/` — each with its
-`components/`, `hooks/`, `api/`, `lib/` (pure functions) — · `shared/` (`ui/`,
-`layout/` — the header, given its count as a prop — and `api/` — the client,
-the token, `x-restaurant-id`, the error kinds). Tests in `test/<feature>/`.
+routes and only composes · `features/auth/`, `features/orders/`,
+`features/menu/` — each with its `components/`, `hooks/`, `api/`, `lib/` (pure
+functions) — · `shared/` (`ui/`, `layout/` — the header, given its count as a
+prop and the pause strip in its `strip` slot; `tabs.ts` marks «المنيو» on
+`/menu` and `/menu/removed` — `api/` — the client, the token,
+`x-restaurant-id`, the error kinds, the menu's 409 `menu_conflict` — and
+`settings/` — the restaurant's currency and `ordersPausedAt` as the one poll
+read them: **the pause state lives here**, because two features read it).
+Tests in `test/<feature>/`.
 
 1. `app/` composes: it imports from `features/` and `shared/`, with no logic.
 2. **No feature imports another.** What two share belongs in `shared/`.
@@ -306,11 +315,17 @@ import of `features/auth` inside `features/orders` → caught, by file and line)
 
 Routes: `/` → `/orders` or `/login` · `/login?next=` (a path of this site
 alone: `//host`, `https://…`, a backslash or whitespace → `/orders`) ·
-`/orders` · `/history` · `/orders/[id]` (`?from=history`). The dashboard pages
-share `app/(dashboard)/layout.tsx`: the guard (no session, or a 401 the
-refresh could not cure — the session store tells its subscribers — →
-`/login?next=<page>`), the header, and **one** poll of «الطلبات» feeding both
-the count and the list (`features/orders/hooks/live-orders.tsx`).
+`/orders` · `/history` · `/orders/[id]` (`?from=history`) · `/menu` ·
+`/menu/removed`. The dashboard pages share `app/(dashboard)/layout.tsx`: the
+guard (no session, or a 401 the refresh could not cure — the session store
+tells its subscribers — → `/login?next=<page>`; `test/auth/session-end.test.mts`),
+the header, and **one** poll of «الطلبات» feeding both the count and the list
+(`features/orders/hooks/live-orders.tsx`). Each tick also reads `GET
+/restaurant/settings`, beside the list (brief ي-ب §4), into
+`shared/settings/live-settings.tsx`; «أوقف»/«استأنف» write their answer there
+at once, and a read sent before that answer does not undo it. While paused,
+`features/menu/components/orders-paused-strip.tsx` shows under the header on
+every page, above «انقطع الاتصال».
 
 **The RTL and width contract, on every file touched** — from 375px to 1440px,
 right to left by `dir="rtl"` on `<html>` alone, no horizontal scroll:
@@ -342,7 +357,8 @@ the first two items by file and line; a rare exception carries
 builds shared and the app (production, `NEXT_PUBLIC_API_URL` fixed so the
 bytes do not move with a machine's `.env`), then `scripts/check-budget.mjs`
 reads `.next` and counts, for `/login` · `/orders` · `/history` ·
-`/orders/[id]`, what a browser loads before its first paint: the JS — Next's
+`/orders/[id]` · `/menu` · `/menu/removed`, what a browser loads before its
+first paint: the JS — Next's
 root files plus the page's entry chunks (`build-manifest.json`,
 `page_client-reference-manifest.js`), gzip, the `noModule` polyfills aside —
 and the fonts next/font preloads for the page (`next-font-manifest.json`).
@@ -350,7 +366,8 @@ The manifests are checked against the static pages' HTML; a mismatch fails.
 It fails when a page passes its numbers in `apps/dashboard-web/perf-budget.json`
 — which only come down; up only by Mohammed's decision (`--write` resets
 them). Not in `verify` or CI (a build). A server component's imports never
-reach the browser and are not counted; a client component's are.
+reach the browser and are not counted; a client component's are. It builds
+into the same `.next` that `next start` serves: restart a running one after.
 
 ## Known gaps
 
@@ -511,6 +528,15 @@ reach the browser and are not counted; a client component's are.
   the leftovers by the killed run's id (`d5-<pid>-<time>` in their names), as
   the test's own `afterAll` would — and never the seed's (`both@`, `onlya@`,
   `onlyz@sufria.test`).
+- **`check:budget` is red, pending Mohammed's decision (brief ي-ب, 11
+  October).** `main` was already over by 396 bytes on `/orders`, `/history`
+  and `/orders/[id]` since ي-أ/ك — a Turbopack chunk split, the same code. The
+  menu screen adds, against `main`: `/login` +889 · `/orders` +1553 ·
+  `/history` +1553 · `/orders/[id]` +1581. About 710 of each is the menu's
+  texts: `DASHBOARD_UI_AR` is one object, and every page carries all of it.
+  The four old budgets were not raised.
+- **The menu list is not polled.** Another device's change to an item shows
+  when the screen is opened again; the pause alone is read every tick.
 - **A failed «استلمنا طلبك» is never retried.** It is logged, and the order is
   already in the dashboard, so the restaurant still sees it — but the customer
   gets silence after «أكّد». The notify poller does not retry it either: the
