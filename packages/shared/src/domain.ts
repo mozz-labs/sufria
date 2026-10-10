@@ -212,6 +212,19 @@ export const CLOSES_AT_SLOT = "[إلى]";
 export const CLOSED_AR = "المطعم مغلق حاليا.";
 export const CLOSED_WITH_HOURS_AR = `المطعم مغلق حاليا. نستقبل الطلبات من ${OPENS_AT_SLOT} إلى ${CLOSES_AT_SLOT}.`;
 
+/**
+ * Orders are paused — the bot's whole answer while they are (brief ي-أ,
+ * Mohammed's decisions 1 to 3, 8 October 2026), verbatim from him:
+ *   - to every message, a customer in the middle of an order included; their
+ *     cart and session stay as they were, and no order is written;
+ *   - and to a new customer of a menu with no item to show, instead of an
+ *     empty menu.
+ *
+ * 🔴 The only text. No line from staff beside it, and no second wording for
+ *    the empty menu: both are decisions, not omissions.
+ */
+export const ORDERS_PAUSED_AR = "أوقفنا استقبال الطلبات مؤقتا. راسلنا لاحقا.";
+
 /** أول رد على زبون بلا جلسة نشطة. اسم المطعم من صف restaurants. */
 export const WELCOME_AR = `أهلا بك في ${RESTAURANT_NAME_SLOT}.`;
 

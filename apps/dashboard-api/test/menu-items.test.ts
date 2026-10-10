@@ -92,6 +92,8 @@ const ITEM = {
 
 /** The item the PATCH tests change — in `benchShop`, out of the order test's menu. */
 let target = "";
+/** `target`'s category, «شاورما». */
+let benchCategory = "";
 
 type ItemRow = {
   name: string;
@@ -435,7 +437,7 @@ beforeAll(async () => {
   // can reorder or reprice the menu the order test reads.
   benchShop = await createRestaurant("d5-bench");
   await addMember(staffTest, benchShop);
-  const benchCategory = await createCategory({
+  benchCategory = await createCategory({
     restaurant: benchShop,
     name: "شاورما",
   });
@@ -470,41 +472,76 @@ describe("GET /menu-items", () => {
   it("🔴 lists the menu in the customer's order, unavailable items in their place, an inactive category's items absent, money as the database's text", async () => {
     const items = await menuOk(staffTest, shop);
 
+    // Each item with its category (brief ي-أ §5).
+    const offersFirst = { categoryId: CAT.offersFirst, categoryName: "عروض" };
+    const offersSecond = { categoryId: CAT.offersSecond, categoryName: "عروض" };
+    const grill = { categoryId: CAT.grill, categoryName: "مشاوي" };
+    const starters = { categoryId: CAT.starters, categoryName: "مقبلات" };
+    const sweets = { categoryId: CAT.sweets, categoryName: "حلويات" };
     expect(items).toEqual([
       {
         id: ITEM.familyMeal,
         name: "وجبة عائلية",
         price: "12.00",
         isAvailable: true,
+        ...offersFirst,
       },
       {
         id: ITEM.singleMeal,
         name: "وجبة فردية",
         price: "4.00",
         isAvailable: true,
+        ...offersSecond,
       },
       {
         id: ITEM.shishTawook,
         name: "شيش طاووق",
         price: "5.25",
         isAvailable: true,
+        ...grill,
       },
-      { id: ITEM.fattoush, name: "فتوش", price: "2.25", isAvailable: true },
-      { id: ITEM.hummus, name: "حمص", price: "1.50", isAvailable: false },
-      { id: ITEM.mutabbal, name: "متبل", price: "1.75", isAvailable: true },
+      {
+        id: ITEM.fattoush,
+        name: "فتوش",
+        price: "2.25",
+        isAvailable: true,
+        ...starters,
+      },
+      {
+        id: ITEM.hummus,
+        name: "حمص",
+        price: "1.50",
+        isAvailable: false,
+        ...starters,
+      },
+      {
+        id: ITEM.mutabbal,
+        name: "متبل",
+        price: "1.75",
+        isAvailable: true,
+        ...starters,
+      },
       {
         id: ITEM.babaFirst,
         name: "بابا غنوج",
         price: "2.00",
         isAvailable: true,
+        ...starters,
       },
       {
         id: ITEM.babaSecond,
         name: "بابا غنوج",
         price: "2.00",
         isAvailable: true,
+        ...starters,
       },
-      { id: ITEM.knafeh, name: "كنافة", price: "3.00", isAvailable: true },
+      {
+        id: ITEM.knafeh,
+        name: "كنافة",
+        price: "3.00",
+        isAvailable: true,
+        ...sweets,
+      },
     ]);
   });
 
@@ -573,6 +610,9 @@ describe("PATCH /menu-items/:id — availability", () => {
       name: "شاورما دجاج",
       price: (await rowOf(target)).price,
       isAvailable: false,
+      categoryId: benchCategory,
+      categoryName: "شاورما",
+      archivedAt: null,
     });
     expect((await rowOf(target)).is_available).toBe(false);
 
@@ -587,9 +627,12 @@ describe("PATCH /menu-items/:id — availability", () => {
 
     const after = await rowOf(target);
     expect(after.updated_at > before.updated_at).toBe(true);
+    // The reply adds `archivedAt` to the listed item (brief ي-أ §5).
+    const { archivedAt, ...listed } = body;
+    expect(archivedAt).toBeNull();
     expect(
       (await menuOk(staffTest, benchShop)).find((i) => i.id === target),
-    ).toEqual(body);
+    ).toEqual(listed);
     await patchOk(target, { isAvailable: true });
   });
 
@@ -692,27 +735,11 @@ describe("PATCH /menu-items/:id — price", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 🔴 Arabic-Indic digits — brief D §0, a test by name. A price in them is a
-//    400, not a price converted behind the staff's back.
+// Arabic-Indic digits: brief D §0 made a price in them a 400. Mohammed's
+// decision 6 (brief ي-أ) turned that around — they are converted before the
+// pattern — so the test by name moved, inverted, to `menu-editing.test.ts`
+// test 4, where every one of D's cases is now converted.
 // ---------------------------------------------------------------------------
-describe("PATCH /menu-items/:id — Arabic-Indic digits", () => {
-  it.each([
-    ["٢.٥٠", "Arabic-Indic digits"],
-    ["٣", "a single Arabic-Indic digit"],
-    ["2.٥٠", "Western and Arabic-Indic mixed"],
-    ["۲.۵۰", "Persian (Extended Arabic-Indic) digits"],
-    ["2٫50", "the Arabic decimal separator"],
-  ])(
-    "🔴 rejects price %s (%s) with 400, and the price is untouched",
-    async (price) => {
-      const before = await rowOf(target);
-
-      await expectZod400(await patch(target, { price }));
-
-      expect(await rowOf(target)).toEqual(before);
-    },
-  );
-});
 
 // ---------------------------------------------------------------------------
 // Input — 400 in nestjs-zod's existing shape (§8.7), and nothing written.
@@ -726,7 +753,6 @@ describe("PATCH /menu-items/:id — input", () => {
     ["three decimals", { price: "2.505" }],
     ["a price that is a number, not text", { price: 2.5 }],
     ["an empty price", { price: "" }],
-    ["a price with spaces around it", { price: " 2.50" }],
     ["exponent notation", { price: "1e3" }],
     ["seven integer digits", { price: "1234567" }],
     ["a leading plus", { price: "+3" }],
@@ -737,7 +763,8 @@ describe("PATCH /menu-items/:id — input", () => {
     ["isAvailable as a number", { isAvailable: 0 }],
     ["a null isAvailable", { isAvailable: null }],
     ["an empty body", {}],
-    ["a key the contract does not have (name)", { name: "اسم جديد" }],
+    // `name` joined the contract with brief ي-أ; `description` never did.
+    ["a key the contract does not have (description)", { description: "وصف" }],
     [
       "a key the contract does not have (restaurantId), next to a valid field",
       { isAvailable: false, restaurantId: RESTAURANT_B },

@@ -21,8 +21,8 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 | Path | Package | What it is |
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
-| `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, menu-item price and availability, restaurant settings (task D). Contracts as built: `docs/13-dashboard-api-brief.md` §9 |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`) |
+| `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, restaurant settings (task D); the menu — `GET`/`POST /menu-items`, `PATCH /menu-items/:id` (name, price, availability, archive and bring back), `POST /menu-items/enable-all`, `GET /menu-categories` — and `PATCH /restaurant/orders-pause`, all under the 4096 guard where they can lengthen the menu (brief ي-أ, `docs/brief-ja-menu-backend.md`). Contracts as built: `docs/13-dashboard-api-brief.md` §9 (§9.10 for ي-أ) |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`); orders paused and the empty menu (brief ي-أ §4, `src/conversation/orders-paused.ts`) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login, the orders screen (task G, `docs/16-orders-screen-brief.md`) and an order's details with its conversation (task I, `docs/brief-i-order-details.md`). Feature-based: `app/` (routes) · `features/<x>/` · `shared/` — see *Dashboard structure*. Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -53,6 +53,11 @@ pnpm --filter @sufria/dashboard-web dev    # single package
 # Dev only, never a real restaurant: change an order's status through the API,
 # as the dashboard button will (brief F §5). Needs DEMO_STAFF_EMAIL/PASSWORD in .env:
 node --env-file=.env scripts/demo-order-status.mjs 101 accepted
+# Dev only, the same way: the menu as the menu screen will drive it (brief ي-أ §6).
+# <n> is the place in `list` (in `archived` for restore), not the customer's number:
+node --env-file=.env scripts/demo-menu.mjs list          # also: archived
+node --env-file=.env scripts/demo-menu.mjs pause         # also: resume
+node --env-file=.env scripts/demo-menu.mjs price 1 ٣٫٧٥  # also: on <n> · off <n> · archive <n> · restore <n>
 ```
 
 `pnpm verify` needs a live database: `test:security` and `test:db` connect using
@@ -474,8 +479,10 @@ reach the browser and are not counted; a client component's are.
   no trigger writes them. SRS FR-14 via FR-13; found in D-7, **undecided** —
   a product call for Mohammed, not a bug to fix in passing.
 - **The customer's menu order is written twice** — the ORDER BY in the engine's
-  `readMenu` and in `dashboard-api`'s `MenuService.list`. Changing one does not
-  fail the other.
+  `readMenu` and in `dashboard-api`'s `MenuService` (`customerOrder()`, used by
+  the list and by the 4096 guard's read). Changing one does not fail the
+  other. The guard's *length* does not depend on it (the categories stay
+  contiguous either way); the screen's order does.
 - **Every text the engine sends is kept in `outbound_messages` (0013), from the
   day it shipped — nothing before it.** One wrapper, `SavingWhatsAppSender`
   (`src/whatsapp/saving-sender.ts`, built in `main.ts`): after a successful
@@ -515,7 +522,73 @@ reach the browser and are not counted; a client component's are.
   4096-character limit is detected, logged as an error and *not* sent — never
   truncated — and no session is opened, so it recovers by itself once the menu
   is shortened. Paging the menu, or a category-selection step, is a deliberate
-  deferral.
+  deferral. Since brief ي-أ the dashboard cannot make it too long (the 4096
+  guard, below); the engine's check stays the net for a menu written any other
+  way.
+- **The menu's message is built in `packages/shared`** (`menu-message.ts`,
+  brief ي-أ §3): `renderMenuText`, `firstMenuMessageAr` (welcome + `"\n"` +
+  menu), `WHATSAPP_TEXT_LIMIT` and `whatsappTextLength` (`[...body].length`).
+  The engine sends it, and the API's guard measures it, with the same
+  functions. Its every character is pinned by
+  `conversation-engine/test/menu-snapshot.test.ts`, which asks `handleInbound`
+  on a real database and compares with `test/fixtures/menu-snapshot/*.txt` —
+  generated from the engine's code before the move, and untouched by it.
+  Changing the text on purpose means regenerating those fixtures in the same
+  commit.
+- **Orders can be paused** (`restaurants.orders_paused_at`, 0014; brief ي-أ,
+  Mohammed's decisions 1–3). While set, every message gets
+  `ORDERS_PAUSED_AR`, the one text, and nothing is written. The order in
+  `handleInbound`: the session timeout (H) → **an active session while
+  paused: the text, before any routing** — «أكّد» included, so no order; the
+  session untouched, not even `last_message_at` → routing → the hours gate
+  (closed beats paused for a new conversation: its text carries the hours) →
+  **a new conversation while paused: the text, no session** → `prepareMenu`.
+  One `info` line per such reply: restaurant, `reason` (`paused` or
+  `empty_menu`), number masked. Written by `PATCH /restaurant/orders-pause`
+  (pausing again keeps the first moment); read with every message, so it
+  applies from the next one.
+- **A menu with no item to show is the paused text** (decision 3), by the
+  menu's own criterion — no line came back from `readMenu` (an available item
+  in an active category), never a second count. A new conversation gets
+  `ORDERS_PAUSED_AR` and no session (`empty_menu`); «منيو» in a session gets
+  it too, and the session is not written — the menu is now prepared before
+  the session write, so the cart is not pruned either.
+- **Archiving is a constraint, not engine code.** `menu_items.archived_at`
+  (0014) with `CHECK (archived_at IS NULL OR is_available = false)`: an
+  archived item is never available, so every engine path that reads
+  `is_available` — the menu, every add, every new `menu_map`, the «أكّد»
+  re-check — treats it as a switched-off one, and no engine line knows the
+  column exists. «Removed from the menu» is archived, never deleted
+  (decision 4); `archived: false` brings it back switched off. The API turns
+  any change to an archived item but `archived: false` into a 409
+  `item_archived` — the constraint's own refusal included, never a 500.
+- **The 4096 guard** (`dashboard-api`, `MenuService.guarded`; brief ي-أ §5).
+  On `POST /menu-items`, a `PATCH` with `name`, `price` or
+  `isAvailable: true`, and `enable-all`: inside the change's own transaction,
+  the first message — the welcome with the restaurant's name, and the menu —
+  is built before and after from the database with the shared functions and
+  counted as WhatsApp counts; **longer than 4096 and longer than before** →
+  rollback and a 409 `menu_too_long` with `length` and `limit`. «Longer than
+  before» lets a menu already too long (the setup script does not check)
+  take any change that does not lengthen it, and recover by shortening.
+- **A pause saved in the very millisecond «أكّد» writes its order can let that
+  one order through.** The engine reads `orders_paused_at` at the start of the
+  message's transaction; a pause committed after that read does not stop it.
+  Known and accepted (brief ي-أ §4) — no lock was added for it.
+- **Two menu edits committed at the same moment can each pass the 4096 guard
+  and pass it together.** Each transaction measures its own change, not the
+  other's uncommitted one; no lock serialises menu edits, in the spirit of the
+  pause race above. The engine's check still refuses to send such a menu, and
+  the next edit that shortens it is accepted.
+- **The setup script does not check the 4096 limit** (brief ي-أ §9: out of
+  scope). A menu file can still produce a first message the engine refuses to
+  send; the guard then accepts every edit that shortens it.
+- **A pause longer than `SESSION_IDLE_MINUTES` ends the sessions of customers
+  who write during it.** The paused reply does not touch `last_message_at`
+  (decision 1) and the timeout runs first (H), so a customer whose last
+  message before the pause is over an hour old gets their session abandoned
+  — the cart stays in that row — and, once orders resume, starts over with
+  the menu. Both rules are the briefs'; this is what they add up to.
 - **A split shift shows only its first window** in the closing message: the text
   has two slots, not four. Showing the *next* window would be a computed promise,
   which is the thing that text deliberately avoids.

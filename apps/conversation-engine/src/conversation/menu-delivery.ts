@@ -1,4 +1,8 @@
-import { itemsRemovedUnavailableLineAr, type Currency } from "@sufria/shared";
+import {
+  firstMenuMessageAr,
+  itemsRemovedUnavailableLineAr,
+  type Currency,
+} from "@sufria/shared";
 
 import type { TenantTx } from "../db/types.js";
 import { buildMenu, type MenuLine } from "../restaurant/menu.js";
@@ -38,14 +42,26 @@ import {
  * يبعتها بلا ما يمرق من `deliverMenu`.
  */
 export interface PreparedMenu {
-  /** النص كما بينبعت: البادئة (الترحيب أول مرة) + القائمة. */
+  /**
+   * The text as it is sent: the first message (welcome + menu, built by
+   * `firstMenuMessageAr` in `packages/shared`), or the menu alone for «منيو».
+   */
   readonly body: string;
   readonly lines: readonly MenuLine[];
 }
 
 export type PrepareMenuResult =
   | { readonly ok: true; readonly menu: PreparedMenu }
-  | { readonly ok: false; readonly error: OutboundTextTooLongError };
+  /**
+   * Not one item to show (brief ي-أ, decision 3): the caller sends
+   * ORDERS_PAUSED_AR instead of an empty menu, and writes no session.
+   */
+  | { readonly ok: false; readonly reason: "empty" }
+  | {
+      readonly ok: false;
+      readonly reason: "too_long";
+      readonly error: OutboundTextTooLongError;
+    };
 
 /**
  * بتقرأ القائمة، بتبني النص، وبتفحص طوله — **قبل ما تنفتح أي جلسة**.
@@ -53,20 +69,30 @@ export type PrepareMenuResult =
  * 🔴 الترتيب مقصود ومكتوب بـ`session.service.ts`: قائمة أطول من سقف واتساب
  *    مشكلة **دائمة** بتنحل بقائمة أقصر لا بإعادة محاولة. لو انفتحت جلسة،
  *    رسايل الزبون الجاية بتمرق من فرع "جلسة نشطة" وبيضل بلا قائمة للأبد.
+ *
+ * @param welcomeFor the restaurant's name, for the first message's welcome;
+ *   `null` for «منيو», which sends the menu alone.
  */
 export async function prepareMenu(
   tx: TenantTx,
-  prefix: string | null,
+  welcomeFor: string | null,
   currency: Currency,
 ): Promise<PrepareMenuResult> {
   const menu = await buildMenu(tx, currency);
-  const body = prefix === null ? menu.text : `${prefix}\n${menu.text}`;
+  // 🔴 «No item» by the menu's own criterion — the lines `readMenu` returned,
+  //    an available item in an active category — never a second count that
+  //    could disagree with the menu the customer would have been sent
+  //    (brief ي-أ §4).
+  if (menu.lines.length === 0) return { ok: false, reason: "empty" };
+
+  const body =
+    welcomeFor === null ? menu.text : firstMenuMessageAr(welcomeFor, menu.text);
 
   try {
     assertWithinTextLimit(body);
   } catch (error) {
     if (!(error instanceof OutboundTextTooLongError)) throw error;
-    return { ok: false, error };
+    return { ok: false, reason: "too_long", error };
   }
 
   return { ok: true, menu: { body, lines: menu.lines } };

@@ -145,6 +145,10 @@ export const restaurants = pgTable("restaurants", {
   currency: text("currency", { enum: ["JOD", "ILS"] })
     .notNull()
     .default("JOD"),
+  // 0014 — NULL: the restaurant takes orders. Otherwise orders are paused
+  // since that moment: the engine answers every message with ORDERS_PAUSED_AR
+  // and writes no order (brief ي-أ).
+  ordersPausedAt: timestamp("orders_paused_at", { withTimezone: true }),
   assumedCommissionRate: numeric("assumed_commission_rate", {
     precision: 5,
     scale: 4,
@@ -202,6 +206,10 @@ export const menuItems = pgTable("menu_items", {
   imageUrl: text("image_url"),
   isAvailable: boolean("is_available").notNull().default(true),
   displayOrder: integer("display_order").notNull().default(0),
+  // 0014 — NULL: on the menu. Otherwise archived since that moment, and the
+  // CHECK menu_items_archived_not_available keeps it unavailable — which is
+  // all the engine reads, so archiving needed no engine code (brief ي-أ §2).
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   tags: jsonb("tags").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

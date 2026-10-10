@@ -474,13 +474,19 @@ describe("التوفّر عند كتابة خريطة جديدة", () => {
   });
 
   it("🔴 صنفان انشالوا: سطر واحد بصيغة الجمع، برسالة وحدة", async () => {
-    const s = await shop({ label: "prune-two", items: TWO });
+    // A third item stays on: a menu with no item left is not sent at all —
+    // «منيو» gets ORDERS_PAUSED_AR and the cart is left alone (brief ي-أ,
+    // decision 3; `orders-pause.test.ts` test 8).
+    const s = await shop({
+      label: "prune-two",
+      items: [...TWO, { name: "فتوش", price: "3.00" }],
+    });
     await s.say("1 و2");
     expect(await cartOf(s)).toHaveLength(2);
 
     await audit.query(
-      `UPDATE menu_items SET is_available = false WHERE restaurant_id = $1`,
-      [s.restaurantId],
+      `UPDATE menu_items SET is_available = false WHERE id = ANY($1::uuid[])`,
+      [[s.ids["حمص"], s.ids["متبل"]]],
     );
     await s.say("منيو");
 

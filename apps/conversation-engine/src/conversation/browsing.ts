@@ -26,6 +26,7 @@ import type { WhatsAppSender } from "../whatsapp/sender.js";
 import { advanceSessionState } from "../db/critical-primitives.js";
 import { cartTotalMinor, renderCart, renderSummary } from "./cart-view.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
+import { replyOrdersPaused } from "./orders-paused.js";
 import {
   readSessionData,
   toSummaryFulfillment,
@@ -360,6 +361,12 @@ export async function handleBrowsingMessage(
     currency: message.currency,
   });
 
+  if (decision.resendMenu) {
+    // «منيو» moves no state: `decideBrowsing` never pairs it with advanceTo.
+    await resendMenu(tx, sender, message, decision.next);
+    return;
+  }
+
   if (decision.advanceTo !== null) {
     // 🔴 CAS ذري من `browsing`. `rowcount = 0` = حدا تاني سبقنا («تم» مرتين
     //    بنفس اللحظة) → **تجاهل بصمت، لا استثناء**، وبلا كتابة وبلا إرسال:
@@ -386,31 +393,6 @@ export async function handleBrowsingMessage(
 
   await writeSessionData(tx, message.sessionId, decision.next, message.now);
 
-  if (decision.resendMenu) {
-    // «منيو»: نفس الطريق الوحيد لإرسال قائمة — الخريطة بتنستبدل كاملة معها.
-    const prepared = await prepareMenu(tx, null, message.currency);
-    if (!prepared.ok) {
-      logger.error(
-        {
-          restaurantId: message.restaurantId,
-          chars: prepared.error.length,
-          limit: prepared.error.limit,
-        },
-        "🔴 «منيو»: القائمة أطول من سقف واتساب — ما انبعثت وما انقطعت",
-      );
-      return;
-    }
-    await deliverMenu(tx, sender, {
-      sessionId: message.sessionId,
-      restaurantId: message.restaurantId,
-      phoneNumberId: message.phoneNumberId,
-      to: message.to,
-      menu: prepared.menu,
-      now: message.now,
-    });
-    return;
-  }
-
   if (decision.reply !== null) {
     await sender.sendText({
       restaurantId: message.restaurantId,
@@ -419,4 +401,49 @@ export async function handleBrowsingMessage(
       body: decision.reply,
     });
   }
+}
+
+/**
+ * «منيو»: نفس الطريق الوحيد لإرسال قائمة — الخريطة بتنستبدل كاملة معها.
+ *
+ * 🔴 Prepared BEFORE the session is written (brief ي-أ §4, step 3): a menu
+ *    with no item to show is not sent — the paused text goes instead, and
+ *    then the session must stay exactly as it was, its streak and
+ *    `last_message_at` included. Otherwise the order is the one it always
+ *    was: the write, then the menu (or the error line, when it is too long).
+ */
+async function resendMenu(
+  tx: TenantTx,
+  sender: WhatsAppSender,
+  message: BrowsingMessage,
+  next: SessionData,
+): Promise<void> {
+  const prepared = await prepareMenu(tx, null, message.currency);
+
+  if (!prepared.ok && prepared.reason === "empty") {
+    await replyOrdersPaused(sender, message, "empty_menu");
+    return;
+  }
+
+  await writeSessionData(tx, message.sessionId, next, message.now);
+
+  if (!prepared.ok) {
+    logger.error(
+      {
+        restaurantId: message.restaurantId,
+        chars: prepared.error.length,
+        limit: prepared.error.limit,
+      },
+      "🔴 «منيو»: القائمة أطول من سقف واتساب — ما انبعثت وما انقطعت",
+    );
+    return;
+  }
+  await deliverMenu(tx, sender, {
+    sessionId: message.sessionId,
+    restaurantId: message.restaurantId,
+    phoneNumberId: message.phoneNumberId,
+    to: message.to,
+    menu: prepared.menu,
+    now: message.now,
+  });
 }

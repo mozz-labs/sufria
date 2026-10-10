@@ -19,7 +19,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Pool, type PoolClient } from "pg";
-import type { OrderStatus } from "@sufria/shared";
+import { WHATSAPP_TEXT_LIMIT, type OrderStatus } from "@sufria/shared";
 
 import { ConversationService } from "../src/conversation/session.service.js";
 import { TenantDb } from "../src/db/tenant-db.js";
@@ -34,7 +34,6 @@ import {
 import {
   OutboundTextTooLongError,
   RecordingWhatsAppSender,
-  WHATSAPP_TEXT_LIMIT,
   WhatsAppSendError,
   type OutboundTextMessage,
 } from "../src/whatsapp/sender.js";

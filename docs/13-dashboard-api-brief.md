@@ -568,6 +568,8 @@ ALTER TABLE orders
 
 **كُتب في د-7، 23 سبتمبر، من الكود على `main` عند `9002141`، لا من هذا البريف.** حيث يختلف عمّا في §3 و§8 فالمرجع هذا القسم. **منه يُكتب بريف الشاشة.**
 
+**بريف ي-أ (8 أكتوبر) غيّر §9.4 و§9.5 و§9.6 و§9.7 مكانها، وأضاف §9.10** — كُتب من الكود على الفرع `feat/menu-backend`، لا من البريف. منه يُكتب بريف ي-ب (شاشة المنيو).
+
 الأنواع كلها في `packages/shared/src/dashboard-api.ts`، والشاشة تستوردها من `@sufria/shared` ولا تعيد تعريفها.
 
 ### 9.0 · مشترك لكل مسارات د
@@ -592,7 +594,7 @@ ALTER TABLE orders
 | 401 | `{ "message": "Unauthorized", "statusCode": 401 }` |
 | 403 | `{ "message": "Forbidden", "statusCode": 403 }` |
 | 404 | `{ "message": "Not Found", "statusCode": 404 }` — **غير موجود ولمطعم آخر نفس الجسم** (§2.9) |
-| 409 | §9.3 وحدها |
+| 409 | §9.3 (الطلبات) و§9.10 (المنيو) — نفس الشكل |
 
 **القواعد العامة في الردود:**
 - **المال نص دائما** كما أرجعته القاعدة: `"13.50"` و`"0.00"`، لا `number` ولا مرة.
@@ -749,33 +751,41 @@ ALTER TABLE orders
 
 **الأخطاء:** 400 · 401 · 403 · 404 · 409.
 
-### 9.4 · `GET /menu-items`
+### 9.4 · `GET /menu-items` — غيّره ي-أ
 
 **الرد 200** (`MenuItemListResponse`):
 
 ```json
-{ "items": [ { "id": "…uuid…", "name": "منسف", "price": "8.00", "isAvailable": true } ] }
+{ "items": [ { "id": "…uuid…", "name": "منسف", "price": "8.00", "isAvailable": true,
+               "categoryId": "…uuid…", "categoryName": "أطباق رئيسية" } ] }
 ```
 
 - **كل أصناف المطعم، ومنها غير المتوفرة** — الموظف يحتاجها ليعيد تشغيلها.
+- **بلا المؤرشفة** (ي-أ، القرار 4: بتختفي من البوت ومن قائمة الموظف). قائمتها بـ`?archived=true` — §9.10.
 - **بلا أصناف التصنيفات المطفأة** (`menu_categories.is_active = false`).
-- **ترتيب الزبون حرفيا:** `category.display_order, name, id` ثم `item.display_order, name, id` — نسخة من `ORDER BY` في `readMenu` بالمحرّك (فجوة §10).
-- بلا صفحات. **الأخطاء:** 401 · 403.
+- كل صنف ومعه تصنيفه (`categoryId` · `categoryName`) — عناوين الشاشة (ي-أ).
+- **ترتيب الزبون حرفيا:** `category.display_order, name, id` ثم `item.display_order, name, id` — نسخة من `ORDER BY` في `readMenu` بالمحرّك (فجوة §10). فأصناف التصنيف الواحد متتالية.
+- `?archived=false` = بلاه. أي قيمة تانية لـ`archived` ← 400.
+- بلا صفحات. **الأخطاء:** 400 · 401 · 403.
 
-### 9.5 · `PATCH /menu-items/:id`
+### 9.5 · `PATCH /menu-items/:id` — غيّره ي-أ
 
-**الطلب** (`UpdateMenuItemRequest`) — كائن صارم، **حقل واحد على الأقل** (`{}` ← 400)، وأي مفتاح آخر (`name`، `restaurantId`) ← 400:
+**الطلب** (`UpdateMenuItemRequest`) — كائن صارم: **واحد أو أكتر من `name` · `price` · `isAvailable`، أو `archived` لحاله**. `archived` مع أي حقل تاني ← 400 · `{}` ← 400 · أي مفتاح آخر (`restaurantId`، `categoryId`) ← 400:
 
 | الحقل | القاعدة |
 |---|---|
+| `name` | نص. بيُقصّ من الطرفين، وكل سلسلة مسافات بتصير مسافة وحدة، والأرقام العربية-الهندية (`٠-٩` و`۰-۹`) بتصير غربية — **والحروف ما بتتغيّر**. فاضي بعد القص · أطول من **40** محرفا (`MENU_ITEM_NAME_MAX`، بعدّ واتساب `[...name].length`) · فيه سطر جديد أو Tab أو أي حرف تحكّم ← 400 |
+| `price` | **نص**. بيُقصّ، والأرقام العربية-الهندية والفارسية بتصير غربية، و`٫` بتصير `.` (**قرار محمد 6** — `٢٫٥٠` = `2.50`)، **وبعدها** بيمرق على `MENU_PRICE_PATTERN` = `^(?!0+(?:\.0+)?$)\d{1,6}(?:\.\d{1,2})?$`. الصفر بكل أشكاله · سالب · ثلاث خانات عشرية · `number` بدل نص · `2,50` · `٢،٥٠` ← 400. يُكتب `::numeric(12,2)` في SQL |
 | `isAvailable` | `boolean`. يكتب `menu_items.is_available` — **العمود نفسه الذي يقرؤه فحص «أكّد» في المحرّك** |
-| `price` | **نص**، بالنمط `MENU_PRICE_PATTERN` = `^(?!0+(?:\.0+)?$)\d{1,6}(?:\.\d{1,2})?$`. الصفر بكل أشكاله ← 400 · سالب · ثلاث خانات عشرية · `number` بدل نص · `٢.٥٠` ← 400. يُكتب `::numeric(12,2)` في SQL |
+| `archived` | `true`: الصنف بينأرشف — `archived_at = now()` و`is_available = false` بنفس الأمر؛ مؤرشف أصلا بيحتفظ بوقته الأول. `false`: بيرجع — **مطفي** (القرار 4)، والموظف بيشغّله |
 
 - `:id` بـ`z.guid()` ← 400 إن فسد.
-- **الرد 200** (`UpdateMenuItemResponse` = `MenuItemListItem`): الصنف بعد التعديل. **يُكتب ما أُرسل وحده**، و`updated_at = now()`.
+- **الرد 200** (`UpdateMenuItemResponse`): الصنف بعد التعديل، شكل §9.4 **ومعه `archivedAt`** (ISO بتوقيت UTC، أو `null`). **يُكتب ما أُرسل وحده**، و`updated_at = now()`.
 - صنف في تصنيف مطفأ: **200، ويُكتب** — مع أنه لا يظهر في `GET` (§10).
 - تعديل السعر لا يمسّ سلّة ولا طلبا قائما («السعر وعد»).
-- **الأخطاء:** 400 · 401 · 403 · 404 (غير موجود أو لمطعم آخر، نفس الجسم).
+- **صنف مؤرشف بياخد `archived: false` وبس:** أي تعديل تاني ← 409 `item_archived` (ومنه `isAvailable: true`، اللي القيد بالقاعدة كان رح يرفضه — ورفضه كمان بيصير 409، مش 500).
+- `name` أو `price` أو `isAvailable: true` تحت **حماية الـ4096** — §9.10. الأرشفة والإرجاع والإطفاء لأ: ما بيطوّلوا المنيو.
+- **الأخطاء:** 400 · 401 · 403 · 404 (غير موجود أو لمطعم آخر، نفس الجسم) · 409 `item_archived` · 409 `menu_too_long`.
 
 ### 9.6 · `GET /restaurant/settings`
 
@@ -789,18 +799,20 @@ ALTER TABLE orders
   "offersDelivery": true,
   "deliveryFee": "1.50",
   "contactPhone": "0790000099",
-  "openingHours": { "days": { "sun": [{ "open": "09:00", "close": "23:00" }], "mon": [], "…": [] } }
+  "openingHours": { "days": { "sun": [{ "open": "09:00", "close": "23:00" }], "mon": [], "…": [] } },
+  "ordersPausedAt": null
 }
 ```
 
 - `currency` و`offersDelivery` **للقراءة فقط**.
+- `ordersPausedAt` (ي-أ): ISO بتوقيت UTC = الطلبات موقفة من هاللحظة، `null` = شغّالة. **للقراءة من هون** — بيكتبه `PATCH /restaurant/orders-pause` (§9.10). وبيرجع كمان برد `PATCH /restaurant/settings`.
 - `contactPhone` قد يكون `null`.
 - 🔴 **`openingHours` يُرجَع كما هو مخزَّن، بلا أي تحويل.** لمطعم جديد: **`{}`** (افتراضي العمود، ومعناه في المحرّك «مفتوح دائما»). وصف كُتب يدويا قبل الشاشة قد يحمل شكلا يقبله المحرّك تسامحا ولا يقبله الـPATCH (`"sunday"`، `"9:00"`).
 - **الأخطاء:** 401 · 403 · 404 (لا يُصل إليه عمليا: الحارس يتحقّق من المطعم قبله).
 
 ### 9.7 · `PATCH /restaurant/settings`
 
-**الطلب** (`UpdateRestaurantSettingsRequest`) — كائن صارم على كل مستوى، **حقل واحد على الأقل**. `currency` أو `offersDelivery` أو `timezone` أو أي مفتاح آخر ← 400:
+**الطلب** (`UpdateRestaurantSettingsRequest`) — كائن صارم على كل مستوى، **حقل واحد على الأقل**. `currency` أو `offersDelivery` أو `timezone` أو `ordersPausedAt` أو أي مفتاح آخر ← 400:
 
 | الحقل | القاعدة |
 |---|---|
@@ -883,6 +895,71 @@ ALTER TABLE orders
 - **`order_id` بيعبّيه مُراقِب الإشعارات وحده** (بيبعت بعد ما تتقفل معاملته). ولا رسالة بتنبعت والمعاملة مفتوحة بتحمله، ولا «استلمنا…» (قرار محمد، 5 أكتوبر) — القاعدة 4 بتنسبها.
 - **الرسائل اللي انبعتت قبل الهجرة ما إلها سجل**، والشاشة بتقول «تظهر هنا رسائل الزبون فقط.» لطلب بلا ردود بوت محفوظة.
 - `MAX_CANCELLATION_REASON_LENGTH` (300) انتقلت لـ`shared`: الـDTO والشاشة بيقروها من مكان واحد، بنفس القيمة.
+
+### 9.10 · المنيو من اللوحة والإيقاف — أضافها بريف ي-أ (8 أكتوبر)
+
+**كُتب من الكود على الفرع `feat/menu-backend`**، لا من بريف ي-أ. بنفس قواعد §9.0 (الهيدران، ترتيب الفحص، أجسام الأخطاء)، والأنواع كلها بـ`packages/shared/src/dashboard-api.ts`.
+
+| المسار | الجسم | الرد | الأكواد |
+|---|---|---|---|
+| `GET /menu-items` | — | 200 `{ items }` — §9.4 | 400 · 401 · 403 |
+| `GET /menu-items?archived=true` | — | 200 `{ items }` + `archivedAt`، الأحدث أرشفة أولا | 400 · 401 · 403 |
+| `GET /menu-categories` | — | 200 `{ categories: [{ id, name }] }` | 401 · 403 |
+| `POST /menu-items` | `{ categoryId, name, price }` | **201** والصنف (شكل §9.4) | 400 · 401 · 403 · 404 · 409 `menu_too_long` |
+| `PATCH /menu-items/:id` | §9.5 | 200 والصنف + `archivedAt` | 400 · 401 · 403 · 404 · 409 `item_archived` · 409 `menu_too_long` |
+| `POST /menu-items/enable-all` | بلا جسم | **200** `{ enabled: number }` | 401 · 403 · 409 `menu_too_long` |
+| `GET /restaurant/settings` | — | 200 + `ordersPausedAt` — §9.6 | 401 · 403 |
+| `PATCH /restaurant/orders-pause` | `{ paused: boolean }` | 200 `{ ordersPausedAt: string \| null }` | 400 · 401 · 403 |
+
+**`POST /menu-items`** (`CreateMenuItemRequest`) — كائن صارم، والتلاتة إلزامية:
+- `categoryId`: UUID لتصنيف **فعّال للمطعم نفسه** (القرار 7: الإضافة لتصنيف موجود). لمطعم تاني أو مطفأ أو مش موجود ← **404 بنفس الجسم**، وولا صف انكتب.
+- `name` و`price`: قواعد §9.5 نفسها، والتطبيع قبل التحقق.
+- `restaurantId` بالجسم ← 400: المطعم من الحارس وحده.
+- الصنف **متاح من أول لحظة، وبآخر تصنيفه**: `display_order` = أكبر رقم بالتصنيف + 1 — والمؤرشفة محسوبة، فصنف بيرجع بعدين بيلاقي مكانه.
+
+**`GET /menu-items?archived=true`** (`ArchivedMenuItemListResponse`):
+
+```json
+{ "items": [ { "id": "…uuid…", "name": "فتوش", "price": "2.25", "isAvailable": false,
+               "categoryId": "…uuid…", "categoryName": "مقبلات", "archivedAt": "2026-10-08T10:15:00.000Z" } ] }
+```
+
+- المؤرشفة وحدها، **الأحدث أرشفة أولا** (`archived_at DESC, id`). بلا أصناف التصنيفات المطفأة، زي §9.4.
+- منها بيرجع الصنف بـ`PATCH { "archived": false }` — **مطفي**.
+
+**`POST /menu-items/enable-all`** — «شغّل الكل» (القرار 7: الرجوع يدوي، ولا «أطفي الكل»):
+- بيشغّل كل صنف **مطفي ومش مؤرشف، بالتصنيفات اللي بتطلع بـ§9.4**. `enabled` = كم صنف تغيّر — `0` لما ما في شي، ولسا 200.
+- 200 مش 201: ما بينخلق إشي.
+
+**`GET /menu-categories`** (`MenuCategoryListResponse`): الفعّالة بس، بترتيب `display_order, name, id` — مصدر قائمة التصنيفات بالإضافة.
+
+**`PATCH /restaurant/orders-pause`** (`OrdersPauseRequest` ← `OrdersPauseResponse`) — «أوقف الطلبات مؤقتا»:
+- `{ "paused": true }` ← `{ "ordersPausedAt": "2026-10-08T10:15:00.000Z" }`. **موقفة أصلا ← نفس الوقت الأول.**
+- `{ "paused": false }` ← `{ "ordersPausedAt": null }` — حتى لو كانت شغّالة، و200.
+- أي جسم غير `{ paused: boolean }` حرفيا ← 400.
+- **بالمحرّك من الرسالة الجاية** (بيقرأ العمود بكل رسالة): كل رسالة بتاخد `ORDERS_PAUSED_AR` — «أوقفنا استقبال الطلبات مؤقتا. راسلنا لاحقا.» — **حتى الزبون بنص طلبه، وولا طلب بينكتب**، وجلسته وسلّته بيضلّوا زي ما هم. المسكّر بيغلب الإيقاف لزبون جديد (رسالة الإغلاق فيها الساعات). ومنيو بصفر أصناف بياخد نفس الرد بدل منيو فاضي.
+
+**409 — `MenuConflictBody`**، شكل د §8.7 نفسه:
+
+```json
+{ "statusCode": 409, "error": "Conflict", "code": "menu_too_long",
+  "message": "the first message would be 4123 characters, over WhatsApp's 4096", "length": 4123, "limit": 4096 }
+```
+
+```json
+{ "statusCode": 409, "error": "Conflict", "code": "item_archived",
+  "message": "the item is archived: only archived: false applies to it" }
+```
+
+- **الشاشة بتقرأ `code`**، و`message` إنجليزي للمطوّر. النص العربي للموظف ببريف ي-ب.
+
+**حماية الـ4096 (`menu_too_long`)** — على `POST /menu-items` · `PATCH` فيه `name` أو `price` أو `isAvailable: true` · `enable-all`:
+- جوّا معاملة التعديل نفسها: أول رسالة — **الترحيب باسم المطعم + المنيو كامل**، أطول رسالة منيو بيبعتها البوت — بتنبني من القاعدة قبل التعديل وبعده **بدوال المحرّك نفسها** من `packages/shared` (`renderMenuText` · `firstMenuMessageAr`)، وبتنعدّ بعدّ واتساب (`whatsappTextLength`).
+- **بعد > 4096 وأطول من قبل** ← المعاملة بتنسحب وولا إشي بينكتب، و409 فيه `length` (اللي كان رح يصير) و`limit`.
+- «وأطول من قبل»: منيو طويل أصلا (سكربت التهيئة ما بيفحص) بيقبل كل تعديل ما بيطوّله وكل تعديل بيقصّره — هيك بيتعافى.
+- الأرشفة والإرجاع والإطفاء بلا حماية: ما بيطوّلوا المنيو.
+
+**القاعدة (`0014`):** `menu_items.archived_at` ومعه القيد `menu_items_archived_not_available` (`archived_at IS NULL OR is_available = false`): المؤرشف ما بيقدر يكون متاح حتى لو غلط الكود — والمحرّك أصلا بيعامل المطفي كأنه مش موجود، فما انلمس للأرشفة. و`restaurants.orders_paused_at` للإيقاف. «إزالة من المنيو» = أرشفة، **ولا حذف**.
 
 ---
 

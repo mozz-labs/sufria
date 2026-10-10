@@ -672,6 +672,8 @@ describe("a valid config", () => {
       deliveryFee: "5.00",
       contactPhone: "0599123456",
       openingHours: WEEK,
+      // Brief ي-أ: a new restaurant takes orders.
+      ordersPausedAt: null,
     });
   });
 

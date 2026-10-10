@@ -3,9 +3,11 @@ import { sql, type SQL } from "drizzle-orm";
 import type {
   Currency,
   OpeningHours,
+  OrdersPauseResponse,
   RestaurantSettings,
   UpdateRestaurantSettingsRequest,
 } from "@sufria/shared";
+import { isoUtc } from "../db/iso-utc.js";
 import { TenantDbService } from "../db/tenant-db.service.js";
 
 type SettingsRow = {
@@ -14,6 +16,7 @@ type SettingsRow = {
   delivery_fee: string;
   contact_phone: string | null;
   business_hours: RestaurantSettings["openingHours"];
+  orders_paused_at: string | null;
 };
 
 /** One projection for GET and for the PATCH reply. Assumes `restaurants r`. */
@@ -22,7 +25,8 @@ const settingsColumns = () => sql`
   r.offers_delivery,
   r.delivery_fee::text AS delivery_fee,
   r.contact_phone,
-  r.business_hours`;
+  r.business_hours,
+  ${isoUtc("r.orders_paused_at")} AS orders_paused_at`;
 
 @Injectable()
 export class RestaurantSettingsService {
@@ -80,6 +84,30 @@ export class RestaurantSettingsService {
     const row = res.rows[0];
     return row ? toSettings(row) : null;
   }
+
+  /**
+   * `PATCH /restaurant/orders-pause` — brief ي-أ §5. Pausing while paused
+   * keeps the first moment (`COALESCE`); resuming writes NULL whatever it
+   * was. The engine reads the column with every message, so the next message
+   * already gets the paused text — or, resumed, the menu.
+   */
+  async setOrdersPaused(
+    restaurantId: string,
+    paused: boolean,
+  ): Promise<OrdersPauseResponse | null> {
+    const pausedAt = paused
+      ? sql`COALESCE(r.orders_paused_at, now())`
+      : sql`NULL`;
+    const res = await this.tenantDb.runInTenant(restaurantId, (tx) =>
+      tx.execute<{ orders_paused_at: string | null }>(sql`
+        UPDATE restaurants r
+           SET orders_paused_at = ${pausedAt}, updated_at = now()
+         WHERE r.id = ${restaurantId}::uuid
+        RETURNING ${isoUtc("r.orders_paused_at")} AS orders_paused_at`),
+    );
+    const row = res.rows[0];
+    return row ? { ordersPausedAt: row.orders_paused_at } : null;
+  }
 }
 
 function hoursJson(hours: OpeningHours): string {
@@ -94,5 +122,6 @@ function toSettings(r: SettingsRow): RestaurantSettings {
     deliveryFee: r.delivery_fee,
     contactPhone: r.contact_phone,
     openingHours: r.business_hours,
+    ordersPausedAt: r.orders_paused_at,
   };
 }
