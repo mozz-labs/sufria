@@ -1,10 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DASHBOARD_UI_AR } from "@sufria/shared";
 import { BrandMark } from "../ui/brand-mark.tsx";
 import styles from "./dashboard-header.module.css";
+import { isCurrentTab } from "./tabs.ts";
 
 const T = DASHBOARD_UI_AR;
 
@@ -15,13 +17,19 @@ type Props = {
   /** The last read failed: the strip under the header. */
   offline: boolean;
   onLogout: () => void;
+  /**
+   * Under the header, above «انقطع الاتصال» when both show: the pause strip
+   * (brief ي-ب §5), from the layout.
+   */
+  strip?: ReactNode;
 };
 
 /**
  * The dashboard's header on every page behind login (brief G §3 G-4, brief I
  * §4 I-3): the mark and «سُفريا», «مباشر», logout, the restaurant's name, the
- * two tabs — links, the current one marked `aria-current="page"` — and the
- * strip while the connection is down.
+ * three tabs — links, the current one marked `aria-current="page"`
+ * (`isCurrentTab`: «المنيو» on /menu and /menu/removed, brief ي-ب §5) — then
+ * the pause strip, and the strip while the connection is down.
  *
  * The restaurant's name keeps its place and size but is not the page's
  * `<h1>`: each page has its own.
@@ -31,9 +39,11 @@ export function DashboardHeader({
   activeCount,
   offline,
   onLogout,
+  strip,
 }: Props) {
   const pathname = usePathname();
-  const current = (href: string) => (pathname === href ? "page" : undefined);
+  const current = (href: string) =>
+    isCurrentTab(pathname, href) ? "page" : undefined;
 
   return (
     <>
@@ -70,9 +80,18 @@ export function DashboardHeader({
             >
               {T.tabs.history}
             </Link>
+            <Link
+              href="/menu"
+              className={styles.tab}
+              aria-current={current("/menu")}
+            >
+              {T.tabs.menu}
+            </Link>
           </nav>
         </div>
       </header>
+
+      {strip}
 
       {offline && (
         <div className={styles.offline} role="status">

@@ -1,0 +1,59 @@
+/* The pause strip — brief ي-ب §5, decision 3: where the header's
+   «انقطع الاتصال» is, and as it looks (dashboard-header.module.css
+   .offline): the surface, a line under it, 13px/600 in the primary text.
+   Neutral — no accent: it states the restaurant's choice, not an alarm.
+   Held to .offline by test/menu/strip.test.mts. Logical properties only. */
+
+.strip {
+  background: var(--surface);
+  border-block-end: 1px solid var(--border);
+  padding-block: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* The page's width and edges, as the header's .bounds. The label at the
+   start, «استأنف» at the end — two fixed areas, at every width; a failed
+   resume's line under both. */
+.bounds {
+  width: 100%;
+  max-width: var(--page-width, none);
+  margin-inline: auto;
+  padding-inline: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label resume"
+    "failed failed";
+  align-items: center;
+  gap: 4px 12px;
+}
+
+/* «منذ…» may wrap on a narrow phone — on purpose; the button never does. */
+.label {
+  grid-area: label;
+  min-width: 0;
+}
+
+.resume {
+  grid-area: resume;
+  min-height: 44px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.resume[aria-busy="true"] {
+  cursor: progress;
+}
+
+.failed {
+  grid-area: failed;
+}
