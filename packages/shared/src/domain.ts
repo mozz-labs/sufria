@@ -485,6 +485,18 @@ export const SUMMARY_DELIVERY_LINE_AR = `التوصيل إلى: ${ADDRESS_SLOT}`
  */
 export const SUMMARY_PAYMENT_LINE_AR = "الدفع نقدا.";
 
+// ---------------------------------------------------------------------------
+// إعادة الطلب — بريف ك (FR-08). النصّان من محمد حرفيا (القرار 5، 10 أكتوبر)،
+// وباقي سطور الكتلة نصوص قائمة: `CART_LINE_UNNUMBERED_AR` · `CART_TOTAL_LINE_AR`
+// · `itemsUnavailableLineAr`.
+// ---------------------------------------------------------------------------
+
+/** رأس كتلة «آخر طلب لك» بأول رسالة الزبون الراجع. */
+export const REORDER_HEADER_AR = "آخر طلب لك:";
+
+/** ذيل الكتلة. «نفسه» هي الكلمة اللي بيعلّمها؛ `REORDER_INPUTS` بتقبل غيرها كمان. */
+export const REORDER_HINT_AR = "اكتب «نفسه» لتكرار الطلب.";
+
 /**
  * كل قوالب نصوص السلّة — للحراسة: الممنوعات، والأرقام الغربية، والنص inline،
  * والقاعدة النحوية. قالب جديد بيدخل هون، وإلا ما بتحرسه ولا بوابة.
@@ -514,6 +526,9 @@ export const CART_TEXT_TEMPLATES_AR: readonly string[] = [
   CART_EMPTY_AR,
   CART_EMPTY_ON_FINISH_AR,
   HANDOFF_AR,
+  // كتلة إعادة الطلب (بريف ك) — جنب سطور السلّة اللي بتتركّب منها.
+  REORDER_HEADER_AR,
+  REORDER_HINT_AR,
   // سطر المنيو مش نص سلّة، بس هون بيدخل الحراسة — وبينطبق عليه اللي فوق.
   MENU_LINE_AR,
 ];
@@ -757,6 +772,54 @@ export function cartMessageAr(
       ...currencySlot(currency),
     }),
     ...(options.removeHint === false ? [] : [CART_REMOVE_HINT_AR]),
+  ].join("\n");
+}
+
+/** سطر بكتلة «آخر طلب لك»: الكمية × **سعر اليوم** (بريف ك، القرار 6). */
+export interface ReorderBlockLine {
+  readonly name: string;
+  readonly qty: number;
+  readonly lineTotalMinor: number;
+}
+
+/**
+ * كتلة «آخر طلب لك» — بريف ك، القرارات 4–7:
+ *
+ *   آخر طلب لك:
+ *   [سطر لكل صنف متوفر، `CART_LINE_UNNUMBERED_AR`]
+ *   المجموع … — مجموع **السطور المعروضة بس**
+ *   [سطر «غير متوفر الآن» — بس إذا في صنف ناقص]
+ *   اكتب «نفسه» لتكرار الطلب.
+ *
+ * 🔴 المجموع بينحسب هون من السطور نفسها، مش بيجي من برّا: رقم بيجي لحاله
+ *    ممكن يحسب صنفا ما انعرض، والزبون بيشوف مجموعا ما بيطابق سطوره.
+ *
+ * بلا أرقام منيو بالسطور بقصد: الكتلة مش طلب بالأرقام، وهي فوق المنيو
+ * اللي فيه الأرقام. والقرار «ما في اقتراح إذا ولا صنف متوفر» (القرار 7)
+ * للمحرّك — هاي الدالة بتعرض اللي بيوصلها.
+ */
+export function reorderBlockAr(
+  lines: readonly ReorderBlockLine[],
+  unavailable: readonly string[],
+  currency: Currency,
+): string {
+  const totalMinor = lines.reduce((sum, l) => sum + l.lineTotalMinor, 0);
+  return [
+    REORDER_HEADER_AR,
+    ...lines.map((l) =>
+      fillSlots(CART_LINE_UNNUMBERED_AR, {
+        [ITEM_NAME_SLOT]: l.name,
+        [QUANTITY_SLOT]: String(l.qty),
+        [LINE_PRICE_SLOT]: formatMinor(l.lineTotalMinor),
+        ...currencySlot(currency),
+      }),
+    ),
+    fillSlots(CART_TOTAL_LINE_AR, {
+      [TOTAL_SLOT]: formatMinor(totalMinor),
+      ...currencySlot(currency),
+    }),
+    ...(unavailable.length > 0 ? [itemsUnavailableLineAr(unavailable)] : []),
+    REORDER_HINT_AR,
   ].join("\n");
 }
 

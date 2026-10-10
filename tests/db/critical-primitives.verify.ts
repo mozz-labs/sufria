@@ -7,6 +7,7 @@
 // a constraint nobody has watched reject anything is a comment, not a net.
 // Section 7 does the same for 0011's order number and currency, and section 8
 // for 0014's «an archived item is never available».
+// Section 9 checks 0015's partial index for the reorder suggestion.
 //
 // Every order inserted here carries an explicit order_number (0011: NOT NULL,
 // no default), and no two orders of the same restaurant in one section share
@@ -663,6 +664,36 @@ async function main() {
     "8. control: an archived item that is switched off is accepted",
     archivedOff.accepted,
     archivedOff.accepted ? "" : `rejected (${archivedOff.code ?? "?"})`,
+  );
+
+  // --- 9. 0015 the customer's recent orders (brief ك §3) ------------------
+  // The reorder suggestion asks two questions of one customer's orders: any
+  // non-cancelled one in the last N minutes, and the latest accepted one. One
+  // partial index serves both — on the very condition the first one asks.
+  //
+  // 🔴 The whole definition, not "an index of that name exists": an index on
+  //    the same columns but WHERE status = 'completed' (0002's) answers the
+  //    second question for completed orders alone, and the planner then scans
+  //    every order of the customer for the first, with no test failing.
+  const recent = await pool.query<{ def: string | null }>(
+    `SELECT pg_get_indexdef(i.indexrelid) AS def
+       FROM pg_index i
+       JOIN pg_class c ON c.oid = i.indexrelid
+      WHERE c.relname = 'idx_orders_customer_recent'`,
+  );
+  const recentDef = recent.rows[0]?.def ?? null;
+  check(
+    "9. idx_orders_customer_recent exists",
+    recentDef !== null,
+    recentDef === null ? "missing" : "",
+  );
+  const expectedRecentDef =
+    "CREATE INDEX idx_orders_customer_recent ON public.orders USING btree (customer_id, created_at DESC) " +
+    "WHERE (status <> ALL (ARRAY['cancelled'::order_status, 'expired'::order_status]))";
+  check(
+    "9. idx_orders_customer_recent: (customer_id, created_at DESC), partial on status NOT IN ('cancelled', 'expired')",
+    recentDef === expectedRecentDef,
+    recentDef === expectedRecentDef ? "" : `${recentDef ?? "—"}`,
   );
 
   console.log(

@@ -84,3 +84,10 @@ process.env["NOTIFY_POLL_MS"] = "0";
  *    أي اختبار بيسكت دقيقة كان بيلاقي جلسته منتهية بلا سبب ظاهر.
  */
 process.env["SESSION_IDLE_MINUTES"] = "60";
+
+/**
+ * 🔴 «آخر طلب لك» pinned to its default (brief ك), for the same reason: the
+ *    laptop trial sets `REORDER_MIN_AGE_MINUTES=1`, and a suite reading it
+ *    would see a suggestion where decision 3 says none.
+ */
+process.env["REORDER_MIN_AGE_MINUTES"] = "180";

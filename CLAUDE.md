@@ -22,7 +22,7 @@ with `ERR_PNPM_BAD_PM_VERSION`).
 |---|---|---|
 | `packages/shared` | `@sufria/shared` | Drizzle schema mirror + domain logic shared by every app |
 | `apps/dashboard-api` | `@sufria/dashboard-api` | NestJS REST API for the restaurant dashboard: orders and their status, restaurant settings (task D); the menu — `GET`/`POST /menu-items`, `PATCH /menu-items/:id` (name, price, availability, archive and bring back), `POST /menu-items/enable-all`, `GET /menu-categories` — and `PATCH /restaurant/orders-pause`, all under the 4096 guard where they can lengthen the menu (brief ي-أ, `docs/brief-ja-menu-backend.md`). Contracts as built: `docs/13-dashboard-api-brief.md` §9 (§9.10 for ي-أ) |
-| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`); orders paused and the empty menu (brief ي-أ §4, `src/conversation/orders-paused.ts`) |
+| `apps/conversation-engine` | `@sufria/conversation-engine` | WhatsApp webhooks, business-hours gate, session, browsing cart, pickup-or-delivery, address, and order creation (task C); the customer-notification poller (task F, `src/notify/`); the 60-minute session timeout (task H, `docs/17-session-timeout-brief.md`); orders paused and the empty menu (brief ي-أ §4, `src/conversation/orders-paused.ts`); «آخر طلب لك» in a returning customer's first message, and «نفسه» (FR-08, brief ك, `docs/brief-ka-reorder.md`, `src/conversation/reorder.ts`) |
 | `apps/dashboard-web` | `@sufria/dashboard-web` | Next.js staff UI: login, the orders screen (task G, `docs/16-orders-screen-brief.md`) and an order's details with its conversation (task I, `docs/brief-i-order-details.md`). Feature-based: `app/` (routes) · `features/<x>/` · `shared/` — see *Dashboard structure*. Talks to `dashboard-api` at `NEXT_PUBLIC_API_URL` |
 | `db/migrations` | — | Raw SQL. The single source of truth for the schema |
 | `db/seed` | — | Dev-only fixtures |
@@ -589,6 +589,36 @@ reach the browser and are not counted; a client component's are.
   message before the pause is over an hour old gets their session abandoned
   — the cart stays in that row — and, once orders resume, starts over with
   the menu. Both rules are the briefs'; this is what they add up to.
+- **«آخر طلب لك» — the reorder suggestion (FR-08, brief ك).** A new
+  conversation, past the hours and pause gates, reads the customer's last
+  order the restaurant accepted (`accepted` · `preparing` · `ready` ·
+  `completed`) and puts it between the welcome and the menu, at today's
+  names and prices, in today's menu order; an item off today is named on
+  the existing «غير متوفر الآن» line, and none available means no block.
+  It is shown on the first message alone — never on «منيو», never in an
+  active session — and kept in `context.reorder` by `deliverMenu`, in the
+  write of `menu_map`. «نفسه» («نفسو», «نفس الطلب») acts in `browsing` with
+  an empty cart and a kept suggestion: availability re-checked live, the
+  cart at the moment's prices, then the very «تم» branch (`checkout`);
+  otherwise it is plain text on the old path. What to know:
+  - **The age is `REORDER_MIN_AGE_MINUTES`** (engine `env.ts`, default
+    `180`, pinned to `180` in `setup-env.ts`): no block while the customer
+    has any order not `cancelled`/`expired` younger than that — measured
+    with the database's `now()`, like the session timeout. `1` is for the
+    laptop trial, set on the command line, not in `.env`.
+  - **Past 4096 the block is dropped, not the menu.** The first message
+    with the block is measured; too long, the plain one goes out, nothing is
+    kept for the suggestion, and one `info` line says so. The dashboard's
+    4096 guard measures the plain message only, so a menu near the limit
+    silently stops showing suggestions — visible in the logs alone.
+  - **The address and the way of pickup are not reused**: after «نفسه» the
+    customer is asked as after «تم» (brief ك §9).
+  - **«نفسه» is a browsing command word**, so at the address step it is
+    «not an address», like «تم» or «منيو»: the question again. It used to
+    be saved as the address.
+  - Index `idx_orders_customer_recent` (0015) serves both queries;
+    `test/reorder.test.ts` holds the brief's 20 cases, and eight breaks were
+    each predicted before they ran (`docs/brief-ka-reorder.md`, «كما انبنى»).
 - **A split shift shows only its first window** in the closing message: the text
   has two slots, not four. Showing the *next* window would be a computed promise,
   which is the thing that text deliberately avoids.

@@ -90,6 +90,35 @@ export function isFulfillmentComplete(
   return toSummaryFulfillment(fulfillment) !== null;
 }
 
+/**
+ * «آخر طلب لك» as the first message showed it — brief ك.
+ *
+ * Written by `deliverMenu` **in the same write as `menu_map`**, and only when
+ * the block went out in the text. Kept for the whole session: «نفسه» works
+ * while the cart is empty (`browsing.ts`).
+ *
+ * The items shown, in the order shown, with the quantity shown — not the old
+ * order's lines: an item missing at the greeting is not offered again. The
+ * name is today's, for the «غير متوفر الآن» line should the item go off
+ * before «نفسه»; the price is not kept at all — «نفسه» reads it live, and
+ * the cart line takes it from that moment (cart brief §14.5).
+ */
+const reorderSchema = z.object({
+  /** The order the suggestion came from. For the log and the audit only. */
+  order_id: z.string().uuid(),
+  items: z
+    .array(
+      z.object({
+        item_id: z.string().uuid(),
+        name: z.string(),
+        qty: z.number().int().positive(),
+      }),
+    )
+    .min(1),
+});
+
+export type StoredReorder = z.infer<typeof reorderSchema>;
+
 const sessionDataSchema = z.object({
   /**
    * 🔴 الترقيم **موضعي داخل القائمة المُرسَلة**، لا معرّفات قاعدة.
@@ -121,6 +150,12 @@ const sessionDataSchema = z.object({
    * `orders`؛ هاد بيخلّي سجلّ المحادثة يوصّل لطلبها بلا استعلام عكسي.
    */
   order_id: z.string().uuid().optional(),
+  /**
+   * The reorder suggestion of this session's first message (brief ك).
+   * Absent = none was sent. `.optional()`, so a session written before it
+   * parses exactly as it did.
+   */
+  reorder: reorderSchema.optional(),
 });
 
 export type SessionData = z.infer<typeof sessionDataSchema>;

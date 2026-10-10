@@ -1,4 +1,5 @@
 import {
+  CART_EMPTY_AR,
   CART_EMPTY_ON_FINISH_AR,
   FINISH_HINT_AR,
   fulfillmentAskAr,
@@ -13,14 +14,16 @@ import {
   nextUnparsedStreak,
   nothingUnderstoodAr,
   overCapLineAr,
+  parseItems,
   unclearPartsLineAr,
   unknownNumbersLineAr,
+  type CustomerCommand,
   type Currency,
   type MessageIntent,
 } from "@sufria/shared";
 
 import type { TenantTx } from "../db/types.js";
-import { logger } from "../logger.js";
+import { logger, maskPhone } from "../logger.js";
 import { readCatalog, type Catalog } from "../restaurant/catalog.js";
 import type { WhatsAppSender } from "../whatsapp/sender.js";
 import { advanceSessionState } from "../db/critical-primitives.js";
@@ -31,7 +34,9 @@ import {
   readSessionData,
   toSummaryFulfillment,
   writeSessionData,
+  type CartLine,
   type SessionData,
+  type StoredReorder,
 } from "./session-data.js";
 
 /**
@@ -46,6 +51,57 @@ import {
 // ---------------------------------------------------------------------------
 // القرار — صافٍ
 // ---------------------------------------------------------------------------
+
+/**
+ * The intent as `decideBrowsing` gets it: the shared parser's, with «نفسه»
+ * resolved first by `interpretBrowsing` (brief ك).
+ *
+ * 🔴 `command` never carries "reorder" here, by its type. «نفسه» arrives
+ *    either as `reorder` — its two conditions held, and the suggestion is
+ *    in hand — or as plain text, on today's path.
+ */
+export type BrowsingIntent =
+  | Exclude<MessageIntent, { readonly kind: "command" }>
+  | {
+      readonly kind: "command";
+      readonly command: Exclude<CustomerCommand, "reorder">;
+    }
+  | { readonly kind: "reorder"; readonly reorder: StoredReorder };
+
+/**
+ * «نفسه» means something only when **both** hold (brief ك): the session
+ * keeps a suggestion (`context.reorder`, written with the first message),
+ * and the cart is empty. The state, `browsing`, is the caller's: only this
+ * handler reads the word at all.
+ */
+export function reorderApplies(
+  data: SessionData,
+): data is SessionData & { reorder: StoredReorder } {
+  return data.reorder !== undefined && data.cart.length === 0;
+}
+
+/**
+ * The message as `browsing` reads it.
+ *
+ * 🔴 «نفسه» and its sister words (`REORDER_INPUTS`) without their two
+ *    conditions are read as plain text — the parser, then the hint and the
+ *    unparsed streak, exactly as before brief ك. So no existing behavior
+ *    changes: a word that means nothing here is answered as it always was.
+ */
+export function interpretBrowsing(
+  raw: string,
+  data: SessionData,
+): BrowsingIntent {
+  const intent = interpretMessage(raw, data.menu_map);
+  if (intent.kind !== "command") return intent;
+  const { command } = intent;
+  if (command === "reorder") {
+    return reorderApplies(data)
+      ? { kind: "reorder", reorder: data.reorder }
+      : { kind: "items", result: parseItems(raw, data.menu_map) };
+  }
+  return { kind: "command", command };
+}
 
 export interface BrowsingDecision {
   readonly next: SessionData;
@@ -66,7 +122,7 @@ export interface BrowsingDecision {
 
 export interface BrowsingInput {
   readonly data: SessionData;
-  readonly intent: MessageIntent;
+  readonly intent: BrowsingIntent;
   /** الأصناف اللي ذكرتها الرسالة، مقروءة حيّا لحظة المعالجة. */
   readonly catalog: Catalog;
   /** `restaurants.contact_phone`. `null` = الاستسلام صامت تماما (§11.3). */
@@ -110,6 +166,35 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
   ): BrowsingDecision =>
     withReply(next, renderSummary(next, fulfillment, currency), "cart_review");
 
+  /**
+   * «تم» بسلّة فيها أصناف — وبعد «نفسه» كمان (بريف ك، القرار 8): **نفس
+   * الفرع، مش نسخة منه**. الصفوف الأربعة الأولى من ج §3، بنفس ترتيبها.
+   */
+  const checkout = (next: SessionData): BrowsingDecision => {
+    // ١. طريقة الاستلام مختارة وكاملة — رجع من «عدّل» مثلا. ولا سؤال
+    //    تاني عن إشي انسأل عنه، والملخّص رأسا.
+    const chosen = toSummaryFulfillment(next.fulfillment);
+    if (chosen !== null) return summaryDecision(next, chosen);
+
+    // ٢. المطعم ما بيوصّل: الاستلام هو الخيار الوحيد، فما بينسأل عنه.
+    //    مطعم «توصيل فقط» مش مدعوم بالبايلوت — انحراف مسجّل (ج §2.4).
+    if (!offersDelivery) {
+      return summaryDecision(
+        { ...next, fulfillment: { type: "pickup" } },
+        { type: "pickup" },
+      );
+    }
+
+    // ٣. بيوصّل وما في اختيار بعد: السؤال، والرسوم بتنقال قبل ما يقرر.
+    //    🔴 ولا snapshot هون — الرسوم بتنحفظ لحظة ما يختار «توصيل»
+    //    فعلا، مش لحظة ما بنسأله. لو اختار «استلام» ما إلها معنى أصلا.
+    return withReply(
+      next,
+      fulfillmentAskAr(deliveryFeeMinor, currency),
+      "fulfillment_choice",
+    );
+  };
+
   /** `N` = عدد مفاتيح `menu_map` — لا عدد الأصناف بالقاعدة (§4). */
   const lastMenuNumber = Object.keys(data.menu_map).length;
 
@@ -130,37 +215,60 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
           if (next.cart.length === 0) {
             return withReply(next, CART_EMPTY_ON_FINISH_AR);
           }
-
-          // الصفوف الأربعة الأولى من ج §3، بنفس ترتيبها:
-
-          // ١. طريقة الاستلام مختارة وكاملة — رجع من «عدّل» مثلا. ولا سؤال
-          //    تاني عن إشي انسأل عنه، والملخّص رأسا.
-          const chosen = toSummaryFulfillment(next.fulfillment);
-          if (chosen !== null) return summaryDecision(next, chosen);
-
-          // ٢. المطعم ما بيوصّل: الاستلام هو الخيار الوحيد، فما بينسأل عنه.
-          //    مطعم «توصيل فقط» مش مدعوم بالبايلوت — انحراف مسجّل (ج §2.4).
-          if (!offersDelivery) {
-            return summaryDecision(
-              { ...next, fulfillment: { type: "pickup" } },
-              { type: "pickup" },
-            );
-          }
-
-          // ٣. بيوصّل وما في اختيار بعد: السؤال، والرسوم بتنقال قبل ما يقرر.
-          //    🔴 ولا snapshot هون — الرسوم بتنحفظ لحظة ما يختار «توصيل»
-          //    فعلا، مش لحظة ما بنسأله. لو اختار «استلام» ما إلها معنى أصلا.
-          return withReply(
-            next,
-            fulfillmentAskAr(deliveryFeeMinor, currency),
-            "fulfillment_choice",
-          );
+          return checkout(next);
         }
         default: {
           const unhandled: never = intent.command;
           return unhandled;
         }
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // «نفسه» — بريف ك. وصلت هون بشرطيها (`interpretBrowsing`).
+    // -----------------------------------------------------------------------
+    case "reorder": {
+      // 🔴 التوفّر **حيّ، مرة تانية**: صنف ممكن ينطفى بين الترحيب و«نفسه».
+      //    والسعر سعر اللحظة — «السعر وعد من لحظة الإضافة» (§14.5)، وهاي
+      //    لحظة الإضافة. الاسم كمان من الكتالوج.
+      const cart: CartLine[] = [];
+      const missing: string[] = [];
+      for (const item of intent.reorder.items) {
+        const entry = catalog.get(item.item_id);
+        if (entry === undefined || !entry.available) {
+          // الاسم اللي شافه بالكتلة: صف انمسح كليا ما إله اسم بالكتالوج.
+          missing.push(item.name);
+          continue;
+        }
+        cart.push({
+          item_id: item.item_id,
+          name: entry.name,
+          unit_price_minor: entry.unitPriceMinor,
+          qty: item.qty,
+        });
+      }
+
+      // السلّة كانت فاضية (الشرط)، فهاي سلّته كلها.
+      const next: SessionData = { ...data, cart, unparsed_streak: 0 };
+      const missingLine =
+        missing.length === 0 ? null : itemsUnavailableLineAr(missing);
+
+      // ولا صنف ضل: سطر الناقص، وتحته نص السلّة الفاضية، والحالة `browsing`.
+      if (cart.length === 0) {
+        return withReply(
+          next,
+          [...(missingLine === null ? [] : [missingLine]), CART_EMPTY_AR].join(
+            "\n",
+          ),
+        );
+      }
+
+      // 🔴 نفس اللي بيصير بعد «تم» بسلّة مش فاضية (القرار 8) — ولا نص
+      //    جديد ولا رسالة زيادة. الناقص بسطر **بأول نفس الرد**.
+      const decision = checkout(next);
+      return missingLine === null || decision.reply === null
+        ? decision
+        : { ...decision, reply: `${missingLine}\n${decision.reply}` };
     }
 
     // -----------------------------------------------------------------------
@@ -305,8 +413,10 @@ export function decideBrowsing(input: BrowsingInput): BrowsingDecision {
 // ---------------------------------------------------------------------------
 
 /** المعرّفات اللي بيحتاجها القرار من الكتالوج — ولا غيرها. */
-function itemIdsNeeded(intent: MessageIntent, data: SessionData): string[] {
+function itemIdsNeeded(intent: BrowsingIntent, data: SessionData): string[] {
   if (intent.kind === "items") return intent.result.items.map((i) => i.itemId);
+  if (intent.kind === "reorder")
+    return intent.reorder.items.map((i) => i.item_id);
   if (intent.kind === "remove") {
     const id = data.menu_map[String(intent.number)];
     return id === undefined ? [] : [id];
@@ -348,7 +458,7 @@ export async function handleBrowsingMessage(
   message: BrowsingMessage,
 ): Promise<void> {
   const data = await readSessionData(tx, message.sessionId);
-  const intent = interpretMessage(message.body ?? "", data.menu_map);
+  const intent = interpretBrowsing(message.body ?? "", data);
   const catalog = await readCatalog(tx, itemIdsNeeded(intent, data));
 
   const decision = decideBrowsing({
@@ -400,6 +510,18 @@ export async function handleBrowsingMessage(
       to: message.to,
       body: decision.reply,
     });
+  }
+
+  if (intent.kind === "reorder") {
+    logger.info(
+      {
+        restaurantId: message.restaurantId,
+        from: maskPhone(message.to),
+        items: decision.next.cart.length,
+        sourceOrderId: intent.reorder.order_id,
+      },
+      "«نفسه» — السلّة تعبّت من آخر طلب",
+    );
   }
 }
 

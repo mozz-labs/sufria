@@ -1,6 +1,8 @@
 import {
   firstMenuMessageAr,
+  firstMenuMessageWithReorderAr,
   itemsRemovedUnavailableLineAr,
+  whatsappTextLength,
   type Currency,
 } from "@sufria/shared";
 
@@ -12,10 +14,12 @@ import {
   assertWithinTextLimit,
   type WhatsAppSender,
 } from "../whatsapp/sender.js";
+import { buildReorderSuggestion, type ReorderSource } from "./reorder.js";
 import {
   readSessionData,
   writeSessionData,
   type CartLine,
+  type StoredReorder,
 } from "./session-data.js";
 
 /**
@@ -48,10 +52,25 @@ export interface PreparedMenu {
    */
   readonly body: string;
   readonly lines: readonly MenuLine[];
+  /**
+   * «آخر طلب لك» when `body` carries its block (brief ك), else `null`.
+   * `deliverMenu` writes it with `menu_map`, so it is kept only when it was
+   * sent.
+   */
+  readonly reorder: StoredReorder | null;
 }
 
 export type PrepareMenuResult =
-  | { readonly ok: true; readonly menu: PreparedMenu }
+  | {
+      readonly ok: true;
+      readonly menu: PreparedMenu;
+      /**
+       * The first message's length with the reorder block, when that went
+       * past WhatsApp's limit and the plain one is sent instead (brief ك:
+       * the caller logs an `info` line). `null` otherwise.
+       */
+      readonly reorderDroppedAt: number | null;
+    }
   /**
    * Not one item to show (brief ي-أ, decision 3): the caller sends
    * ORDERS_PAUSED_AR instead of an empty menu, and writes no session.
@@ -72,11 +91,14 @@ export type PrepareMenuResult =
  *
  * @param welcomeFor the restaurant's name, for the first message's welcome;
  *   `null` for «منيو», which sends the menu alone.
+ * @param reorder the returning customer's last order (`findReorderSource`),
+ *   for the first message alone — «منيو» never carries the block (brief ك).
  */
 export async function prepareMenu(
   tx: TenantTx,
   welcomeFor: string | null,
   currency: Currency,
+  reorder: ReorderSource | null = null,
 ): Promise<PrepareMenuResult> {
   const menu = await buildMenu(tx, currency);
   // 🔴 «No item» by the menu's own criterion — the lines `readMenu` returned,
@@ -95,7 +117,49 @@ export async function prepareMenu(
     return { ok: false, reason: "too_long", error };
   }
 
-  return { ok: true, menu: { body, lines: menu.lines } };
+  const plain = {
+    ok: true,
+    menu: { body, lines: menu.lines, reorder: null },
+    reorderDroppedAt: null,
+  } as const;
+  if (welcomeFor === null || reorder === null) return plain;
+
+  // ---------------------------------------------------------------------
+  // «آخر طلب لك» (brief ك). Only once the plain message is known to fit:
+  // a plain message too long is today's `too_long`, exactly as it was.
+  // ---------------------------------------------------------------------
+  const catalog = await readCatalog(
+    tx,
+    reorder.items.map((i) => i.itemId),
+  );
+  const suggestion = buildReorderSuggestion(
+    reorder,
+    catalog,
+    new Map(menu.lines.map((l) => [l.itemId, l.number])),
+    currency,
+  );
+  // No item of it available today: no suggestion at all (decision 7).
+  if (suggestion === null) return plain;
+
+  const withBlock = firstMenuMessageWithReorderAr(
+    welcomeFor,
+    suggestion.block,
+    menu.text,
+  );
+  try {
+    assertWithinTextLimit(withBlock);
+  } catch (error) {
+    if (!(error instanceof OutboundTextTooLongError)) throw error;
+    // 🔴 The block is an offer; the menu is the conversation. Too long with
+    //    it: the plain first message, and nothing kept for the suggestion.
+    return { ...plain, reorderDroppedAt: whatsappTextLength(withBlock) };
+  }
+
+  return {
+    ok: true,
+    menu: { body: withBlock, lines: menu.lines, reorder: suggestion.stored },
+    reorderDroppedAt: null,
+  };
 }
 
 /** `{"1": "<uuid>", "2": "<uuid>"}` من سطور القائمة المعروضة. */
@@ -182,6 +246,10 @@ export async function deliverMenu(
     cart: pruned.cart,
     menu_map: menuMapFrom(args.menu.lines), // استبدال كامل — لا دمج
     menu_sent_at: args.now.toISOString(),
+    // 🔴 «آخر طلب لك» with the map, in this one write (brief ك), and only
+    //    when the text carries it. «منيو» carries none and keeps the
+    //    session's: the suggestion stays valid for the whole session.
+    ...(args.menu.reorder === null ? {} : { reorder: args.menu.reorder }),
     // الإشعار رسالة صادرة زي غيرها، فبينعدّ. والعدّ بنفس الكتابة، لا بتانية.
     outbound_count: current.outbound_count + (notice === null ? 1 : 2),
   });

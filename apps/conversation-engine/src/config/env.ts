@@ -58,6 +58,14 @@ const EnvSchema = z.object({
    */
   SESSION_IDLE_MINUTES: z.coerce.number().int().positive().default(60),
 
+  /**
+   * «آخر طلب لك» (brief ك, decision 3): no suggestion while the customer has
+   * an order, not cancelled or expired, younger than this many minutes — one
+   * still on its way. A variable, not a constant, so the laptop trial can
+   * set `1` instead of waiting three hours. Measured on the database's clock.
+   */
+  REORDER_MIN_AGE_MINUTES: z.coerce.number().int().positive().default(180),
+
   ENGINE_PORT: z.coerce.number().int().positive().default(3001),
   PG_POOL_MAX: z.coerce.number().int().positive().default(10),
 
