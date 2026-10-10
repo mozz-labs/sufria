@@ -3,10 +3,16 @@
  * shows at once that it is working — darker, a thin running line in the
  * tokens' colours, its word unchanged, no new text — and the order on the
  * screen changes only from the server's answer: no badge, no status before.
+ *
+ * Brief ي-ب §2 (Mohammed, 8 October) reversed one part of I-9b #6: the look
+ * is on `aria-busy="true"`, which the working button carries, and no longer
+ * on `:disabled` — so a button disabled for another reason never looks as if
+ * it were loading. The assertions that held the old part were replaced here.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { OrderListItem } from "@sufria/shared";
@@ -24,7 +30,11 @@ const MODULES = [
   ["order-card.module.css", ".action"],
   ["order-details.module.css", ".step"],
 ] as const;
-/** A module's «while it works» block, its button's selector as `.X`. */
+/**
+ * A module's «while it works» block, its button's selector as `.X` and the
+ * state that marks it working as `.X:working` — which state that is, the
+ * aria-busy test below holds.
+ */
 function busyBlock(file: string, selector: string): string {
   const css = readFileSync(`${COMPONENTS}${file}`, "utf8");
   const start = css.indexOf("/* ---- while it works: start");
@@ -34,6 +44,8 @@ function busyBlock(file: string, selector: string): string {
   return css
     .slice(start, end)
     .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replaceAll(`${selector}[aria-busy="true"]`, ".X:working")
+    .replaceAll(`${selector}:disabled`, ".X:working")
     .replaceAll(selector, ".X");
 }
 
@@ -93,9 +105,11 @@ test("the press: disabled at once, the outcome only after the answer, the word u
   const awaited = press.indexOf("await advance(");
   const outcome = press.indexOf("onOutcome(outcome)");
   assert.ok(busy !== -1 && busy < awaited && awaited < outcome);
-  // Its disabled state is the one that shows it working: no new attribute.
+  // Disabled while it works, and marked busy: the mark is what shows it
+  // working (brief ي-ب §2), not the disabled state.
   assert.match(tsx, /disabled=\{busy\}/);
-  assert.doesNotMatch(tsx, /data-busy|aria-busy|module\.css/);
+  assert.match(tsx, /aria-busy=\{busy\}/);
+  assert.doesNotMatch(tsx, /data-busy|module\.css/);
   // Its only content is the action's word: no new text, busy or not.
   const open = tsx.indexOf("<button");
   const children = tsx.slice(
@@ -117,8 +131,8 @@ test("the look, on the card and on the details page alike: a shade darker, a thi
     assert.notEqual(at, -1, `no ${selector}`);
     return css.slice(at, css.indexOf("}", at));
   };
-  assert.match(rule("\n.X:disabled"), /filter: brightness\(0\.\d+\);/);
-  const line = rule(".X:disabled::after");
+  assert.match(rule("\n.X:working"), /filter: brightness\(0\.\d+\);/);
+  const line = rule(".X:working::after");
   assert.match(line, /background: var\(--on-accent\);/);
   assert.match(line, /height: 2px;/);
   assert.match(line, /animation: var\(--step-working\);/);
@@ -141,10 +155,10 @@ test("the look, on the card and on the details page alike: a shade darker, a thi
   assert.match(frames, /transform: translateX\(/);
   assert.doesNotMatch(frames, /inset|left|right|margin|width/);
   // Its way follows the text's: start to end, right to left in Arabic.
-  assert.match(rule(".X:disabled:dir(rtl)::after"), /--way: -1;/);
+  assert.match(rule(".X:working:dir(rtl)::after"), /--way: -1;/);
   const still = css.indexOf("@media (prefers-reduced-motion: reduce)");
   assert.notEqual(still, -1);
-  assert.match(rule("  .X:disabled::after", still), /animation: none;/);
+  assert.match(rule("  .X:working::after", still), /animation: none;/);
   // Inside the button, which holds it.
   for (const [file, selector] of MODULES) {
     const all = readFileSync(`${COMPONENTS}${file}`, "utf8");
@@ -152,5 +166,52 @@ test("the look, on the card and on the details page alike: a shade darker, a thi
     const own = all.slice(at, all.indexOf("}", at));
     assert.match(own, /position: relative;/, `${file} ${selector}`);
     assert.match(own, /overflow: hidden;/, `${file} ${selector}`);
+  }
+});
+
+test("🔴 the working look is on aria-busy, never on :disabled — a button disabled for another reason does not look busy", () => {
+  for (const [file, selector] of MODULES) {
+    const css = readFileSync(`${COMPONENTS}${file}`, "utf8").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    assert.ok(
+      !css.includes(`${selector}:disabled`),
+      `${file}: ${selector}:disabled`,
+    );
+    for (const rule of [
+      `\n${selector}[aria-busy="true"] {`,
+      `\n${selector}[aria-busy="true"]::after {`,
+      `\n${selector}[aria-busy="true"]:dir(rtl)::after {`,
+      `\n  ${selector}[aria-busy="true"]::after {`,
+    ])
+      assert.ok(css.includes(rule), `${file}: no ${rule.trim()}`);
+  }
+  // Nowhere in the app does a :disabled rule darken a button or draw the
+  // running line. (The login and cancel buttons keep `cursor: progress` on
+  // :disabled: they are disabled only while they send, and cancel-dialog.tsx
+  // does not change — brief ي-ب §0.)
+  const WEB = fileURLToPath(new URL("../../", import.meta.url));
+  const cssFiles = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) return cssFiles(path);
+      return path.endsWith(".css") ? [path] : [];
+    });
+  const files = ["app", "features", "shared"].flatMap((d) =>
+    cssFiles(join(WEB, d)),
+  );
+  assert.ok(files.length >= 5, "the walk found nothing — it is broken");
+  for (const file of files) {
+    const css = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const [, selector, body] = m as unknown as [string, string, string];
+      if (!selector.includes(":disabled")) continue;
+      assert.doesNotMatch(
+        selector + body,
+        /::after|filter:|animation:|opacity:/,
+        `${file.slice(WEB.length)} ${selector.trim()}: a working look on :disabled`,
+      );
+    }
   }
 });

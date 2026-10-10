@@ -200,24 +200,25 @@
   white-space: nowrap;
 }
 
-.action:disabled {
+.action[aria-busy="true"] {
   cursor: progress;
 }
 
 /* ---- while it works: start (I-9b #6) ----
-   Disabled from the press until the server's answer, the button shows it is
-   working (Mohammed's decision): a shade darker, a thin line of the tokens
-   running inside it, its word unchanged. The line moves by transform alone
-   — on the compositor — from the start of the line to its end, and stands
-   still under reduced motion. The same block as the other next-step button's
+   From the press until the server's answer the button shows it is working
+   (Mohammed's decision): a shade darker, a thin line of the tokens running
+   inside it, its word unchanged. The line moves by transform alone — on the
+   compositor — from the start of the line to its end, and stands still
+   under reduced motion. The same block as the other next-step button's
    (order-card .action / order-details .step), held identical by
-   test/orders/next-step.test.mts; on the button's own disabled state, it
-   adds no code to the page. */
-.action:disabled {
+   test/orders/next-step.test.mts. On aria-busy="true", never :disabled
+   (brief ي-ب §2, Mohammed, 8 October): a button disabled for another
+   reason does not look as if it were loading. */
+.action[aria-busy="true"] {
   filter: brightness(0.88);
 }
 
-.action:disabled::after {
+.action[aria-busy="true"]::after {
   --way: 1;
   content: "";
   position: absolute;
@@ -230,12 +231,12 @@
   animation: var(--step-working);
 }
 
-.action:disabled:dir(rtl)::after {
+.action[aria-busy="true"]:dir(rtl)::after {
   --way: -1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .action:disabled::after {
+  .action[aria-busy="true"]::after {
     animation: none;
     inset-inline: 16px;
     width: auto;
