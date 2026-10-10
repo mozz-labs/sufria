@@ -1,10 +1,10 @@
 stateDiagram-v2
     direction LR
-    [*] --> pending_acceptance : customer selects payment method<br/>(order row created immediately)
+    [*] --> pending_acceptance : customer sends the confirm word<br/>order, items and first history row<br/>in one transaction (cash, pending_cash)
 
-    pending_acceptance --> accepted : staff accepts<br/><b>blocked while online payment unconfirmed</b>
-    pending_acceptance --> cancelled : staff or customer cancels
-    pending_acceptance --> cancelled : system — payment_timeout_2h
+    pending_acceptance --> accepted : staff accepts<br/><b>online orders: blocked until paid</b><br/>(online payment deferred)
+    pending_acceptance --> cancelled : staff cancels<br/>(optional reason, up to 300 characters)
+    pending_acceptance --> cancelled : system — 2 h payment timeout<br/><i>deferred</i>
 
     accepted --> preparing : staff
     accepted --> cancelled : staff
@@ -15,21 +15,28 @@ stateDiagram-v2
 
     ready --> completed : staff — order handed over
     ready --> cancelled : staff
-    ready --> expired : system — 24h from ready_at<br/>(pickup only)
+    ready --> expired : system — 24 h after ready_at,<br/>pickup only — <i>not built</i>
 
     completed --> [*]
     cancelled --> [*]
     expired --> [*]
 
+    note right of accepted
+        The customer is messaged on accepted,
+        ready and cancelled (FR-11).
+        preparing and completed are silent.
+    end note
+
     note right of completed
-        cash -> payment_status becomes collected
-        customer statistics updated (FR-14)
+        cash: payment_status becomes collected
+        customer statistics (FR-14): not built
         CHECK: payment_status must be
         paid or collected
     end note
 
     note right of expired
-        never updates customer statistics
-        any paid amount is refunded
-        distinct from cancelled by design
+        Not built: no job produces it yet.
+        When built, it never updates customer
+        statistics, and any paid amount
+        is refunded.
     end note

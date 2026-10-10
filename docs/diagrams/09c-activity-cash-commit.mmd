@@ -5,14 +5,16 @@ flowchart TB
     classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
     classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
 
-    S(("from part b — cart validated")):::start --> A10["BEGIN TRANSACTION"]:::act
-    A10 --> A11["UPDATE conversation_sessions<br/>SET state='order_placed'<br/>WHERE state='fulfillment_choice'"]:::crit
-    A11 --> D5{"rowcount = 1?"}:::dec
-    D5 -- "no — duplicate confirm tap" --> E5["ROLLBACK · no second order"]:::crit --> F1(("end")):::fin
-    D5 -- yes --> A12["INSERT orders<br/>payment_method=cash · payment_status=pending_cash"]:::act
-    A12 --> A13["INSERT order_items<br/><i>name and unit price snapshotted</i>"]:::act
-    A13 --> A14["INSERT order_status_history<br/>NULL to pending_acceptance · actor=customer"]:::act
+    S(("from part b — the confirm word<br/>arrives in cart_review")):::start --> A10["Lock the session row FOR UPDATE"]:::act
+    A10 --> A11["Re-check every line: item available<br/>AND category active<br/><i>prices are not re-checked: a line keeps<br/>the price it had when it was added</i>"]:::act
+    A11 --> D4{"Every line available?"}:::dec
+    D4 -- no --> E4["Remove the unavailable lines and name them<br/>new summary, or back to browsing if none is left"]:::act --> F1(("end")):::fin
+    D4 -- yes --> A12["CAS conversation_sessions<br/>cart_review to order_placed"]:::crit
+    A12 --> D5{"rowcount = 1?"}:::dec
+    D5 -- "no — duplicate confirm" --> E5["no second order"]:::crit --> F1
+    D5 -- yes --> A13["Order number: advisory lock per restaurant,<br/>MAX + 1, starting at 101"]:::act
+    A13 --> A14["INSERT orders · cash · pending_cash<br/>INSERT order_items · name and unit price snapshotted<br/>INSERT order_status_history · NULL to pending_acceptance"]:::act
     A14 --> A15["COMMIT"]:::act
-    A15 --> A16["Send confirmation · increment outbound_msg_count"]:::act
-    A16 --> A17["Order appears on the live board within 5 s"]:::act
+    A15 --> A16["Send 'we received your order no. N'<br/>after the commit · a failure is logged"]:::act
+    A16 --> A17["The order appears on the live board<br/>at the next poll, within 10 s"]:::act
     A17 --> F2(("end")):::fin

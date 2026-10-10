@@ -5,7 +5,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant CE as Conversation Engine
     participant PG as Payment Provider
-    Note over TRIG,PG: The refund invariant: any order entering cancelled or expired<br/>while payment_status='paid' is refunded EXACTLY ONCE,<br/>no matter which event arrives first or how far apart.
+    Note over TRIG,PG: DESIGN — NOT BUILT. Needs online payment (deferred).<br/>The refund invariant: any order entering cancelled or expired<br/>while payment_status='paid' is refunded EXACTLY ONCE,<br/>no matter which event arrives first or how far apart.
     par cancellation side
         TRIG->>API: cancel / expire this order
         API->>DB: SELECT order WHERE id=? FOR UPDATE

@@ -1,30 +1,51 @@
 stateDiagram-v2
     direction TB
-    [*] --> new : first inbound message<br/>(after dedup gate)
+    classDef deferred fill:#F2F2F0,stroke:#8A8A85,stroke-dasharray:5 3,color:#5A5A57
 
-    new --> browsing : welcome + menu sent
-    new --> cart_review : returning customer accepts<br/>the proactive reorder (FR-08)
+    [*] --> new : first message, restaurant open,<br/>menu within 4,096 characters
+    new --> browsing : same transaction (CAS)<br/>welcome and numbered menu sent
 
-    browsing --> cart_review : customer done selecting
-    cart_review --> browsing : customer adds more items
-    cart_review --> fulfillment_choice : cart confirmed<br/>prices and availability re-validated
+    browsing --> fulfillment_choice : finish word, cart not empty,<br/>restaurant delivers
+    browsing --> cart_review : finish word, cart not empty,<br/>pickup only or fulfilment already chosen
 
-    fulfillment_choice --> order_placed : cash selected<br/>(CAS on state)
-    fulfillment_choice --> awaiting_payment : online selected<br/>(CAS on state)
-    awaiting_payment --> order_placed : payment confirmed
+    fulfillment_choice --> cart_review : pickup, or a delivery address<br/>(1 to 300 characters)
+    fulfillment_choice --> browsing : edit (fulfilment cleared)<br/>or cancel (cart emptied)
 
-    new --> abandoned : idle 45 min
-    browsing --> abandoned : idle 45 min
-    cart_review --> abandoned : idle 45 min
-    fulfillment_choice --> abandoned : idle 45 min
-    awaiting_payment --> abandoned : idle 45 min
+    cart_review --> browsing : edit (fulfilment kept), cancel,<br/>or every line now unavailable
+    cart_review --> order_placed : confirm word, every line available<br/>(CAS, then the order is written)
+
+    browsing --> abandoned : next message after 60 min of silence
+    fulfillment_choice --> abandoned : next message after 60 min of silence
+    cart_review --> abandoned : next message after 60 min of silence
+
+    awaiting_payment
+    class awaiting_payment deferred
 
     order_placed --> [*]
     abandoned --> [*]
 
+    note right of browsing
+        Item numbers, cart, menu and
+        remove N stay in browsing.
+        Three messages in a row not understood:
+        one handoff message with the restaurant's
+        contact number; the state does not change.
+    end note
+
+    note right of awaiting_payment
+        In the schema for online payment
+        (deferred). Never entered today.
+    end note
+
+    note right of order_placed
+        A closed state. The next message
+        opens a new session with the
+        welcome and the full menu.
+    end note
+
     note right of abandoned
-        The session dies; the ORDER row
-        does not. A payment webhook still
-        updates the order regardless of
-        session state.
+        No job: expiry is checked when the next
+        message arrives, which then starts a new
+        conversation. The abandoned session
+        keeps its cart; no order is touched.
     end note

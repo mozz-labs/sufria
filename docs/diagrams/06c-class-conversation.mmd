@@ -1,39 +1,47 @@
 classDiagram
     direction TB
-    note for WebhookController "No authenticated user exists here.\nThe restaurant is resolved from the phone id,\nthen the same RLS context applies."
+    note for WebhookService "No authenticated user exists here.<br/>The restaurant is resolved from the phone id,<br/>then the same RLS context applies."
 
-    class WebhookController {
-        +verify(query) string
-        +receive(rawBody, signature) void
-        -verifySignature(rawBody, signature) boolean
+    class WebhookServer {
+        <<module http/server.ts>>
+        +GET /webhooks/whatsapp
+        +POST /webhooks/whatsapp
+        +GET /health
+    }
+    class WebhookService {
+        -TenantDb db
+        +ingest(parsed) IngestOutcome[]
+        -ingestOne(message) IngestOutcome
     }
     class ConversationService {
-        -TenantDbService db
-        +handle(message) void
-        -resolveRestaurant(phoneId) string
-        -resolveSession(customerId) Session
-        -route(session, message) void
+        +handleInbound(tx, message) void
+        -readRestaurant(tx)
+        -findActiveSession(tx, phone)
+        -expireSession(tx, session)
+        -upsertCustomer(tx, phone)
+        -openSession(tx, customerId)
     }
-    class MenuBrowsingService {
-        +sendCategories(session) void
-        +sendItems(session, categoryId) void
-        +addToCart(session, itemId, qty) void
+    class StateHandlers {
+        <<functions>>
+        +handleBrowsingMessage()
+        +handleFulfillmentMessage()
+        +handleCartReviewMessage()
     }
-    class CartService {
-        +review(session) CartSummary
-        +revalidate(session) CartCheck
-    }
-    class ReorderService {
-        +suggestUsual(customerId) Cart
-        +prefill(session, cart) void
+    class OpeningHoursAndMenu {
+        <<functions>>
+        +decideHours(hours, timezone, now)
+        +prepareMenu(tx, restaurant)
+        +deliverMenu(tx, sender, session)
     }
     class CriticalPrimitives {
         <<module>>
         +claimWebhookEvent(tx, eventId, source) boolean
+        +advanceSessionState(tx, id, from, to) boolean
     }
 
-    WebhookController --> CriticalPrimitives : "dedup gate first"
-    WebhookController --> ConversationService
-    ConversationService --> MenuBrowsingService
-    ConversationService --> CartService
-    ConversationService --> ReorderService
+    WebhookServer --> WebhookService : after the HMAC check
+    WebhookService --> CriticalPrimitives : dedup gate first
+    WebhookService --> ConversationService
+    ConversationService --> OpeningHoursAndMenu
+    ConversationService --> StateHandlers
+    StateHandlers --> CriticalPrimitives : CAS on the session state

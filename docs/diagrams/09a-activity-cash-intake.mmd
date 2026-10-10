@@ -5,14 +5,14 @@ flowchart TB
     classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
     classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
 
-    S(("start")):::start --> A1["Customer sends a message"]:::act
-    A1 --> A2["Verify X-Hub-Signature-256<br/>against the RAW body"]:::crit
+    S(("start")):::start --> A1["Meta POSTs a webhook"]:::act
+    A1 --> A2["Read the raw body, at most 1 MiB<br/>verify x-hub-signature-256:<br/>HMAC-SHA256, constant-time compare"]:::crit
     A2 --> D1{"Signature valid?"}:::dec
-    D1 -- no --> E1["401 · drop before any logic"]:::crit --> F1(("end")):::fin
-    D1 -- yes --> A3["Validate payload shape — Zod"]:::act
-    A3 --> D2{"Message type we handle?"}:::dec
-    D2 -- no --> E2["200 OK · log · ignore<br/><i>anything but 200 makes Meta retry<br/>and degrades the number rating</i>"]:::act --> F1
-    D2 -- yes --> A4["INSERT processed_webhook_events<br/>ON CONFLICT DO NOTHING RETURNING id"]:::crit
+    D1 -- no --> E1["401 · nothing parsed"]:::crit --> F1(("end")):::fin
+    D1 -- yes --> A3["Parse and validate the envelope — Zod"]:::act
+    A3 --> D2{"Any customer messages?"}:::dec
+    D2 -- "no — delivery statuses only,<br/>or not parseable" --> E2["200 OK · counted and ignored<br/><i>anything but 200 makes Meta retry</i>"]:::act --> F1
+    D2 -- yes --> A4["For each message, one transaction:<br/>INSERT processed_webhook_events<br/>ON CONFLICT DO NOTHING RETURNING id"]:::crit
     A4 --> D3{"rowcount = 1?"}:::dec
-    D3 -- "no — redelivery" --> E3["200 OK · discard"]:::act --> F1
+    D3 -- "no — redelivery" --> E3["skip this message"]:::act --> F1
     D3 -- yes --> F2(("continue in part b")):::fin

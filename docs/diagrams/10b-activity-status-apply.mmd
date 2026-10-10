@@ -4,15 +4,15 @@ flowchart TB
     classDef dec fill:#FBEAB0,stroke:#7A5C06,color:#161615
     classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
     classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
+    classDef defer fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
 
-    S(("from part a — transition allowed")):::start --> A6["BEGIN TRANSACTION"]:::act
-    A6 --> A7["UPDATE orders SET status, notified=false"]:::act
-    A7 --> D4{"which new status?"}:::dec
-    D4 -- ready --> B1["SET ready_at = now()<br/><i>this column drives the 24h expiry job</i>"]:::act --> A8
-    D4 -- "cancelled AND paid" --> B2["Request refund · payment_status=refunded<br/><i>refund invariant</i>"]:::crit --> A8
-    D4 -- completed --> B3["cash: payment_status → collected<br/>update customer statistics · recompute is_vip"]:::act --> A8
-    D4 -- "accepted / preparing" --> A8["INSERT order_status_history<br/>actor=staff · actor_staff_id"]:::act
-    A8 --> A9["COMMIT"]:::act
-    A9 --> A10["Notification poller picks up notified=false<br/>and sends the approved template"]:::act
-    A10 --> A11["outbound_msg_count incremented"]:::act
+    S(("from part a — transition allowed")):::start --> A6["3 · runInTenant: BEGIN ·<br/>set_config(app.current_restaurant_id, ..., true)"]:::crit
+    A6 --> A7["One compare-and-swap UPDATE:<br/>SET status = to, notified = false<br/>+ ready_at on ready · collected on a completed cash order<br/>· cancelled_by and reason on cancel<br/>WHERE id AND status = from<br/>AND, for accepted or completed: cash OR paid"]:::crit
+    A7 --> D4{"rowcount = 1?"}:::dec
+    D4 -- no --> A8["Re-read the order in the same transaction"]:::act
+    A8 --> E8["404 · not found<br/>409 · status_conflict, with the current status<br/>409 · payment_not_settled"]:::act --> F1(("end")):::fin
+    D4 -- yes --> A9["INSERT order_status_history<br/>actor = staff · actor_staff_id · reason"]:::act
+    A9 --> A10["COMMIT · 200 with the updated order"]:::act
+    A10 --> A11["Within 5 s the notifier claims notified = false,<br/>then sends the text for accepted, ready or cancelled<br/>· preparing and completed are silent"]:::act
     A11 --> F2(("end")):::fin
+    A10 -.- N1["Not built: refund on a paid cancellation<br/>(online payment deferred) · customer<br/>statistics on completed (FR-14)"]:::defer

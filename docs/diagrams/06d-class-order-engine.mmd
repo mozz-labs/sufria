@@ -1,36 +1,42 @@
 classDiagram
     direction TB
-    note for CriticalPrimitives "The four operations the correctness of\nthe system rests on. Imported, never\nreimplemented inline."
+    note for CriticalPrimitives "Two of these six are used today.<br/>The other four wait for the pickup expiry,<br/>the payment timeout and online payment."
 
-    class OrderCreationService {
-        +createCashOrder(session)
-        +createOnlineOrder(session)
-        -snapshotPrices(cart)
+    class CartReviewHandler {
+        <<function handleCartReviewMessage>>
+        +onConfirmWord()
     }
-    class SchedulerService {
-        +expireUnclaimedPickups()
-        +cancelStuckOnlinePayments()
-        +abandonIdleSessions()
+    class OrderCreation {
+        <<module order-creation.ts>>
+        +checkAvailability(tx, data) Availability
+        +insertOrder(tx, data) CreatedOrder
     }
     class CriticalPrimitives {
         <<module>>
         +claimWebhookEvent() boolean
         +advanceSessionState() boolean
         +lockOrderForUpdate() Order
+        +lockOrderByGatewayRef() Order
         +claimExpiredPickups() Order[]
         +claimStuckOnlinePayments() Order[]
     }
-    class OutboundMessageService {
-        +sendText(to, body, orderId)
-        +sendList(to, list, orderId)
-        +sendTemplate(to, tpl, orderId)
-        -incrementCounter(orderId)
+    class SavingWhatsAppSender {
+        +sendText(message) void
     }
-    class NotificationPoller {
-        +sweepUnnotified()
+    class MetaWhatsAppSender {
+        +sendText(message) void
+    }
+    class OrderNotifier {
+        +start() void
+        +stop() void
+        +tick() TickResult
+        -runCycle()
+        -notifyOne(restaurantId, orderId)
+        -sendWithRetry(message)
     }
 
-    OrderCreationService --> CriticalPrimitives : "CAS"
-    SchedulerService --> CriticalPrimitives : "SKIP LOCKED"
-    CriticalPrimitives --> OutboundMessageService
-    NotificationPoller --> OutboundMessageService
+    CartReviewHandler --> OrderCreation : 1 checkAvailability · 3 insertOrder
+    CartReviewHandler --> CriticalPrimitives : 2 advanceSessionState, cart_review to order_placed
+    CartReviewHandler ..> SavingWhatsAppSender : 4 order received, after COMMIT
+    SavingWhatsAppSender --> MetaWhatsAppSender : wraps, then saves to outbound_messages
+    OrderNotifier --> SavingWhatsAppSender : status messages

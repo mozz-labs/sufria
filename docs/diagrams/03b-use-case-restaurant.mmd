@@ -1,36 +1,54 @@
 flowchart TB
     classDef actor fill:#FCE8D6,stroke:#8A4A0A,stroke-width:1px,color:#161615
     classDef uc fill:#FFFFFF,stroke:#0E7C7B,stroke-width:1px,color:#161615
+    classDef part fill:#FFFFFF,stroke:#8A4A0A,stroke-width:1.5px,color:#161615
+    classDef prog fill:#FBEAB0,stroke:#7A5C06,stroke-width:1px,stroke-dasharray:5 3,color:#161615
+    classDef defer fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
 
     S(["Restaurant Staff"]):::actor
-    O(["Restaurant Owner"]):::actor
 
     subgraph OPS["Daily operations"]
-        U12["View live orders<br/><b>FR-12</b>"]:::uc
-        U13["Accept, progress<br/>or cancel order<br/><b>FR-13</b>"]:::uc
-        U2["Manage menu<br/><b>FR-02</b>"]:::uc
+        U23["Sign in<br/><b>FR-23</b> · built"]:::uc
+        U12["View live orders<br/>and history<br/><b>FR-12</b> · built"]:::uc
+        U26["Order details with<br/>the conversation<br/><b>FR-26</b> · built"]:::uc
+        U13["Accept, progress<br/>or cancel an order<br/><b>FR-13</b> · partially built"]:::part
+        U2["Manage the menu<br/><b>FR-02</b> · in progress"]:::prog
+        U28["Pause and resume<br/>ordering<br/><b>FR-28</b> · in progress"]:::prog
     end
 
-    subgraph SETUP["Setup and administration — owner only"]
-        U1["Register and configure<br/>restaurant<br/><b>FR-01</b>"]:::uc
-        U3["Provision WhatsApp<br/>number<br/><b>FR-03</b>"]:::uc
-        U4["Customise message<br/>templates<br/><b>FR-04</b>"]:::uc
-        U16["Manage subscription<br/><b>FR-16</b>"]:::uc
+    O(["Restaurant Owner<br/><i>a member of staff with<br/>wider permissions</i>"]):::actor
+    T(["Sufria team<br/><i>onboarding</i>"]):::actor
+
+    subgraph SETUP["Setup and administration"]
+        U1["Register and configure<br/>the restaurant<br/><b>FR-01</b> · partially built"]:::part
+        U3["Connect a WhatsApp<br/>number<br/><b>FR-03</b> · partially built"]:::part
+        U27["Change hours, delivery fee<br/>and contact number<br/><b>FR-27</b> · partially built"]:::part
+        U4["Customise message<br/>templates<br/><b>FR-04</b> · deferred"]:::defer
+        U16["Manage subscription<br/><b>FR-16</b> · deferred"]:::defer
     end
 
-    subgraph ANALYTICS["Analytics and ownership — owner only"]
-        U17["Basic analytics<br/><b>FR-17</b>"]:::uc
-        U18["Ownership /<br/>Health Score<br/><b>FR-18</b>"]:::uc
-        U19["Conversion funnel<br/><b>FR-19</b>"]:::uc
-        U20["Customer timeline<br/><b>FR-20</b>"]:::uc
-        U21["At-risk customers<br/><b>FR-21</b>"]:::uc
+    subgraph ANALYTICS["Customers and analytics — owner only, all deferred"]
+        direction LR
+        U24["Customer list<br/><b>FR-24</b>"]:::defer
+        U17["Basic analytics<br/><b>FR-17</b>"]:::defer
+        U18["Ownership /<br/>Health Score<br/><b>FR-18</b>"]:::defer
+        U19["Conversion funnel<br/><b>FR-19</b>"]:::defer
+        U20["Customer timeline<br/><b>FR-20</b>"]:::defer
+        U21["At-risk customers<br/><b>FR-21</b>"]:::defer
+        U24 ~~~ U17 ~~~ U18 ~~~ U19 ~~~ U20 ~~~ U21
     end
 
+    S --> U23
     S --> U12
+    S --> U26
     S --> U13
     S --> U2
-    O --> U12
-    O --> U2
-    O --> U1
-    OPS ~~~ SETUP
+    S --> U28
+    U13 ~~~ O
+    U26 ~~~ T
+    T --> U1
+    T --> U3
+    O --> U27
+    O --> U4
+    O --> U16
     SETUP ~~~ ANALYTICS

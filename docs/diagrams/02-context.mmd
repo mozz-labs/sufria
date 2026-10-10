@@ -1,25 +1,27 @@
 flowchart TB
     classDef ext fill:#E1EAEE,stroke:#35555F,stroke-width:1px,color:#161615
     classDef sys fill:#0E7C7B,stroke:#0A5F5E,stroke-width:2px,color:#FFFFFF
-    classDef store fill:#EDE6F7,stroke:#5B3A99,color:#161615
+    classDef defer fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
 
-    CUST(["Customer<br/><i>orders via WhatsApp</i>"]):::ext
+    CUST(["Customer<br/><i>orders by WhatsApp text</i>"]):::ext
     STAFF(["Restaurant Staff / Owner<br/><i>operates the dashboard</i>"]):::ext
+    TEAM(["Sufria team<br/><i>onboards each restaurant</i>"]):::ext
     META(["Meta — WhatsApp Cloud API<br/><i>message delivery</i>"]):::ext
-    PAY(["Payment Provider<br/><i>collection and refund</i>"]):::ext
-    MON(["Sentry / Uptime Monitor<br/><i>error and availability alerts</i>"]):::ext
+    PAY(["Payment Provider<br/><i>deferred — cash only today</i>"]):::defer
+    MON(["Error and uptime monitoring<br/><i>planned — NFR-05</i>"]):::defer
 
-    SUFRIA["<b>SUFRIA PLATFORM</b><br/>conversational ordering,<br/>order management,<br/>ownership analytics"]:::sys
+    SUFRIA["<b>SUFRIA PLATFORM</b><br/>conversational ordering,<br/>order management<br/><i>(analytics deferred)</i>"]:::sys
 
-    CUST -- "order messages, button and list selections" --> META
-    META -- "inbound webhook (signed)" --> SUFRIA
-    SUFRIA -- "menu, cart, confirmation, status notifications" --> META
+    CUST -- "numbered text messages" --> META
+    META -- "webhook (signed)" --> SUFRIA
+    SUFRIA -- "replies and status messages" --> META
     META -- "message delivery" --> CUST
 
-    STAFF -- "credentials, status transitions, menu edits" --> SUFRIA
-    SUFRIA -- "live orders, customer records, analytics" --> STAFF
+    STAFF -- "sign-in, status changes" --> SUFRIA
+    SUFRIA -- "orders and conversations" --> STAFF
+    TEAM -- "configuration (script)" ---> SUFRIA
 
-    SUFRIA -- "payment request, refund request" --> PAY
-    PAY -- "payment confirmation (signed webhook)" --> SUFRIA
+    SUFRIA -. "payment, refund" .-> PAY
+    PAY -. "confirmation" .-> SUFRIA
 
-    SUFRIA -- "unhandled errors, health signal" --> MON
+    SUFRIA -. "errors, health" .-> MON

@@ -5,11 +5,16 @@ flowchart TB
     classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
     classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
 
-    S(("from part a")):::start --> A5["app.resolve_restaurant_by_phone_id()<br/>then set_config(app.current_restaurant_id, ..., true)"]:::crit
-    A5 --> A6["Upsert customer · resolve or create session"]:::act
-    A6 --> A7["Route to the handler for the current state<br/>browse · cart · reorder · fulfilment"]:::act
-    A7 --> A8["Customer selects cash on delivery"]:::act
-    A8 --> A9["Re-validate price and availability<br/>of every cart item against menu_items"]:::act
-    A9 --> D4{"Anything changed since<br/>it was added to the cart?"}:::dec
-    D4 -- yes --> E4["Show the change · request re-confirmation"]:::act --> A7
-    D4 -- no --> F2(("continue in part c")):::fin
+    S(("from part a")):::start --> A5["app.resolve_restaurant_by_phone_id()"]:::crit
+    A5 --> D0{"Restaurant found<br/>and not suspended?"}:::dec
+    D0 -- no --> E0["ROLLBACK, the dedup claim included<br/>500, so Meta resends"]:::crit --> F1(("end")):::fin
+    D0 -- yes --> A6["set_config(app.current_restaurant_id, ..., true)<br/>INSERT inbound_messages"]:::crit
+    A6 --> D1{"Active session?"}:::dec
+    D1 -- yes --> D2{"Silent for 60 min<br/>or more?"}:::dec
+    D2 -- no --> A7["Route to the state handler<br/>browsing · fulfilment · cart review"]:::act --> F2(("reply sent · COMMIT")):::fin
+    D2 -- yes --> A8["CAS the old session to abandoned<br/>treat as a new conversation"]:::act --> D3
+    D1 -- no --> D3{"Restaurant open now?<br/><i>in its own timezone</i>"}:::dec
+    D3 -- no --> E3["Closing message with today's<br/>opening hours · no session"]:::act --> F2
+    D3 -- yes --> D4{"Welcome + menu within<br/>4,096 characters?"}:::dec
+    D4 -- no --> E4["Log an error · send nothing<br/>no session"]:::crit --> F2
+    D4 -- yes --> A9["Upsert customer · open session<br/>one active per customer<br/>CAS new to browsing · send the numbered menu"]:::act --> F3(("cart built in later messages<br/>continue in part c")):::fin

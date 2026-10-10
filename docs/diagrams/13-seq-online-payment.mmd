@@ -5,7 +5,7 @@ sequenceDiagram
     participant CE as Conversation Engine
     participant DB as PostgreSQL
     participant PG as Payment Provider
-    Note over C,PG: Customer selected online payment while in fulfillment_choice
+    Note over C,PG: DESIGN — NOT BUILT. Online payment is deferred (FR-10, FR-15).<br/>Customer selected online payment
     CE->>DB: BEGIN, then CAS to state='awaiting_payment'
     CE->>DB: INSERT orders (payment_method='online', payment_status='pending_online')
     CE->>DB: COMMIT
@@ -15,7 +15,7 @@ sequenceDiagram
     CE->>WA: send payment instrument
     WA->>C: delivered
     par session timeout path (never touches the order row)
-        CE->>DB: (job) state='abandoned' WHERE state='awaiting_payment'<br/>AND last_message_at < now() - 45 min
+        CE->>DB: on the next message after 60 min of silence (FR-25):<br/>state='abandoned' WHERE state='awaiting_payment'
     and payment confirmation path
         PG->>CE: payment webhook (gateway_ref, amount, success)
         CE->>DB: INSERT processed_webhook_events ON CONFLICT DO NOTHING RETURNING id

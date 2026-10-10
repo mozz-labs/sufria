@@ -4,39 +4,34 @@ flowchart TB
     classDef ext fill:#F5DEDD,stroke:#8A332F,color:#161615
     classDef future fill:#FBEAB0,stroke:#7A5C06,stroke-dasharray:4 3,color:#161615
 
-    subgraph PILOT["PILOT TOPOLOGY — October 2026"]
+    subgraph NOW["TODAY — development and trials, October 2026"]
         direction TB
-        subgraph N1["Always-on container (Koyeb free tier / Railway Hobby)"]
-            P1["Node.js 24 — single process<br/><b>ConversationEngineModule</b> + <b>DashboardApiModule</b><br/><i>NFR-07: separate modules, one deployment</i>"]:::proc
+        subgraph N1["Development machine"]
+            P1["conversation-engine<br/>Node.js 24 · port 3001"]:::proc
+            P2["dashboard-api<br/>NestJS 11 · port 3002"]:::proc
+            P3["dashboard-web<br/>Next.js 16 · port 3000"]:::proc
+            P4[("PostgreSQL 16<br/>roles: sufria_dashboard · sufria_engine<br/><i>neither is superuser</i><br/>tests run on a separate database")]:::proc
         end
-        subgraph N2["Vercel (Hobby)"]
-            P2["Next.js 16 — dashboard-web<br/><i>static + client-side rendering</i>"]:::proc
-        end
-        subgraph N3["Managed PostgreSQL (Supabase / Neon)"]
-            P3[("PostgreSQL 16<br/>roles: sufria_dashboard · sufria_engine<br/><i>neither is superuser</i>")]:::proc
-        end
+        TUN["cloudflared tunnel<br/><i>public HTTPS to port 3001</i>"]:::proc
     end
 
-    BROWSER(["Restaurant staff browser"]):::ext
     PHONE(["Customer phone — WhatsApp"]):::ext
-    META["Meta WhatsApp Cloud API"]:::ext
-    PAYG["Payment provider"]:::ext
-    R2["Cloudflare R2"]:::ext
-    SENTRY["Sentry + uptime monitor"]:::ext
+    META["Meta WhatsApp Cloud API<br/><i>test number</i>"]:::ext
+    BROWSER(["Restaurant staff browser"]):::ext
 
-    BROWSER -->|"HTTPS"| P2
-    P2 -->|"HTTPS / REST"| P1
     PHONE --> META
-    META -->|"HTTPS webhook"| P1
+    META -->|"HTTPS webhook"| TUN --> P1
     P1 -->|"HTTPS"| META
-    P1 <-->|"HTTPS"| PAYG
-    P1 -->|"TLS 5432"| P3
-    P2 --> R2
-    P1 --> SENTRY
+    BROWSER --> P3
+    P3 -->|"REST"| P2
+    P1 --> P4
+    P2 --> P4
 
-    subgraph LATER["FUTURE SPLIT — triggered by webhook load, not by date"]
-        direction LR
-        F1["conversation-engine<br/><i>scales on webhook volume</i>"]:::future
-        F2["dashboard-api<br/><i>scales on staff sessions</i>"]:::future
+    subgraph LATER["PLANNED HOSTING — not yet chosen · the same three processes and the same two roles"]
+        F1["Always-on host<br/><i>the engine must not sleep:<br/>the notifier runs on a timer</i>"]:::future
+        F2["Managed PostgreSQL 16<br/><i>an application role that is<br/>not superuser, never the admin URL</i>"]:::future
+        F3["Error and uptime<br/>monitoring<br/><i>NFR-05</i>"]:::future
     end
-    P1 -.->|"add a second main.ts;<br/>configuration change, not a rewrite"| LATER
+    P4 ~~~ F1
+    P4 ~~~ F2
+    P4 ~~~ F3

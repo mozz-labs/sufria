@@ -4,31 +4,29 @@ sequenceDiagram
     participant WA as Meta Cloud API
     participant CE as Conversation Engine
     participant DB as PostgreSQL
-    Note over C,DB: FR-08 — the highest business priority requirement.<br/>Target: first message to confirmed order in under 30 seconds.
-    C->>WA: "مرحبا"
-    WA->>CE: webhook (after signature check and dedup gate)
-    CE->>DB: resolve restaurant, upsert customer, create session (state='new')
-    CE->>DB: SELECT most recent completed order for this customer<br/>at this restaurant (idx_orders_customer_completed)
-    DB-->>CE: prior order + its items
+    Note over C,DB: FR-08 — PLANNED, next after menu management. Design from August 2026.<br/>Open before its brief: which past order is "the usual" (most recent or most frequent),<br/>and the exact wording. Target: first message to confirmed order in under 30 seconds.
+    C->>WA: first message
+    WA->>CE: webhook (after the signature check and the dedup gate)
+    CE->>DB: resolve restaurant · opening hours · open session (as built)
+    CE->>DB: SELECT the customer's usual order at this restaurant<br/>(idx_orders_customer_completed)
+    DB-->>CE: prior order + its items (order_items.menu_item_id)
     alt no prior completed order
-        CE->>WA: welcome + full menu
-        CE->>DB: session state='browsing'
+        CE->>WA: welcome + full menu (as today)
     else prior order exists
-        CE->>DB: re-validate price and availability of EVERY item now
-        DB-->>CE: current prices and availability
+        CE->>DB: check every item against today's menu: available, current price
+        DB-->>CE: current availability and prices
         alt one or more items unavailable
-            CE->>WA: welcome + "your usual is partly unavailable" +<br/>name the affected items + substitute or remove
+            CE->>WA: welcome + "your usual is partly unavailable" + name the items
             Note over CE,WA: The suggestion is never shown with a stale price<br/>or an item the kitchen cannot make.
         else all items still available
-            CE->>WA: welcome + "reorder your usual? [items, total]"<br/>+ "browse the menu instead"
+            CE->>WA: welcome + "reorder your usual? [items, total]" + "or browse the menu"
         end
-        alt customer confirms
-            CE->>DB: pre-fill session.context with the same items
-            CE->>DB: CAS session state to 'cart_review'
-            CE->>WA: cart summary and total, ready to confirm
+        alt customer accepts
+            CE->>DB: pre-fill the cart with the same items at today's prices
+            CE->>DB: CAS session to fulfillment_choice (or cart_review when pickup only)
+            CE->>WA: pickup or delivery, then the summary, ready to confirm
             Note over C,DB: Browsing is skipped entirely — this is the<br/>whole point of the requirement.
-        else customer dismisses
-            CE->>DB: session state='browsing'
+        else customer browses instead
             CE->>WA: full menu
         end
     end

@@ -5,17 +5,14 @@ flowchart TB
     classDef crit fill:#F5DEDD,stroke:#8A332F,stroke-width:2px,color:#161615
     classDef fin fill:#DCEEDC,stroke:#24632F,color:#161615
 
-    S(("start")):::start --> A1["Staff selects an action on an order"]:::act
-    A1 --> A2["1 · AuthGuard — verify JWT"]:::crit
-    A2 --> D0{"Authenticated?"}:::dec
-    D0 -- no --> E0["403"]:::crit --> F(("end")):::fin
-    D0 -- yes --> A3["2 · RestaurantContextGuard<br/>app.verify_membership(staff, restaurant)"]:::crit
+    S(("start")):::start --> A1["Staff press the next-step button<br/>or confirm a cancellation"]:::act
+    A1 --> A2["1 · JwtAuthGuard — Bearer access token"]:::crit
+    A2 --> D0{"Valid access token?"}:::dec
+    D0 -- no --> E0["401 · the dashboard refreshes the<br/>token once, then returns to login"]:::crit --> F(("end")):::fin
+    D0 -- yes --> A3["2 · RestaurantContextGuard<br/>x-restaurant-id header ·<br/>app.verify_membership(staff, restaurant)"]:::crit
     A3 --> D1{"Active membership?"}:::dec
     D1 -- no --> E1["403 · identical response to<br/>'no such restaurant', so restaurants<br/>cannot be enumerated"]:::crit --> F
-    D1 -- yes --> A4["3 · set_config(app.current_restaurant_id, ..., true)"]:::crit
-    A4 --> A5["SELECT order FOR UPDATE — row lock"]:::crit
-    A5 --> D2{"accepted requested AND online<br/>AND payment_status != paid?"}:::dec
-    D2 -- yes --> E2["400 · acceptance gate<br/>'لا يمكن قبول الطلب قبل تأكيد الدفع'<br/><i>only cancel remains available</i>"]:::crit --> F
-    D2 -- no --> D3{"canTransition(from, to)?<br/><i>from @sufria/shared</i>"}:::dec
-    D3 -- no --> E3["400 · invalid transition"]:::act --> F
+    D1 -- yes --> A4["Validate the body — Zod<br/>from · to · optional reason, up to 300 characters"]:::act
+    A4 --> D3{"canStaffTransition(from, to)?<br/><i>STAFF_TRANSITIONS from @sufria/shared</i>"}:::dec
+    D3 -- no --> E3["409 · transition_not_allowed"]:::act --> F
     D3 -- yes --> F3(("continue in part b")):::fin

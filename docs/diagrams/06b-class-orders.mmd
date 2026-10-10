@@ -1,34 +1,37 @@
 classDiagram
     direction TB
-    note for SharedDomain "Imported by BOTH the API and the web app,\nso the button the staff sees and the rule\nthe server enforces are the same line."
+    note for SharedRules "Used by BOTH the API and the web app,<br/>so the button the staff sees and the rule<br/>the server enforces are the same table."
 
     class OrdersController {
-        +listActive(restaurantId) OrderSummary[]
-        +getOne(restaurantId, orderId) OrderDetail
-        +updateStatus(restaurantId, orderId, dto) void
+        +list(tab, page) OrderListItem[]
+        +detail(id) OrderDetail
+        +messages(id) ConversationMessage[]
+        +changeStatus(id, dto) OrderListItem
     }
     class OrdersService {
         -TenantDbService db
-        +transition(orderId, next, actor) void
-        -assertAcceptanceGate(order) void
-        -applyCompletionEffects(order) void
+        +list(restaurantId, tab, page)
+        +detail(restaurantId, id)
+        +messages(restaurantId, id)
+        +changeStatus(restaurantId, staffId, id, change) StatusChangeOutcome
     }
-    class SharedDomain {
+    class SharedRules {
         <<package @sufria/shared>>
-        +ALLOWED_TRANSITIONS
-        +canTransition(from, to) boolean
-        +canAcceptOrder(order) boolean
+        +STAFF_TRANSITIONS
+        +canStaffTransition(from, to) boolean
+        +MAX_CANCELLATION_REASON_LENGTH = 300
         +ORDER_STATUS_LABEL_AR
     }
     class TenantDbService {
         +runInTenant(restaurantId, work) T
     }
     class OtherControllers {
-        <<menu · customers · analytics>>
-        +list(restaurantId) T
+        <<menu-items · restaurant/settings>>
+        +list() / get()
+        +update(dto)
     }
 
     OrdersController --> OrdersService
-    OrdersService ..> SharedDomain : "canTransition / canAcceptOrder"
+    OrdersService ..> SharedRules : canStaffTransition
     OrdersService --> TenantDbService
-    OtherControllers --> TenantDbService : "same single data path"
+    OtherControllers --> TenantDbService : same single data path

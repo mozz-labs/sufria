@@ -21,6 +21,18 @@ erDiagram
     timestamptz created_at
     timestamptz updated_at
   }
+  inbound_messages {
+    uuid id PK
+    uuid restaurant_id FK,UK
+    text wa_message_id UK
+    text phone_number_id
+    text from_phone
+    text message_type
+    text body "nullable"
+    jsonb payload
+    timestamptz sent_at "nullable"
+    timestamptz received_at
+  }
   menu_categories {
     uuid id PK
     uuid restaurant_id FK,UK
@@ -96,6 +108,17 @@ erDiagram
     integer outbound_msg_count
     timestamptz created_at
     timestamptz updated_at
+    numeric delivery_fee
+    text delivery_address "nullable"
+    integer order_number UK
+  }
+  outbound_messages {
+    uuid id PK
+    uuid restaurant_id FK
+    text to_phone
+    text body
+    uuid order_id FK "nullable"
+    timestamptz sent_at
   }
   processed_webhook_events {
     bigint id PK
@@ -129,6 +152,10 @@ erDiagram
     restaurant_status status
     timestamptz created_at
     timestamptz updated_at
+    text timezone
+    text contact_phone "nullable"
+    numeric delivery_fee
+    text currency
   }
   staff_accounts {
     uuid id PK
@@ -138,6 +165,8 @@ erDiagram
     boolean is_active
     timestamptz created_at
     timestamptz updated_at
+    text refresh_token_hash "nullable"
+    timestamptz refresh_token_expires_at "nullable"
   }
   subscriptions {
     uuid id PK
@@ -155,6 +184,7 @@ erDiagram
   customers ||--o{ conversation_sessions : "customer_id"
   restaurants ||--o{ conversation_sessions : "restaurant_id"
   restaurants ||--o{ customers : "restaurant_id"
+  restaurants ||--o{ inbound_messages : "restaurant_id"
   restaurants ||--o{ menu_categories : "restaurant_id"
   menu_categories ||--o{ menu_items : "category_id,restaurant_id · tenant-safe"
   restaurants ||--o{ menu_items : "restaurant_id"
@@ -166,6 +196,8 @@ erDiagram
   customers ||--o{ orders : "customer_id"
   restaurants ||--o{ orders : "restaurant_id"
   conversation_sessions ||--o{ orders : "session_id"
+  orders ||--o{ outbound_messages : "order_id,restaurant_id · tenant-safe"
+  restaurants ||--o{ outbound_messages : "restaurant_id"
   restaurants ||--o{ restaurant_staff : "restaurant_id"
   staff_accounts ||--o{ restaurant_staff : "staff_account_id"
   restaurants ||--o{ subscriptions : "restaurant_id"

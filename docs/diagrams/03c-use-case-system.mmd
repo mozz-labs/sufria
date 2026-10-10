@@ -2,26 +2,29 @@ flowchart TB
     classDef actor fill:#FCE8D6,stroke:#8A4A0A,stroke-width:1px,color:#161615
     classDef sysuc fill:#E7E5E0,stroke:#6B6963,stroke-width:1px,color:#161615
     classDef uc fill:#FFFFFF,stroke:#0E7C7B,color:#161615
+    classDef part fill:#FFFFFF,stroke:#8A4A0A,stroke-width:1.5px,color:#161615
+    classDef defer fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
+    classDef deferactor fill:#F2F2F0,stroke:#8A8A85,stroke-width:1px,stroke-dasharray:5 3,color:#5A5A57
 
-    SYS(["System / Scheduler<br/><i>no human actor</i>"]):::actor
     STAFF(["Restaurant Staff"]):::actor
+    NOTIFIER(["Notifier loop<br/><i>every 5 seconds</i>"]):::actor
+    NEXTMSG(["The customer's<br/>next message"]):::actor
+    SCH(["Scheduler<br/><i>not built</i>"]):::deferactor
 
-    U13["Accept, progress or<br/>cancel order<br/><b>FR-13</b>"]:::uc
-    U11["Notify customer of<br/>status change<br/><b>FR-11</b>"]:::sysuc
-    U14["Update customer<br/>statistics<br/><b>FR-14</b>"]:::sysuc
-    UT1["Expire unclaimed pickup<br/>24h after entering ready"]:::sysuc
-    UT2["Cancel unpaid online<br/>order after 2h"]:::sysuc
-    UT3["Abandon idle session<br/>after 45 min"]:::sysuc
-    U15["Trigger refund on a paid<br/>cancelled or expired order<br/><b>FR-15</b>"]:::sysuc
+    U13["Accept, progress or<br/>cancel order<br/><b>FR-13</b> · partially built"]:::part
+    U11["Notify customer:<br/>accepted, ready, cancelled<br/><b>FR-11</b> · built"]:::uc
+    UT3["End a session silent<br/>for 60 minutes<br/><b>FR-25</b> · built"]:::uc
+    U14["Update customer<br/>statistics<br/><b>FR-14</b> · not built"]:::defer
+    UT1["Expire unclaimed pickup<br/>24 h after ready<br/><b>FR-13</b> · not built"]:::defer
+    UT2["Cancel unpaid online<br/>order after 2 h<br/><b>FR-13</b> · deferred"]:::defer
+    U15["Refund a paid order that is<br/>cancelled or expired<br/><b>FR-15</b> · deferred"]:::defer
 
     STAFF --> U13
-    SYS --> UT1
-    SYS --> UT2
-    SYS --> UT3
-    U13 -. "triggers" .-> U11
+    NOTIFIER --> U11
+    NEXTMSG --> UT3
+    SCH -.-> UT1
+    SCH -.-> UT2
+    U13 -. "marks the order unnotified" .-> U11
     U13 -. "on completed" .-> U14
-    UT1 -. "triggers" .-> U11
-    UT2 -. "triggers" .-> U11
     UT1 -. "if paid" .-> U15
     U13 -. "if cancelled and paid" .-> U15
-    UT3 -. "never touches the order row" .-> UT3

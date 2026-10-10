@@ -1,35 +1,42 @@
 classDiagram
     direction TB
-    note for RestaurantContextGuard "The ordering below IS the security property.\nStep 3 before step 2 would let the caller\nnominate their own tenant."
+    note for RestaurantContextGuard "The ordering below IS the security property.<br/>Step 3 before step 2 would let the caller<br/>nominate their own tenant."
 
     class AuthController {
-        +login(dto) TokenPair
+        +login(dto) LoginResult
         +refresh(dto) AccessToken
         +logout() void
     }
     class AuthService {
-        +validate(identifier, password) StaffAccount
-        +issueTokens(staffId) TokenPair
-        -verifyPassword(hash, plain) boolean
+        +login(phoneOrEmail, password) LoginResult
+        +refresh(token) AccessToken
+        +logout(staffAccountId) void
+        -membershipsOf(staffAccountId) Restaurant[]
+        -issue(staffAccountId) TokenPair
+        -storeRefreshToken(staffAccountId, token) void
     }
-    class AuthGuard {
+    class JwtAuthGuard {
+        <<global guard>>
         +canActivate(ctx) boolean
     }
     class RestaurantContextGuard {
         -TenantDbService tenantDb
         +canActivate(ctx) boolean
     }
+    class GuardedController {
+        <<orders · menu-items · restaurant/settings>>
+        +handler(@VerifiedRestaurantId restaurantId)
+    }
     class TenantDbService {
         -Pool pool
-        -NodePgDatabase db
         -assertNotSuperuser() void
         +runInTenant(restaurantId, work) T
         +runUnscoped(work) T
     }
 
     AuthController --> AuthService
-    AuthService --> TenantDbService
-    AuthGuard --> AuthController : "1 · who is calling"
-    AuthGuard --> RestaurantContextGuard : "2 · may they act here"
-    RestaurantContextGuard --> TenantDbService : "app.verify_membership()"
-    RestaurantContextGuard --> TenantDbService : "3 · what they can see"
+    AuthService --> TenantDbService : runUnscoped · app.restaurants_for_staff()
+    JwtAuthGuard --> RestaurantContextGuard : 1 · who is calling
+    RestaurantContextGuard --> TenantDbService : 2 · may they act here · app.verify_membership()
+    RestaurantContextGuard --> GuardedController : sets the verified restaurant id
+    GuardedController --> TenantDbService : 3 · what they can see · runInTenant()
