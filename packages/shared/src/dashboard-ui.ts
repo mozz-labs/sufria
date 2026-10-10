@@ -16,6 +16,7 @@ import {
   CURRENCY_LABEL_AR,
   CURRENCY_SLOT,
   ITEM_NAME_SLOT,
+  ORDERS_PAUSED_AR,
   ORDER_NUMBER_SLOT,
   PRICE_SLOT,
   QUANTITY_SLOT,
@@ -26,12 +27,15 @@ import {
 /** The number in a relative time: «منذ [العدد] دقائق». */
 export const COUNT_SLOT = "[العدد]";
 
+/** The first message's length in «menu too long» (brief ي-ب, text 17). */
+export const LENGTH_SLOT = "[الطول]";
+
 export const DASHBOARD_UI_AR = {
   /** The wordmark, the login title and the tab title. */
   brand: "سُفريا",
   live: "مباشر",
   logout: "خروج",
-  tabs: { active: "الطلبات", history: "السجل" },
+  tabs: { active: "الطلبات", history: "السجل", menu: "المنيو" },
   /** Under the history list, while the API says `hasMore`. */
   more: "المزيد",
   login: {
@@ -96,6 +100,71 @@ export const DASHBOARD_UI_AR = {
     active: "ستظهر هنا طلبات واتساب الجديدة تلقائيا.",
     history: "لا طلبات منتهية بعد.",
   },
+  /**
+   * The menu screen — brief ي-ب, Mohammed's texts of 10 October, verbatim.
+   * «رجوع» in its two dialogs is `cancel.back`; a failed action is
+   * `errors.stepFailed`.
+   */
+  menu: {
+    /** The screen's two tabs (decision 4). */
+    tabs: { items: "الأصناف", removed: "المُزالة" },
+    add: "أضف صنفا",
+    pause: "أوقف الطلبات مؤقتا",
+    /**
+     * Under «أوقف الطلبات مؤقتا»: what every customer then receives — built
+     * from `ORDERS_PAUSED_AR` itself, never a copy of it.
+     */
+    pauseHint: `يتلقى كل من يراسلك: «${ORDERS_PAUSED_AR}»`,
+    /** With «شغّل الكل», while the count is over 0. */
+    offCount: `المطفأة: ${COUNT_SLOT}`,
+    enableAll: "شغّل الكل",
+    /** «شغّل الكل»'s dialog: its buttons are `enableAll` and `cancel.back`. */
+    enableAllTitle: "شغّل الأصناف المطفأة؟",
+    enableAllBody: `عددها ${COUNT_SLOT}، وستظهر في منيو واتساب.`,
+    /** An item's state, in a word — never by colour alone. */
+    status: { available: "متاح", off: "مطفأ" },
+    turnOff: "أطفئ",
+    turnOn: "شغّل",
+    edit: "تعديل",
+    remove: "إزالة",
+    /** The labels of the row's fields and of the add form's. */
+    fields: { category: "التصنيف", name: "الاسم", price: "السعر" },
+    save: "حفظ",
+    cancel: "إلغاء",
+    /** On a row in edit whose fields differ from what is saved. */
+    unsaved: "لم يُحفظ",
+    /** The add form's button. */
+    addSubmit: "أضف",
+    /** The removal dialog: its buttons are `removeConfirm` and `cancel.back`. */
+    removeTitle: `إزالة ${ITEM_NAME_SLOT} من المنيو؟`,
+    removeBody: "لن يظهر للزبائن، وتجده في «المُزالة» إن أردت إرجاعه.",
+    removeConfirm: "أزِله",
+    /** «المُزالة»'s button, and the line after it. */
+    restore: "إرجاع",
+    restored: `رجع ${ITEM_NAME_SLOT} إلى «الأصناف» مطفأ. شغّله من هناك ليظهر للزبائن.`,
+    empty: {
+      items: "لا أصناف في المنيو بعد.",
+      removed: "الأصناف التي تزيلها من المنيو تظهر هنا، ويمكنك إرجاعها.",
+    },
+    errors: {
+      nameEmpty: "اكتب اسم الصنف.",
+      /** The 40 is `MENU_ITEM_NAME_MAX`, written out; a test binds them. */
+      nameTooLong: "الاسم أطول من 40 حرفا.",
+      priceInvalid: "اكتب سعرا صحيحا، مثل 2.50.",
+      /**
+       * 409 `menu_too_long`. The 4096 is `WHATSAPP_TEXT_LIMIT`, written
+       * out; a test binds them.
+       */
+      tooLong: `لن يتسع المنيو في رسالة واتساب واحدة: سيصبح ${LENGTH_SLOT} حرفا والحد 4096. اختصر اسما أو أزل صنفا.`,
+      /** 409 `item_archived`, and a 404 on an item. */
+      archived: "أُزيل هذا الصنف من جهاز آخر.",
+    },
+  },
+  /**
+   * The strip under the header on every page while orders are paused —
+   * the label, then from the first minute `itemSeparator` and «منذ…».
+   */
+  paused: { label: "الطلبات موقفة", resume: "استأنف" },
   fulfillment: { pickup: "استلام", delivery: "توصيل" },
   /** The card's order number, before the customer: «#102». */
   orderNumber: `#${ORDER_NUMBER_SLOT}`,
@@ -302,4 +371,47 @@ export function amountAr(amount: string, currency: Currency): string {
     [PRICE_SLOT]: amount,
     [CURRENCY_SLOT]: CURRENCY_LABEL_AR[currency],
   });
+}
+
+/** «المطفأة: 3» — beside «شغّل الكل» (brief ي-ب, text 6). */
+export function offCountAr(count: number): string {
+  return fill(DASHBOARD_UI_AR.menu.offCount, { [COUNT_SLOT]: String(count) });
+}
+
+/** «عددها 3، وستظهر في منيو واتساب.» — «شغّل الكل»'s dialog (text 7). */
+export function enableAllBodyAr(count: number): string {
+  return fill(DASHBOARD_UI_AR.menu.enableAllBody, {
+    [COUNT_SLOT]: String(count),
+  });
+}
+
+/** «إزالة شاورما دجاج من المنيو؟» — the removal dialog's title (text 12). */
+export function removeTitleAr(name: string): string {
+  return fill(DASHBOARD_UI_AR.menu.removeTitle, { [ITEM_NAME_SLOT]: name });
+}
+
+/** The line after «إرجاع» (text 14). */
+export function restoredLineAr(name: string): string {
+  return fill(DASHBOARD_UI_AR.menu.restored, { [ITEM_NAME_SLOT]: name });
+}
+
+/** A 409 `menu_too_long`, with the length the API answered (text 17). */
+export function menuTooLongAr(length: number): string {
+  return fill(DASHBOARD_UI_AR.menu.errors.tooLong, {
+    [LENGTH_SLOT]: String(length),
+  });
+}
+
+/**
+ * The pause strip (brief ي-ب, text 19): «الطلبات موقفة», and from the first
+ * whole minute «الطلبات موقفة · منذ دقيقة» — `relativeTimeAr`, by the
+ * browser's clock against the API's `ordersPausedAt`. Under a minute, or a
+ * moment ahead of this clock, the label alone.
+ */
+export function ordersPausedAr(pausedAt: string, now: number): string {
+  const minutes = Math.floor((now - Date.parse(pausedAt)) / 60_000);
+  const { label } = DASHBOARD_UI_AR.paused;
+  return minutes < 1
+    ? label
+    : `${label}${DASHBOARD_UI_AR.itemSeparator}${relativeTimeAr(minutes)}`;
 }

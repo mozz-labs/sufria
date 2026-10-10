@@ -1,12 +1,11 @@
 import { z } from "zod";
-import { CURRENCIES } from "@sufria/shared";
+import { CURRENCIES, MENU_PRICE_PATTERN } from "@sufria/shared";
 
 import {
   CONTACT_PHONE_PATTERN,
   DELIVERY_FEE_PATTERN,
   OpeningHoursSchema,
 } from "../restaurant/dto/update-restaurant-settings.dto.js";
-import { MENU_PRICE_PATTERN } from "../menu/dto/menu-item-fields.js";
 
 /**
  * The config file of `scripts/setup-restaurant.ts` — brief E §2.2.

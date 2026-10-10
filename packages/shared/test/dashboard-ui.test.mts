@@ -7,6 +7,15 @@ import assert from "node:assert/strict";
 
 import {
   DASHBOARD_UI_AR,
+  MENU_ITEM_NAME_MAX,
+  ORDERS_PAUSED_AR,
+  WHATSAPP_TEXT_LIMIT,
+  enableAllBodyAr,
+  menuTooLongAr,
+  offCountAr,
+  ordersPausedAr,
+  removeTitleAr,
+  restoredLineAr,
   ORDER_STATUSES,
   STAFF_TRANSITIONS,
   amountAr,
@@ -30,7 +39,7 @@ test("DASHBOARD_UI_AR is the brief's text, verbatim", () => {
     brand: "سُفريا",
     live: "مباشر",
     logout: "خروج",
-    tabs: { active: "الطلبات", history: "السجل" },
+    tabs: { active: "الطلبات", history: "السجل", menu: "المنيو" },
     more: "المزيد",
     login: {
       identifier: "البريد الإلكتروني أو رقم الهاتف",
@@ -82,6 +91,46 @@ test("DASHBOARD_UI_AR is the brief's text, verbatim", () => {
       active: "ستظهر هنا طلبات واتساب الجديدة تلقائيا.",
       history: "لا طلبات منتهية بعد.",
     },
+    // Brief ي-ب, verbatim (Mohammed, 10 October).
+    menu: {
+      tabs: { items: "الأصناف", removed: "المُزالة" },
+      add: "أضف صنفا",
+      pause: "أوقف الطلبات مؤقتا",
+      pauseHint:
+        "يتلقى كل من يراسلك: «أوقفنا استقبال الطلبات مؤقتا. راسلنا لاحقا.»",
+      offCount: "المطفأة: [العدد]",
+      enableAll: "شغّل الكل",
+      enableAllTitle: "شغّل الأصناف المطفأة؟",
+      enableAllBody: "عددها [العدد]، وستظهر في منيو واتساب.",
+      status: { available: "متاح", off: "مطفأ" },
+      turnOff: "أطفئ",
+      turnOn: "شغّل",
+      edit: "تعديل",
+      remove: "إزالة",
+      fields: { category: "التصنيف", name: "الاسم", price: "السعر" },
+      save: "حفظ",
+      cancel: "إلغاء",
+      unsaved: "لم يُحفظ",
+      addSubmit: "أضف",
+      removeTitle: "إزالة [الاسم] من المنيو؟",
+      removeBody: "لن يظهر للزبائن، وتجده في «المُزالة» إن أردت إرجاعه.",
+      removeConfirm: "أزِله",
+      restore: "إرجاع",
+      restored: "رجع [الاسم] إلى «الأصناف» مطفأ. شغّله من هناك ليظهر للزبائن.",
+      empty: {
+        items: "لا أصناف في المنيو بعد.",
+        removed: "الأصناف التي تزيلها من المنيو تظهر هنا، ويمكنك إرجاعها.",
+      },
+      errors: {
+        nameEmpty: "اكتب اسم الصنف.",
+        nameTooLong: "الاسم أطول من 40 حرفا.",
+        priceInvalid: "اكتب سعرا صحيحا، مثل 2.50.",
+        tooLong:
+          "لن يتسع المنيو في رسالة واتساب واحدة: سيصبح [الطول] حرفا والحد 4096. اختصر اسما أو أزل صنفا.",
+        archived: "أُزيل هذا الصنف من جهاز آخر.",
+      },
+    },
+    paused: { label: "الطلبات موقفة", resume: "استأنف" },
     fulfillment: { pickup: "استلام", delivery: "توصيل" },
     orderNumber: "#[رقم الطلب]",
     amount: "[السعر] [العملة]",
@@ -327,4 +376,54 @@ test("waLink: wa.me with the number alone — a Jordanian and a Palestinian one"
 
 test("cancelTitleAr: the order number in the dialog's title", () => {
   assert.equal(cancelTitleAr(102), "إلغاء الطلب رقم 102؟");
+});
+
+// --- the menu screen — brief ي-ب ------------------------------------------
+
+test("🔴 the line under «أوقف الطلبات مؤقتا» holds ORDERS_PAUSED_AR itself — what the customer really gets", () => {
+  assert.ok(DASHBOARD_UI_AR.menu.pauseHint.includes(`«${ORDERS_PAUSED_AR}»`));
+  assert.equal(
+    DASHBOARD_UI_AR.menu.pauseHint,
+    `يتلقى كل من يراسلك: «${ORDERS_PAUSED_AR}»`,
+  );
+});
+
+test("🔴 the 40 and the 4096 in the texts are MENU_ITEM_NAME_MAX and WHATSAPP_TEXT_LIMIT", () => {
+  const numbers = (text: string) => text.match(/\d+(?:\.\d+)?/g) ?? [];
+  assert.deepEqual(numbers(DASHBOARD_UI_AR.menu.errors.nameTooLong), [
+    String(MENU_ITEM_NAME_MAX),
+  ]);
+  assert.deepEqual(numbers(DASHBOARD_UI_AR.menu.errors.tooLong), [
+    String(WHATSAPP_TEXT_LIMIT),
+  ]);
+});
+
+test("the menu's texts with a slot: the count, the name, the length", () => {
+  assert.equal(offCountAr(3), "المطفأة: 3");
+  assert.equal(enableAllBodyAr(12), "عددها 12، وستظهر في منيو واتساب.");
+  assert.equal(removeTitleAr("شاورما دجاج"), "إزالة شاورما دجاج من المنيو؟");
+  assert.equal(
+    restoredLineAr("فتوش"),
+    "رجع فتوش إلى «الأصناف» مطفأ. شغّله من هناك ليظهر للزبائن.",
+  );
+  assert.equal(
+    menuTooLongAr(4123),
+    "لن يتسع المنيو في رسالة واتساب واحدة: سيصبح 4123 حرفا والحد 4096. اختصر اسما أو أزل صنفا.",
+  );
+  // A name that itself holds a slot is not filled again.
+  assert.equal(removeTitleAr("[العدد]"), "إزالة [العدد] من المنيو؟");
+});
+
+test("🔴 the pause strip: the label alone in the first minute, then «· منذ…»", () => {
+  const at = "2026-10-10T12:00:00.000Z";
+  const after = (ms: number) => Date.parse(at) + ms;
+  assert.equal(ordersPausedAr(at, after(0)), "الطلبات موقفة");
+  assert.equal(ordersPausedAr(at, after(59_999)), "الطلبات موقفة");
+  assert.equal(ordersPausedAr(at, after(60_000)), "الطلبات موقفة · منذ دقيقة");
+  assert.equal(
+    ordersPausedAr(at, after(12 * 60_000)),
+    "الطلبات موقفة · منذ 12 دقيقة",
+  );
+  // The API's clock a moment ahead of the browser's: the label alone.
+  assert.equal(ordersPausedAr(at, after(-5_000)), "الطلبات موقفة");
 });

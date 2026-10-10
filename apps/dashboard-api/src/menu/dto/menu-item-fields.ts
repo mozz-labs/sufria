@@ -1,30 +1,23 @@
 import { z } from "zod";
 import {
   MENU_ITEM_NAME_MAX,
+  MENU_PRICE_PATTERN,
   normalizeMenuItemName,
   normalizeStaffPrice,
   type MenuItemNameIssue,
 } from "@sufria/shared";
 
 /**
- * Brief D §3.4, verbatim. Zero is rejected by the pattern itself — `0`,
- * `0.0`, `00.00` — never by turning the text into a number in JS. Six integer
- * digits and two decimals fit `numeric(12,2)`.
- *
- * `\d` is `[0-9]` in JS, with or without the `u` flag. Since brief ي-أ
- * (decision 6) the price reaches this pattern only through
- * `normalizeStaffPrice`: `٢٫٥٠` from a staff keyboard is 2.50, not a 400.
- * Anything else that is not this pattern stays a 400 — `2,50`, `٢،٥٠`.
- *
- * Also what the setup script validates a menu file's prices against (brief E
- * §2.2) — with no normalisation there: that file is a developer's.
- */
-export const MENU_PRICE_PATTERN = /^(?!0+(?:\.0+)?$)\d{1,6}(?:\.\d{1,2})?$/;
-
-/**
  * A price as staff send it: normalised (trimmed, digits Western, `٫` → `.`),
- * then held against the pattern. The value the service receives is the
- * normalised text.
+ * then held against `MENU_PRICE_PATTERN` — brief D §3.4, in
+ * `packages/shared` since brief ي-ب §3, so the menu screen checks the very
+ * rule. Since brief ي-أ (decision 6) the price reaches the pattern only
+ * through `normalizeStaffPrice`: `٢٫٥٠` from a staff keyboard is 2.50, not a
+ * 400. Anything else that is not the pattern stays a 400 — `2,50`, `٢،٥٠`.
+ * The value the service receives is the normalised text.
+ *
+ * The setup script validates a menu file's prices against the same pattern
+ * (brief E §2.2) — with no normalisation there: that file is a developer's.
  */
 export const MenuPriceSchema = z
   .string()

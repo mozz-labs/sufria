@@ -26,9 +26,20 @@ export function toWesternDigits(text: string): string {
 const ARABIC_DECIMAL_SEPARATOR = /٫/gu;
 
 /**
- * A price as staff typed it → the text the API holds against its pattern
- * (`MENU_PRICE_PATTERN`, in `apps/dashboard-api`): trimmed, digits Western,
- * `٫` → `.`.
+ * A menu price as the database takes it — brief D §3.4, verbatim. Zero is
+ * rejected by the pattern itself — `0`, `0.0`, `00.00` — never by turning
+ * the text into a number in JS. Six integer digits and two decimals fit
+ * `numeric(12,2)`. `\d` is `[0-9]` in JS, with or without the `u` flag.
+ *
+ * Moved here from `apps/dashboard-api/src/menu/dto/menu-item-fields.ts`,
+ * the value unchanged (brief ي-ب §3): the API's DTO, the setup script and
+ * the dashboard's menu screen hold a price to this one pattern.
+ */
+export const MENU_PRICE_PATTERN = /^(?!0+(?:\.0+)?$)\d{1,6}(?:\.\d{1,2})?$/;
+
+/**
+ * A price as staff typed it → the text the API holds against
+ * `MENU_PRICE_PATTERN`: trimmed, digits Western, `٫` → `.`.
  *
  * 🔴 Nothing else is converted. `2,50`, `٢،٥٠` and `٬` (the Arabic thousands
  *    separator) come out as they went in, and the pattern refuses them: a
@@ -37,6 +48,20 @@ const ARABIC_DECIMAL_SEPARATOR = /٫/gu;
  */
 export function normalizeStaffPrice(raw: string): string {
   return toWesternDigits(raw.trim()).replace(ARABIC_DECIMAL_SEPARATOR, ".");
+}
+
+export type NormalizedMenuPrice =
+  { readonly ok: true; readonly price: string } | { readonly ok: false };
+
+/**
+ * A price as staff typed it → the text the API will store, or refused: the
+ * API's rule exactly (its `MenuPriceSchema`) — `normalizeStaffPrice`, then
+ * `MENU_PRICE_PATTERN`. The menu screen checks it before sending
+ * (brief ي-ب §3): `٢٫٥٠` is 2.50; `0`, `2,50` and `2.505` are refused.
+ */
+export function normalizeMenuPrice(raw: string): NormalizedMenuPrice {
+  const price = normalizeStaffPrice(raw);
+  return MENU_PRICE_PATTERN.test(price) ? { ok: true, price } : { ok: false };
 }
 
 /** The longest item name, in characters as WhatsApp counts them (decision 5). */

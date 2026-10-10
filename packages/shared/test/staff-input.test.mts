@@ -12,7 +12,9 @@ import test from "node:test";
 
 import {
   MENU_ITEM_NAME_MAX,
+  MENU_PRICE_PATTERN,
   normalizeMenuItemName,
+  normalizeMenuPrice,
   normalizeStaffPrice,
   toWesternDigits,
 } from "@sufria/shared";
@@ -111,4 +113,39 @@ test("a tab, or any other control character, is refused", () => {
 test("empty, or spaces only, is refused", () => {
   assert.equal(issueOf(""), "empty");
   assert.equal(issueOf("    "), "empty");
+});
+
+// ---------------------------------------------------------------------------
+// The pattern and the whole price rule — brief ي-ب §3
+// ---------------------------------------------------------------------------
+
+test("🔴 MENU_PRICE_PATTERN is brief D §3.4's, its value unchanged by the move from the API", () => {
+  assert.equal(
+    MENU_PRICE_PATTERN.source,
+    String.raw`^(?!0+(?:\.0+)?$)\d{1,6}(?:\.\d{1,2})?$`,
+  );
+  assert.equal(MENU_PRICE_PATTERN.flags, "");
+});
+
+test("🔴 normalizeMenuPrice: the API's rule — normalised, then the pattern", () => {
+  assert.deepEqual(normalizeMenuPrice("٢٫٥٠"), { ok: true, price: "2.50" });
+  assert.deepEqual(normalizeMenuPrice("۲.۵"), { ok: true, price: "2.5" });
+  assert.deepEqual(normalizeMenuPrice(" 3 "), { ok: true, price: "3" });
+  assert.deepEqual(normalizeMenuPrice("999999.99"), {
+    ok: true,
+    price: "999999.99",
+  });
+  for (const refused of [
+    "0",
+    "0.0",
+    "00.00",
+    "2,50",
+    "٢،٥٠",
+    "2.505",
+    "-2",
+    "1000000",
+    "",
+    "abc",
+  ])
+    assert.deepEqual(normalizeMenuPrice(refused), { ok: false }, refused);
 });
