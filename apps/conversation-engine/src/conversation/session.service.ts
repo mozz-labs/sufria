@@ -22,6 +22,7 @@ import { handleCartReviewMessage } from "./cart-review.js";
 import { handleFulfillmentMessage } from "./fulfillment.js";
 import { deliverMenu, prepareMenu } from "./menu-delivery.js";
 import { replyOrdersPaused } from "./orders-paused.js";
+import { findReorderSource } from "./reorder.js";
 import { isSessionExpired } from "./session-idle.js";
 
 /**
@@ -162,6 +163,9 @@ export class ConversationService {
     private readonly now: () => Date = () => new Date(),
     /** مهلة الجلسة بالدقائق (بريف ح §2). */
     private readonly idleMinutes: number = env().SESSION_IDLE_MINUTES,
+    /** «آخر طلب لك»: no suggestion with an order younger than this (brief ك). */
+    private readonly reorderMinAgeMinutes: number = env()
+      .REORDER_MIN_AGE_MINUTES,
   ) {}
 
   /**
@@ -329,11 +333,24 @@ export class ConversationService {
     //        التكرار بتضل ثابتة، والرد 200. الانسحاب هون بيمسح رسالة الزبون
     //        ويرجّعها لطابور ميتا اللي بيعيدها سبعة أيام على عطل إعادة
     //        المحاولة ما بتصلّحه.
+    //
+    //    «آخر طلب لك» (brief ك) is read here, before `prepareMenu`, which
+    //    builds it into the text and measures it with the rest — so the
+    //    order above stays as it is. By the customer's number, not the
+    //    upserted row: a number with no customer yet has no order either.
+    //    On this path alone — a new conversation, past the hours and pause
+    //    gates; «منيو» and an active session never see it.
     // ---------------------------------------------------------------------
+    const reorder = await findReorderSource(
+      tx,
+      ctx.from,
+      this.reorderMinAgeMinutes,
+    );
     const prepared = await prepareMenu(
       tx,
       restaurant.name,
       restaurant.currency,
+      reorder,
     );
     if (!prepared.ok) {
       if (prepared.reason === "empty") {
@@ -354,6 +371,16 @@ export class ConversationService {
       return "reply_too_long";
     }
     const menu = prepared.menu;
+    if (prepared.reorderDroppedAt !== null) {
+      logger.info(
+        {
+          restaurantId: ctx.restaurantId,
+          from: maskPhone(ctx.from),
+          chars: prepared.reorderDroppedAt,
+        },
+        "«آخر طلب لك» بيطوّل أول رسالة فوق سقف واتساب — انبعتت بلاه",
+      );
+    }
 
     const customerId = await this.upsertCustomer(
       tx,
@@ -402,6 +429,17 @@ export class ConversationService {
       },
       "جلسة انفتحت والترحيب انبعث",
     );
+    if (menu.reorder !== null) {
+      logger.info(
+        {
+          restaurantId: ctx.restaurantId,
+          from: maskPhone(ctx.from),
+          items: menu.reorder.items.length,
+          sourceOrderId: menu.reorder.order_id,
+        },
+        "«آخر طلب لك» انعرض",
+      );
+    }
     return "greeted";
   }
 
