@@ -24,7 +24,7 @@ classDiagram
         +canActivate(ctx) boolean
     }
     class GuardedController {
-        <<orders · menu-items · restaurant/settings>>
+        <<orders · menu-items · menu-categories · restaurant>>
         +handler(@VerifiedRestaurantId restaurantId)
     }
     class TenantDbService {

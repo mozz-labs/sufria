@@ -13,7 +13,7 @@ classDiagram
         +list(restaurantId, tab, page)
         +detail(restaurantId, id)
         +messages(restaurantId, id)
-        +changeStatus(restaurantId, staffId, id, change) StatusChangeOutcome
+        +changeStatus(restaurantId, staffId, id, change)
     }
     class SharedRules {
         <<package @sufria/shared>>
@@ -26,9 +26,10 @@ classDiagram
         +runInTenant(restaurantId, work) T
     }
     class OtherControllers {
-        <<menu-items · restaurant/settings>>
+        <<menu-items · menu-categories · restaurant>>
         +list() / get()
-        +update(dto)
+        +create(dto) / update(dto)
+        +enableAll(dto) / pause(dto)
     }
 
     OrdersController --> OrdersService

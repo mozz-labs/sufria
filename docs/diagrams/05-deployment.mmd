@@ -27,8 +27,8 @@ flowchart TB
     P1 --> P4
     P2 --> P4
 
-    subgraph LATER["PLANNED HOSTING — not yet chosen · the same three processes and the same two roles"]
-        F1["Always-on host<br/><i>the engine must not sleep:<br/>the notifier runs on a timer</i>"]:::future
+    subgraph LATER["PLANNED HOSTING — not yet chosen · the same two database roles"]
+        F1["Always-on host<br/><i>engine and API as one<br/>process when first<br/>hosted (NFR-07).<br/>The engine must not<br/>sleep: the notifier<br/>runs on a timer.</i>"]:::future
         F2["Managed PostgreSQL 16<br/><i>an application role that is<br/>not superuser, never the admin URL</i>"]:::future
         F3["Error and uptime<br/>monitoring<br/><i>NFR-05</i>"]:::future
     end
