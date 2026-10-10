@@ -410,7 +410,7 @@ add(P('Three implementation properties are load-bearing, and each is easy to bre
 ].forEach(t => add(BULLET(t)));
 
 add(H('3.9.1 Verification', HeadingLevel.HEADING_2));
-add(P('The design is verified rather than asserted. A mandatory gate of fifteen assertions runs in continuous integration and blocks merges. The case it exists for is a single staff account holding an active membership in two branches of the same chain — a caller who is genuinely authorized for both, where the boundary that must hold is per-request rather than per-user. Assertions A13 to A15, added with the notifier, hold the engine\'s second privileged function to its narrow purpose.'));
+add(P('The design is verified rather than asserted. A mandatory gate of fifteen assertions runs in continuous integration on every push to the main branch, and the repository\'s first rule is that nothing merges while it is red. The case it exists for is a single staff account holding an active membership in two branches of the same chain — a caller who is genuinely authorized for both, where the boundary that must hold is per-request rather than per-user. Assertions A13 to A15, added with the notifier, hold the engine\'s second privileged function to its narrow purpose.'));
 add(tbl(['#', 'Assertion', 'Expected'], [
   ['A1', 'Query with no tenant context', 'Zero rows — the system fails closed'],
   ['A2', 'Chain staff in branch A reading branch B', 'Sibling branch completely invisible'],
