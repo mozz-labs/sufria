@@ -48,7 +48,7 @@ const figure = (name, caption, fit = FIT.portrait) => {
 };
 
 const P = (t, o = {}) => new Paragraph({
-  spacing: { after: o.after ?? 120, line: 276 }, alignment: o.align,
+  spacing: { after: o.after ?? 120, line: 276 }, alignment: o.align, keepNext: o.keepNext,
   children: [new TextRun({ text: t, bold: o.bold, italics: o.italics, size: o.size ?? 21, font: 'Calibri' })],
 });
 const Rich = (runs) => new Paragraph({
@@ -56,7 +56,7 @@ const Rich = (runs) => new Paragraph({
   children: runs.map(r => new TextRun({ ...r, size: r.size ?? 21, font: 'Calibri' })),
 });
 const H = (t, lv) => new Paragraph({
-  heading: lv, spacing: { before: 300, after: 140 },
+  heading: lv, keepNext: true, spacing: { before: 300, after: 140 },
   children: [new TextRun({ text: t, bold: true, color: ACCENT, font: 'Calibri' })],
 });
 const BULLET = (t) => new Paragraph({
@@ -66,18 +66,18 @@ const BULLET = (t) => new Paragraph({
 const cell = (t, o = {}) => new TableCell({
   width: { size: o.width, type: WidthType.DXA },
   shading: o.shade ? { type: ShadingType.CLEAR, fill: o.shade, color: 'auto' } : undefined,
-  margins: { top: 70, bottom: 70, left: 100, right: 100 },
+  margins: { top: o.pad ?? 70, bottom: o.pad ?? 70, left: 100, right: 100 },
   children: String(t).split('\n').map(x => new Paragraph({
     spacing: { after: 40, line: 260 },
     children: [new TextRun({ text: x, bold: o.bold, size: 19, font: 'Calibri', color: o.shade === ACCENT ? 'FFFFFF' : undefined })],
   })),
 });
-const tbl = (head, rows, widths) => new Table({
+const tbl = (head, rows, widths, opt = {}) => new Table({
   columnWidths: widths,
   width: { size: widths.reduce((a, b) => a + b, 0), type: WidthType.DXA },
   rows: [
-    new TableRow({ tableHeader: true, children: head.map((h, i) => cell(h, { bold: true, shade: ACCENT, width: widths[i] })) }),
-    ...rows.map(r => new TableRow({ cantSplit: true, children: r.map((c, i) => cell(c, { bold: i === 0, shade: i === 0 ? GREY : undefined, width: widths[i] })) })),
+    new TableRow({ tableHeader: true, children: head.map((h, i) => cell(h, { bold: true, shade: ACCENT, width: widths[i], pad: opt.pad })) }),
+    ...rows.map(r => new TableRow({ cantSplit: true, children: r.map((c, i) => cell(c, { bold: i === 0, shade: i === 0 ? GREY : undefined, width: widths[i], pad: opt.pad })) })),
   ],
 });
 const CALLOUT = (title, body) => new Paragraph({
@@ -227,7 +227,7 @@ add(tbl(['FR', 'Use case', 'Actor', 'Priority', 'Status'], [
   ['FR-26', 'Order details with the conversation', 'Staff', 'Should', 'Built'],
   ['FR-27', 'Change hours, delivery fee and contact number', 'Owner', 'Should', 'Partially built'],
   ['FR-28', 'Pause and resume ordering', 'Staff', 'Should', 'In progress (API built)'],
-], [800, 3300, 1800, 1500, 1900]));
+], [800, 3300, 1800, 1500, 1900], { pad: 40 }));
 
 // ============================== 3.4 ==========================================
 section(LANDSCAPE);
@@ -475,7 +475,7 @@ add(tbl(['Record', 'Subject'], [
 ], [3000, 6300]));
 
 add(H('3.12 Requirements Added Since Version 1.1', HeadingLevel.HEADING_1));
-add(P('Version 1.1 proposed three requirements that the scope implied and no requirement covered. SRS version 1.3 adopted them and added four more for capabilities built or decided since August.'));
+add(P('Version 1.1 proposed three requirements that the scope implied and no requirement covered. SRS version 1.3 adopted them and added four more for capabilities built or decided since August.', { keepNext: true }));
 add(tbl(['FR', 'Requirement', 'Status (10 October 2026)', 'Where'], [
   ['FR-22', 'Check the opening hours before starting an ordering conversation, and tell a customer the restaurant is closed instead of presenting the menu.', 'Built. Proposed in version 1.1 as not built.', 'US-23 · 3.7.3 · 3.7.5'],
   ['FR-23', 'Authenticate staff, and verify membership in the specific restaurant on every request.', 'Built; covered before only by NFR-02.', 'US-21 · 3.6.1 · 3.9'],
